@@ -18,8 +18,8 @@ SEEN_JOBS_FILE = "seen_jobs.json"
 PORT = 5000
 HP_STREAM_TAILSCALE_IP = "100.75.135.73"
 
-# ⚠️ PASTE YOUR PUBLISHED GOOGLE SHEET CSV URL HERE:
-GOOGLE_SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/YOUR_GOOGLE_SHEET_ID_HERE/pub?output=csv"
+# Your Live Published Google Sheet CSV URL
+GOOGLE_SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS94NpozDGeHO9UPag662CXcH-C5TGN9Y61-nW04VDlPJSZGVTq62E1lRvnXl8gq_CbR5kvMx5XnMFi/pub?output=csv"
 
 # Global Debug Status State
 SCRAPER_STATUS = {
@@ -117,6 +117,8 @@ def start_web_server():
     class CustomHandler(http.server.SimpleHTTPRequestHandler):
         def do_GET(self):
             if self.path in ["/", "/sankey"]:
+                if not os.path.exists("sankey_diagram.html"):
+                    generate_default_sankey()
                 self.path = "/sankey_diagram.html"
                 return super().do_GET()
             elif self.path == "/status":
@@ -159,7 +161,7 @@ def send_notification(title, message, link=None, tags="briefcase"):
 
 
 # ==========================================
-# MODULE 3: SCRAPER ENGINE
+# MODULE 3: SCRAPER ENGINE SOURCES
 # ==========================================
 def load_seen_jobs():
     if os.path.exists(SEEN_JOBS_FILE):
@@ -252,7 +254,6 @@ def scrape_github_lists(seen_jobs):
             if resp.status_code == 200:
                 lines = resp.text.split("\n")
                 for line in lines:
-                    line_lower = line.lower()
                     if is_relevant_role(line, "UK", "GitHubRepo"):
                         job_id = f"ghrepo_{hash(line)}"
                         if job_id not in seen_jobs:
@@ -320,13 +321,31 @@ def run_all_scrapers():
         print("✅ No new matching internship listings found this cycle.")
 
 
-def generate_sankey_from_google_sheets():
-    if "YOUR_GOOGLE_SHEET_ID_HERE" in GOOGLE_SHEET_CSV_URL:
-        return
+# ==========================================
+# MODULE 4: GOOGLE SHEETS SANKEY GENERATOR
+# ==========================================
+def generate_default_sankey():
+    """Generates a default Sankey diagram if Google Sheet hasn't populated yet."""
+    fig = go.Figure(data=[go.Sankey(
+        node=dict(
+            pad=15,
+            thickness=20,
+            line=dict(color="black", width=0.5),
+            label=["Applied (0)", "Ghosted (0)", "Direct Rejection (0)", "HR Screening (0)", "Final Round (0)", "Offer (0)"],
+            color=["#3182bd", "#969696", "#de2d26", "#e6550d", "#756bb1", "#31a354"]
+        ),
+        link=dict(source=[0], target=[1], value=[0])
+    )])
+    fig.update_layout(title_text="ApplicationTrackr - Waiting for Google Sheets Data", font_size=12)
+    fig.write_html("sankey_diagram.html")
 
+
+def generate_sankey_from_google_sheets():
+    """Fetches data from Google Sheets CSV URL and generates Sankey Diagram."""
     try:
         response = requests.get(GOOGLE_SHEET_CSV_URL, timeout=10)
         if response.status_code != 200:
+            generate_default_sankey()
             return
 
         csv_data = io.StringIO(response.text)
@@ -340,6 +359,7 @@ def generate_sankey_from_google_sheets():
 
         total_applied = sum(stages.values())
         if total_applied == 0:
+            generate_default_sankey()
             return
 
         labels = [
@@ -374,12 +394,21 @@ def generate_sankey_from_google_sheets():
 
         fig.update_layout(title_text="ApplicationTrackr - Live Google Sheets Funnel", font_size=12)
         fig.write_html("sankey_diagram.html")
+        print("📊 Updated Sankey diagram from Google Sheets.")
 
     except Exception as e:
         print(f"Error parsing Google Sheet: {e}")
+        generate_default_sankey()
 
 
+# ==========================================
+# MAIN EXECUTION LOOP
+# ==========================================
 if __name__ == "__main__":
+    # Generate initial Sankey page on startup
+    generate_sankey_from_google_sheets()
+
+    # Start Web Dashboard Thread
     web_thread = threading.Thread(target=start_web_server, daemon=True)
     web_thread.start()
     time.sleep(1)
