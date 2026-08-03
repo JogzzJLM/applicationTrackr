@@ -23,13 +23,11 @@ SEEN_EMAILS_FILE = "seen_emails.json"
 PORT = 5000
 HP_STREAM_TAILSCALE_IP = "100.75.135.73"
 
-# Credentials from Environment Variables
 GMAIL_USER = os.getenv("GMAIL_USER", "")
 GMAIL_APP_PASS = os.getenv("GMAIL_APP_PASS", "")
 GOOGLE_SHEET_WEBHOOK_URL = os.getenv("GOOGLE_SHEET_WEBHOOK_URL", "")
 GOOGLE_SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS94NpozDGeHO9UPag662CXcH-C5TGN9Y61-nW04VDlPJSZGVTq62E1lRvnXl8gq_CbR5kvMx5XnMFi/pub?output=csv"
 
-# Global Debug Status State
 SCRAPER_STATUS = {
     "last_run": "Never",
     "total_seen_jobs": 0,
@@ -37,7 +35,6 @@ SCRAPER_STATUS = {
     "source_status": {}
 }
 
-# Tailored Filtering Criteria
 EXCLUDE_KEYWORDS = ["vice president", "vp", "director", "head of", "principal", "senior manager", "sales development", "account executive", "recruiter", "marketing", "legal"]
 LEVEL_KEYWORDS = ["intern", "internship", "placement", "industrial placement", "sandwich", "spring week", "insight week", "graduate", "grad", "early talent", "early career"]
 ROLE_KEYWORDS = ["software", "developer", "engineer", "engineering", "backend", "fullstack", "full-stack", "systems", "quant", "quantitative", "trader", "trading", "research", "machine learning", "ml", "ai", "data science", "cyber", "security", "cloud", "devops"]
@@ -67,12 +64,60 @@ def is_relevant_role(title, location, company):
 
 
 # ==========================================
-# MODULE 1: EMBEDDED WEB SERVER
+# MODULE 1: EMBEDDED WEB SERVER & API ENDPOINT
 # ==========================================
 def start_web_server():
     class CustomHandler(http.server.SimpleHTTPRequestHandler):
+        def do_OPTIONS(self):
+            """Handle CORS Preflight requests for Safari."""
+            self.send_response(200)
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type")
+            self.end_headers()
+
+        def do_POST(self):
+            """Endpoint /api/log: Receives 1-click logs from Safari Bookmarklet."""
+            if self.path == "/api/log":
+                content_length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(content_length).decode("utf-8")
+                try:
+                    data = json.loads(body)
+                    company = data.get("company", "Unknown")
+                    role = data.get("role", "Software/Quant Role")
+
+                    # Log to Google Sheets
+                    update_google_sheet_via_webhook(company, "Applied", role)
+                    generate_sankey_from_google_sheets()
+
+                    # Trigger alert
+                    send_notification(
+                        title=f"Logged: {company}",
+                        message=f"Added {company} ({role}) as 'Applied' in Google Sheets.",
+                        tags="memo,check-mark",
+                        priority=3,
+                        sound="chime"
+                    )
+
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"status": "success", "message": f"Logged {company}"}).encode("utf-8"))
+                    return
+                except Exception as e:
+                    self.send_response(500)
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"status": "error", "message": str(e)}).encode("utf-8"))
+                    return
+
+            self.send_response(404)
+            self.end_headers()
+
         def do_GET(self):
             self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+            self.send_header("Access-Control-Allow-Origin", "*")
             if self.path in ["/", "/sankey", "/refresh"]:
                 generate_sankey_from_google_sheets()
                 self.path = "/sankey_diagram.html"
@@ -92,14 +137,9 @@ def start_web_server():
 
 
 # ==========================================
-# MODULE 2: NOTIFICATION HELPER (WITH CUSTOM SOUNDS)
+# MODULE 2: NOTIFICATION & SHEET HELPERS
 # ==========================================
 def send_notification(title, message, link=None, tags="briefcase", priority=3, sound="chime"):
-    """
-    Sends ntfy push notifications with custom alert sounds & priority levels.
-    Sounds: 'fanfare', 'gong', 'bing', 'subtle', 'chime', 'minion'
-    Priority: 5 = Urgent (breaks through Silent mode on iOS), 3 = Default, 2 = Low
-    """
     clean_title = title.encode("ascii", "ignore").decode("ascii").strip()
     if not clean_title:
         clean_title = "ApplicationTrackr Alert"
@@ -126,9 +166,7 @@ def send_notification(title, message, link=None, tags="briefcase", priority=3, s
 
 
 def update_google_sheet_via_webhook(company, stage, role="Software/Quant Role"):
-    """Sends POST request to Google Apps Script Webhook to update Google Sheet."""
     if not GOOGLE_SHEET_WEBHOOK_URL or "YOUR_WEBHOOK_ID" in GOOGLE_SHEET_WEBHOOK_URL:
-        print("⚠️ Google Sheet Webhook URL not set in docker-compose.yml.")
         return
 
     payload = {"company": company, "stage": stage, "role": role}
@@ -161,7 +199,6 @@ def save_seen_emails(seen):
 
 
 def check_email_inbox():
-    """Scans Gmail Inbox for application updates, OAs, interviews, and rejections."""
     if not GMAIL_USER or not GMAIL_APP_PASS or "your_email" in GMAIL_USER:
         return
 
@@ -173,13 +210,12 @@ def check_email_inbox():
         mail.login(GMAIL_USER, GMAIL_APP_PASS)
         mail.select("inbox")
 
-        # Search recent emails from last 7 days
         status, messages = mail.search(None, '(UNSEEN)')
         if status != "OK":
             return
 
         email_ids = messages[0].split()
-        for e_id in email_ids[-15:]:  # Check latest 15 unread emails
+        for e_id in email_ids[-15:]:
             if e_id.decode() in seen_emails:
                 continue
 
@@ -188,7 +224,6 @@ def check_email_inbox():
                 if isinstance(response_part, tuple):
                     msg = email.message_from_bytes(response_part[1])
                     
-                    # Extract Subject & From
                     subject, encoding = decode_header(msg["Subject"])[0]
                     if isinstance(subject, bytes):
                         subject = subject.decode(encoding or "utf-8", errors="ignore")
@@ -205,11 +240,9 @@ def check_email_inbox():
 
                     combined_text = f"{subject} {body_text}".lower()
 
-                    # Extract Company Name from Sender/Subject
                     company_match = re.search(r"at ([A-Z][a-zA-Z0-9]+)", subject) or re.search(r"@([a-zA-Z0-9]+)\.", from_sender)
                     company_name = company_match.group(1).capitalize() if company_match else "Company"
 
-                    # 1. ONLINE ASSESSMENT / INTERVIEW INVITE (HIGH PRIORITY ALERT)
                     if any(k in combined_text for k in ["online assessment", "coding test", "hackerrank", "codility", "hirevue", "invitation to interview", "schedule your interview"]):
                         seen_emails.add(e_id.decode())
                         stage = "Online Assessment" if "assessment" in combined_text or "hackerrank" in combined_text else "Interview"
@@ -218,11 +251,10 @@ def check_email_inbox():
                             title=f"🚨 {stage} Invite: {company_name}!",
                             message=f"New interview/assessment email received from {company_name}.\nCheck your inbox!",
                             tags="tada,fire",
-                            priority=5,      # URGENT PRIORITY
-                            sound="fanfare"  # HIGH-PRIORITY ALERT SOUND
+                            priority=5,
+                            sound="fanfare"
                         )
 
-                    # 2. APPLICATION CONFIRMATION
                     elif any(k in combined_text for k in ["thank you for applying", "application received", "thanks for your interest", "received your application"]):
                         seen_emails.add(e_id.decode())
                         update_google_sheet_via_webhook(company_name, "Applied")
@@ -234,7 +266,6 @@ def check_email_inbox():
                             sound="subtle"
                         )
 
-                    # 3. REJECTION
                     elif any(k in combined_text for k in ["we regret to inform you", "unfortunately", "will not be moving forward", "pursue other candidates"]):
                         seen_emails.add(e_id.decode())
                         update_google_sheet_via_webhook(company_name, "Rejected")
@@ -333,7 +364,7 @@ def run_all_scrapers():
                 link=link,
                 tags="sparkles,uk",
                 priority=3,
-                sound="bing"  # CUSTOM NEW JOB SOUND
+                sound="bing"
             )
 
 
@@ -427,4 +458,4 @@ if __name__ == "__main__":
         check_email_inbox()
         run_all_scrapers()
         generate_sankey_from_google_sheets()
-        time.sleep(1800)  # Check inbox & scrapers every 30 minutes
+        time.sleep(1800)
