@@ -19,7 +19,7 @@ PORT = 5000
 HP_STREAM_TAILSCALE_IP = "100.75.135.73"
 
 # ⚠️ PASTE YOUR PUBLISHED GOOGLE SHEET CSV URL HERE:
-GOOGLE_SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS94NpozDGeHO9UPag662CXcH-C5TGN9Y61-nW04VDlPJSZGVTq62E1lRvnXl8gq_CbR5kvMx5XnMFi/pub?output=csv"
+GOOGLE_SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/YOUR_GOOGLE_SHEET_ID_HERE/pub?output=csv"
 
 # Global Debug Status State
 SCRAPER_STATUS = {
@@ -29,13 +29,84 @@ SCRAPER_STATUS = {
     "source_status": {}
 }
 
-# Target Keywords for Filtering UK Internship Roles
-TARGET_KEYWORDS = ["intern", "internship", "placement", "spring", "graduate", "early talent"]
-UK_LOCATION_KEYWORDS = ["london", "uk", "united kingdom", "remote", "hybrid"]
+# ==========================================
+# TAILORED FILTERING CRITERIA (Maths + CS)
+# ==========================================
 
-# Public Companies to Monitor via Lever & Greenhouse ATS APIs (Zero API keys required)
-GREENHOUSE_COMPANIES = ["deliveroo", "cloudflare", "snyk", "monzo", "starlingbank", "janestreet", "optiver", "canonical"]
-LEVER_COMPANIES = ["spotify", "revolut", "checkout"]
+# 1. EXCLUSIONS (Instantly drop non-technical or senior roles)
+EXCLUDE_KEYWORDS = [
+    "vice president", "vp", "director", "head of", "principal", "senior manager",
+    "sales development", "account executive", "account manager", "sdr", "bdr",
+    "recruiter", "recruitment", "human resources", "marketing", "legal", "counsel",
+    "payroll", "facilities", "receptionist", "executive assistant", "office manager"
+]
+
+# 2. OPPORTUNITY TYPES (Year 2 Maths & CS Focus)
+LEVEL_KEYWORDS = [
+    "intern", "internship", "placement", "industrial placement", "sandwich",
+    "spring week", "insight week", "insight programme", "graduate", "grad",
+    "early talent", "early career", "trainee"
+]
+
+# 3. ROLE DOMAINS (Software, Quant, ML/AI, Cyber, FinTech)
+ROLE_KEYWORDS = [
+    "software", "developer", "engineer", "engineering", "backend", "fullstack",
+    "full-stack", "full stack", "systems", "quant", "quantitative", "trader",
+    "trading", "research", "machine learning", "ml", "ai", "artificial intelligence",
+    "data science", "data scientist", "data engineer", "cyber", "security",
+    "cloud", "devops", "infrastructure", "technology", "tech"
+]
+
+# 4. LOCATION PREFERENCES
+LOCATION_KEYWORDS = [
+    "london", "birmingham", "oxford", "aylesbury", "west midlands", "remote",
+    "uk", "united kingdom", "cambridge", "manchester", "edinburgh", "bristol"
+]
+
+# 5. SPECIAL INTERNATIONAL EXCEPTIONS (Cool Tech/Quant/Cars like BeamNG, Jane Street, Citadel)
+SPECIAL_INTL_COMPANIES = [
+    "beamng", "janestreet", "optiver", "citadel", "hudsonrivertrading", 
+    "hrt", "twosigma", "imc", "flowtraders", "wayve"
+]
+
+# Companies to Monitor via ATS APIs
+GREENHOUSE_COMPANIES = [
+    "deliveroo", "cloudflare", "snyk", "monzo", "starlingbank", 
+    "janestreet", "optiver", "canonical", "citadel", "hudsonrivertrading"
+]
+LEVER_COMPANIES = ["spotify", "revolut", "checkout", "beamng", "wayve"]
+
+
+def is_relevant_role(title, location, company):
+    """Filters roles specifically for Year 2 Maths & CS Student."""
+    title_lower = title.lower()
+    loc_lower = location.lower()
+    comp_lower = company.lower()
+
+    # Step 1: Reject excluded/irrelevant keywords
+    if any(ex in title_lower for ex in EXCLUDE_KEYWORDS):
+        return False
+
+    # Step 2: Must be an Internship, Placement, Spring Week, or Grad Role
+    has_level = any(lvl in title_lower for lvl in LEVEL_KEYWORDS)
+    if not has_level:
+        return False
+
+    # Step 3: Must match Software / Quant / AI / Tech domain
+    has_role = any(rk in title_lower for rk in ROLE_KEYWORDS)
+    if not has_role:
+        return False
+
+    # Step 4: Special International Exception (e.g. BeamNG or Top Quant)
+    if any(sc in comp_lower for sc in SPECIAL_INTL_COMPANIES):
+        return True
+
+    # Step 5: Location Match (UK / Preferred / Remote)
+    has_loc = any(loc in loc_lower for loc in LOCATION_KEYWORDS)
+    if has_loc or "remote" in loc_lower or "uk" in loc_lower or loc_lower == "":
+        return True
+
+    return False
 
 
 # ==========================================
@@ -66,23 +137,19 @@ def start_web_server():
 # MODULE 2: NOTIFICATION HELPER
 # ==========================================
 def send_notification(title, message, link=None, tags="briefcase"):
-    """Sends ntfy push notification with clickable action link and native tag emojis."""
-    # Ensure Title header is clean ASCII to prevent latin-1 HTTP header encoding errors
+    """Sends ntfy push notification with clean headers."""
     clean_title = title.encode("ascii", "ignore").decode("ascii").strip()
     if not clean_title:
         clean_title = title.replace("🚀", "").replace("🚨", "").replace("🎉", "").strip()
 
-    headers = {
-        "Title": clean_title,
-        "Tags": tags
-    }
+    headers = {"Title": clean_title, "Tags": tags}
     if link:
         headers["Click"] = link
 
     try:
         requests.post(
             f"https://ntfy.sh/{NTFY_TOPIC}",
-            data=message.encode("utf-8"),  # Body safely supports full UTF-8 emojis
+            data=message.encode("utf-8"),
             headers=headers,
             timeout=10
         )
@@ -92,7 +159,7 @@ def send_notification(title, message, link=None, tags="briefcase"):
 
 
 # ==========================================
-# MODULE 3: SCRAPER ENGINE SOURCES
+# MODULE 3: SCRAPER ENGINE
 # ==========================================
 def load_seen_jobs():
     if os.path.exists(SEEN_JOBS_FILE):
@@ -112,7 +179,6 @@ def save_seen_jobs(seen_jobs):
 
 
 def scrape_greenhouse_jobs(seen_jobs):
-    """Scrapes Greenhouse ATS public APIs for UK intern roles."""
     new_jobs = []
     source_name = "Greenhouse API"
     errors = 0
@@ -130,24 +196,19 @@ def scrape_greenhouse_jobs(seen_jobs):
                     job_id = f"gh_{company}_{job.get('id')}"
 
                     if job_id not in seen_jobs:
-                        title_lower = title.lower()
-                        loc_lower = location.lower()
-
-                        if any(k in title_lower for k in TARGET_KEYWORDS) and any(l in loc_lower for l in UK_LOCATION_KEYWORDS):
+                        if is_relevant_role(title, location, company):
                             seen_jobs.add(job_id)
                             new_jobs.append((f"{company.capitalize()} - {title}", location, job_url))
             else:
                 errors += 1
         except Exception as e:
             errors += 1
-            print(f"⚠️ [Greenhouse Scraper Error] {company}: {e}")
 
     SCRAPER_STATUS["source_status"][source_name] = f"OK ({errors} warnings)"
     return new_jobs
 
 
 def scrape_lever_jobs(seen_jobs):
-    """Scrapes Lever ATS public APIs for UK intern roles."""
     new_jobs = []
     source_name = "Lever API"
     errors = 0
@@ -165,24 +226,19 @@ def scrape_lever_jobs(seen_jobs):
                     job_id = f"lever_{company}_{job.get('id')}"
 
                     if job_id not in seen_jobs:
-                        title_lower = title.lower()
-                        loc_lower = location.lower()
-
-                        if any(k in title_lower for k in TARGET_KEYWORDS) and any(l in loc_lower for l in UK_LOCATION_KEYWORDS):
+                        if is_relevant_role(title, location, company):
                             seen_jobs.add(job_id)
                             new_jobs.append((f"{company.capitalize()} - {title}", location, job_url))
             else:
                 errors += 1
         except Exception as e:
             errors += 1
-            print(f"⚠️ [Lever Scraper Error] {company}: {e}")
 
     SCRAPER_STATUS["source_status"][source_name] = f"OK ({errors} warnings)"
     return new_jobs
 
 
 def scrape_github_lists(seen_jobs):
-    """Scrapes public open-source UK/International internship repositories."""
     new_jobs = []
     source_name = "GitHub Repos"
     urls = [
@@ -196,14 +252,12 @@ def scrape_github_lists(seen_jobs):
             if resp.status_code == 200:
                 lines = resp.text.split("\n")
                 for line in lines:
-                    if any(l in line.lower() for l in ["london", "united kingdom", "uk"]):
-                        # Hash line as job ID
+                    line_lower = line.lower()
+                    if is_relevant_role(line, "UK", "GitHubRepo"):
                         job_id = f"ghrepo_{hash(line)}"
                         if job_id not in seen_jobs:
                             seen_jobs.add(job_id)
-                            # Extract clean text line preview
-                            clean_line = line.replace("|", " ").replace("**", "").strip()[:80]
-                            new_jobs.append(("GitHub UK Listing", "UK / London", "https://github.com/simplify-jobs/Summer2026-Internships"))
+                            new_jobs.append(("GitHub Tech Role", "UK / Remote", "https://github.com/simplify-jobs/Summer2026-Internships"))
         except Exception as e:
             print(f"⚠️ [GitHub Scraper Error]: {e}")
 
@@ -212,7 +266,6 @@ def scrape_github_lists(seen_jobs):
 
 
 def scrape_trackr_website(seen_jobs):
-    """Scrapes Trackr public listings page."""
     new_jobs = []
     source_name = "Trackr Web"
     url = "https://the-trackr.com"
@@ -222,33 +275,27 @@ def scrape_trackr_website(seen_jobs):
         resp = requests.get(url, headers=headers, timeout=10)
         if resp.status_code == 200:
             soup = BeautifulSoup(resp.text, "html.parser")
-            # Parse links or cards containing internship text
             for a in soup.find_all("a", href=True):
                 text = a.get_text(strip=True)
                 href = a["href"]
-                if any(k in text.lower() for k in TARGET_KEYWORDS):
+                if is_relevant_role(text, "UK", "Trackr"):
                     job_id = f"trackr_{hash(href)}"
                     if job_id not in seen_jobs:
                         seen_jobs.add(job_id)
-                        new_jobs.append((f"Trackr Role: {text[:40]}", "UK", href if href.startswith("http") else f"https://the-trackr.com{href}"))
+                        full_url = href if href.startswith("http") else f"https://the-trackr.com{href}"
+                        new_jobs.append((f"Trackr: {text[:40]}", "UK", full_url))
         SCRAPER_STATUS["source_status"][source_name] = "OK"
     except Exception as e:
-        print(f"⚠️ [Trackr Scraper Error]: {e}")
         SCRAPER_STATUS["source_status"][source_name] = f"Error: {e}"
 
     return new_jobs
 
 
-# ==========================================
-# MODULE 4: MAIN SCRAPER RUNNER
-# ==========================================
 def run_all_scrapers():
-    """Runs all scrapers, saves state, and sends alerts for new roles."""
-    print("\n🔍 Running Active UK Internship Scraper Engine...")
+    print("\n🔍 Running Tailored UK Maths & CS Scraper Engine...")
     seen_jobs = load_seen_jobs()
     all_new_jobs = []
 
-    # Run each isolated scraper
     all_new_jobs.extend(scrape_greenhouse_jobs(seen_jobs))
     all_new_jobs.extend(scrape_lever_jobs(seen_jobs))
     all_new_jobs.extend(scrape_github_lists(seen_jobs))
@@ -256,32 +303,25 @@ def run_all_scrapers():
 
     save_seen_jobs(seen_jobs)
 
-    # Update Scraper Status Dashboard
     SCRAPER_STATUS["last_run"] = time.strftime("%Y-%m-%d %H:%M:%S")
     SCRAPER_STATUS["total_seen_jobs"] = len(seen_jobs)
     SCRAPER_STATUS["last_new_jobs_found"] = len(all_new_jobs)
 
-    # Send alerts for any newly discovered roles
     if all_new_jobs:
-        print(f"🚨 FOUND {len(all_new_jobs)} NEW UK INTERNSHIPS!")
+        print(f"🚨 FOUND {len(all_new_jobs)} NEW MATCHING ROLES!")
         for title, location, link in all_new_jobs:
             send_notification(
-                title=f"New UK Role: {title}",
+                title=f"New Role: {title}",
                 message=f"Location: {location}\nTap to open direct application link!",
                 link=link,
                 tags="rotating_light,sparkles,uk"
             )
     else:
-        print("✅ No new internship listings found this cycle.")
+        print("✅ No new matching internship listings found this cycle.")
 
 
-# ==========================================
-# MODULE 5: GOOGLE SHEETS SANKEY GENERATOR
-# ==========================================
 def generate_sankey_from_google_sheets():
-    """Fetches data from Google Sheets CSV URL and generates Sankey Diagram."""
     if "YOUR_GOOGLE_SHEET_ID_HERE" in GOOGLE_SHEET_CSV_URL:
-        print("⚠️ Note: Google Sheets CSV URL not configured yet. Skipping Sankey generation.")
         return
 
     try:
@@ -334,35 +374,25 @@ def generate_sankey_from_google_sheets():
 
         fig.update_layout(title_text="ApplicationTrackr - Live Google Sheets Funnel", font_size=12)
         fig.write_html("sankey_diagram.html")
-        print("📊 Updated Sankey diagram from Google Sheets.")
 
     except Exception as e:
         print(f"Error parsing Google Sheet: {e}")
 
 
-# ==========================================
-# MAIN EXECUTION LOOP
-# ==========================================
 if __name__ == "__main__":
-    # Start Web Dashboard
     web_thread = threading.Thread(target=start_web_server, daemon=True)
     web_thread.start()
     time.sleep(1)
 
     print("\n🚀 ApplicationTrackr Engine Online!")
     send_notification(
-        title="🚀 Scraper Engine Online",
-        message=f"Monitoring UK Internships.\nView Status: http://{HP_STREAM_TAILSCALE_IP}:{PORT}/status",
+        title="Scraper Engine Online",
+        message=f"Monitoring UK Maths & CS Roles.\nView Status: http://{HP_STREAM_TAILSCALE_IP}:{PORT}/status",
         link=f"http://{HP_STREAM_TAILSCALE_IP}:{PORT}/status",
-        tags="rocket"
+        tags="rocket,uk"
     )
 
     while True:
-        # 1. Run all scrapers
         run_all_scrapers()
-
-        # 2. Update Sankey diagram
         generate_sankey_from_google_sheets()
-
-        # 3. Sleep for 1 hour before next scrape cycle
         time.sleep(3600)
