@@ -66,19 +66,27 @@ def start_web_server():
 # MODULE 2: NOTIFICATION HELPER
 # ==========================================
 def send_notification(title, message, link=None, tags="briefcase"):
-    """Sends ntfy push notification with clickable action link."""
-    headers = {"Title": title, "Tags": tags}
+    """Sends ntfy push notification with clickable action link and native tag emojis."""
+    # Ensure Title header is clean ASCII to prevent latin-1 HTTP header encoding errors
+    clean_title = title.encode("ascii", "ignore").decode("ascii").strip()
+    if not clean_title:
+        clean_title = title.replace("🚀", "").replace("🚨", "").replace("🎉", "").strip()
+
+    headers = {
+        "Title": clean_title,
+        "Tags": tags
+    }
     if link:
         headers["Click"] = link
 
     try:
         requests.post(
             f"https://ntfy.sh/{NTFY_TOPIC}",
-            data=message.encode("utf-8"),
+            data=message.encode("utf-8"),  # Body safely supports full UTF-8 emojis
             headers=headers,
             timeout=10
         )
-        print(f"✅ Notification Sent: {title}")
+        print(f"✅ Notification Sent: {clean_title}")
     except Exception as e:
         print(f"❌ Failed to send notification: {e}")
 
@@ -258,10 +266,10 @@ def run_all_scrapers():
         print(f"🚨 FOUND {len(all_new_jobs)} NEW UK INTERNSHIPS!")
         for title, location, link in all_new_jobs:
             send_notification(
-                title=f"🚨 New UK Role: {title}",
+                title=f"New UK Role: {title}",
                 message=f"Location: {location}\nTap to open direct application link!",
                 link=link,
-                tags="sparkles,uk"
+                tags="rotating_light,sparkles,uk"
             )
     else:
         print("✅ No new internship listings found this cycle.")
