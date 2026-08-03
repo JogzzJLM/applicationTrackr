@@ -2,75 +2,67 @@ import csv
 import json
 import os
 import time
+import threading
+import http.server
+import socketserver
 import requests
-from bs4 import BeautifulSoup
 import plotly.graph_objects as go
 
 # Configuration
 NTFY_TOPIC = "jog_applicationtrackr_alerts"
 SEEN_JOBS_FILE = "seen_jobs.json"
 CSV_FILE = "applications.csv"
+PORT = 5000
+HP_STREAM_TAILSCALE_IP = "100.75.135.73"  # Your Tailscale IP
 
 # ==========================================
-# MODULE 1: JOB OPENING MONITOR
+# MODULE 1: EMBEDDED WEB SERVER (FOR SANKEY)
 # ==========================================
-def check_job_openings():
-    """Scrapes UK OpenTracker / Github lists for new postings."""
-    print("Checking for new UK internship openings...")
+def start_web_server():
+    """Serves the sankey_diagram.html file at http://100.75.135.73:5000"""
+    class CustomHandler(http.server.SimpleHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/" or self.path == "/sankey":
+                self.path = "/sankey_diagram.html"
+            return super().do_GET()
 
-    # Load previously seen jobs
-    seen_jobs = set()
-    if os.path.exists(SEEN_JOBS_FILE):
-        with open(SEEN_JOBS_FILE, "r") as f:
-            seen_jobs = set(json.load(f))
-
-    # Example: Scraping public UK Tech Internships listing / API
-    url = "https://raw.githubusercontent.com/pittcsc/Summer2025-Internships/main/README.md"
-    try:
-        response = requests.get(url)
-        if response.status_code == 200:
-            lines = response.text.split("\n")
-            for line in lines:
-                # Look for lines containing UK or Remote positions
-                if "United Kingdom" in line or "UK" in line or "London" in line:
-                    # Clean line to extract company name/role keyword
-                    job_id = line.strip()[:100]
-                    if job_id not in seen_jobs:
-                        seen_jobs.add(job_id)
-                        # Send alert to your phone
-                        send_notification(
-                            "🚨 New UK Internship Found!",
-                            f"Listing updated: {job_id[:80]}..."
-                        )
-
-            # Save updated seen jobs
-            with open(SEEN_JOBS_FILE, "w") as f:
-                json.dump(list(seen_jobs), f)
-
-    except Exception as e:
-        print(f"Error checking jobs: {e}")
+    # Allow port reuse
+    socketserver.TCPServer.allow_reuse_address = True
+    with socketserver.TCPServer(("", PORT), CustomHandler) as httpd:
+        print(f"🌍 Sankey Web Dashboard live at: http://{HP_STREAM_TAILSCALE_IP}:{PORT}")
+        httpd.serve_forever()
 
 
-def send_notification(title, message):
-    """Sends push notification via ntfy.sh"""
+# ==========================================
+# MODULE 2: RICH NOTIFICATIONS (WITH LINKS)
+# ==========================================
+def send_notification(title, message, link=None, tags="briefcase"):
+    """Sends ntfy notification with clickable action links and icons."""
+    headers = {
+        "Title": title,
+        "Tags": tags
+    }
+    if link:
+        # Tapping the notification opens this URL directly
+        headers["Click"] = link
+
     try:
         requests.post(
             f"https://ntfy.sh/{NTFY_TOPIC}",
             data=message.encode("utf-8"),
-            headers={"Title": title}
+            headers=headers
         )
-        print(f"Notification sent: {title}")
+        print(f"✅ Notification sent: {title}")
     except Exception as e:
-        print(f"Failed to send notification: {e}")
+        print(f"❌ Failed to send notification: {e}")
 
 
 # ==========================================
-# MODULE 2: SANKEY DIAGRAM GENERATOR
+# MODULE 3: SANKEY GENERATOR
 # ==========================================
 def generate_sankey():
-    """Reads applications.csv and generates a Sankey diagram HTML file."""
+    """Reads applications.csv and generates sankey_diagram.html."""
     if not os.path.exists(CSV_FILE):
-        # Create dummy file if it doesn't exist
         with open(CSV_FILE, "w", newline="") as f:
             writer = csv.writer(f)
             writer.writerow(["Company", "Stage"])
@@ -78,8 +70,8 @@ def generate_sankey():
             writer.writerow(["Meta", "Direct Rejection"])
             writer.writerow(["Amazon", "HR Screening"])
             writer.writerow(["Palantir", "Final Interview"])
+            writer.writerow(["Jane Street", "Offer"])
 
-    # Count stages
     stages = {}
     with open(CSV_FILE, "r") as f:
         reader = csv.DictReader(f)
@@ -88,17 +80,13 @@ def generate_sankey():
             stages[stage] = stages.get(stage, 0) + 1
 
     total_applied = sum(stages.values())
-    if total_applied == 0:
-        return
 
-    # Sankey nodes
     labels = [
         f"Applied ({total_applied})",
         f"Ghosted ({stages.get('Ghosted', 0)})",
         f"Direct Rejection ({stages.get('Direct Rejection', 0)})",
         f"HR Screening ({stages.get('HR Screening', 0)})",
-        f"Technical/First Round ({stages.get('First Round', 0)})",
-        f"Final Round ({stages.get('Final Round', 0)})",
+        f"Final Round ({stages.get('Final Interview', 0)})",
         f"Offer ({stages.get('Offer', 0)})"
     ]
 
@@ -108,36 +96,66 @@ def generate_sankey():
             thickness=20,
             line=dict(color="black", width=0.5),
             label=labels,
-            color="blue"
+            color=["#3182bd", "#969696", "#de2d26", "#e6550d", "#756bb1", "#31a354"]
         ),
         link=dict(
-            source=[0, 0, 0, 3, 4, 5], # indices match labels above
-            target=[1, 2, 3, 4, 5, 6],
+            source=[0, 0, 0, 3, 4],
+            target=[1, 2, 3, 4, 5],
             value=[
                 stages.get('Ghosted', 1),
                 stages.get('Direct Rejection', 1),
                 stages.get('HR Screening', 1),
-                stages.get('First Round', 1),
-                stages.get('Final Round', 1),
+                stages.get('Final Interview', 1),
                 stages.get('Offer', 1)
             ]
         )
     )])
 
-    fig.update_layout(title_text="Internship Application Funnel", font_size=12)
+    fig.update_layout(title_text="ApplicationTrackr - Internship Funnel", font_size=12)
     fig.write_html("sankey_diagram.html")
-    print("Updated sankey_diagram.html successfully.")
+    print("📊 Generated updated sankey_diagram.html")
 
 
 # ==========================================
-# MAIN LOOP
+# MODULE 4: INITIALIZATION SELF-TEST
+# ==========================================
+def run_initialization_test():
+    """Runs a full system test on startup."""
+    print("\n🚀 --- STARTING INITIALIZATION SELF-TEST ---")
+    
+    # 1. Generate test Sankey
+    generate_sankey()
+    
+    # 2. Send test notification with link
+    dashboard_url = f"http://{HP_STREAM_TAILSCALE_IP}:{PORT}"
+    sample_job_url = "https://the-trackr.com"
+    
+    send_notification(
+        title="🎉 ApplicationTrackr Ready!",
+        message=f"System online!\n\nTap to test clickable link (Trackr).\nView Sankey chart at: {dashboard_url}",
+        link=sample_job_url,
+        tags="rocket,check-mark"
+    )
+    print("🚀 --- INITIALIZATION TEST COMPLETE ---\n")
+
+
+# ==========================================
+# MAIN EXECUTION
 # ==========================================
 if __name__ == "__main__":
-    print("HP Stream ApplicationTrackr Running...")
-    send_notification("ApplicationTrackr Bot Active", "Internship monitoring and Sankey generator initialized.")
+    # Start Web Server in a background thread
+    web_thread = threading.Thread(target=start_web_server, daemon=True)
+    web_thread.start()
     
+    # Give web server a second to initialize
+    time.sleep(1)
+
+    # Run initial feature self-test
+    run_initialization_test()
+
+    # Main Scraper / Monitoring Loop
     while True:
-        check_job_openings()
+        # Re-generate Sankey diagram periodically
         generate_sankey()
-        # Sleep for 4 hours before next check
+        # Sleep for 4 hours
         time.sleep(14400)
