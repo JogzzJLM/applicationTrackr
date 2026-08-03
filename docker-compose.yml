@@ -1,0 +1,9 @@
+version: '3.8'
+
+services:
+  applicationtrackr:
+    build: .
+    container_name: applicationtrackr
+    restart: always
+    environment:
+      - PYTHONUNBUFFERED=1

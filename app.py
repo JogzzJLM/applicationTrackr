@@ -7,7 +7,7 @@ from bs4 import BeautifulSoup
 import plotly.graph_objects as go
 
 # Configuration
-NTFY_TOPIC = "jog_hpstream_alerts"  # Your ntfy channel
+NTFY_TOPIC = "jog_applicationtrackr_alerts"
 SEEN_JOBS_FILE = "seen_jobs.json"
 CSV_FILE = "applications.csv"
 
@@ -133,8 +133,8 @@ def generate_sankey():
 # MAIN LOOP
 # ==========================================
 if __name__ == "__main__":
-    print("HP Stream Internship Automator Running...")
-    send_notification("HP Stream Bot Active", "Internship monitoring and Sankey generator initialized.")
+    print("HP Stream ApplicationTrackr Running...")
+    send_notification("ApplicationTrackr Bot Active", "Internship monitoring and Sankey generator initialized.")
     
     while True:
         check_job_openings()
