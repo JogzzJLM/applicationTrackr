@@ -2,21 +2,27 @@ import csv
 import json
 import os
 import time
+import io
 import threading
 import http.server
 import socketserver
 import requests
 import plotly.graph_objects as go
 
-# Configuration
+# ==========================================
+# CONFIGURATION
+# ==========================================
 NTFY_TOPIC = "jog_applicationtrackr_alerts"
 SEEN_JOBS_FILE = "seen_jobs.json"
-CSV_FILE = "applications.csv"
 PORT = 5000
-HP_STREAM_TAILSCALE_IP = "100.75.135.73"  # Your Tailscale IP
+HP_STREAM_TAILSCALE_IP = "100.75.135.73"
+
+# ⚠️ PASTE YOUR PUBLISHED GOOGLE SHEET CSV URL HERE:
+GOOGLE_SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS94NpozDGeHO9UPag662CXcH-C5TGN9Y61-nW04VDlPJSZGVTq62E1lRvnXl8gq_CbR5kvMx5XnMFi/pub?output=csv"
+
 
 # ==========================================
-# MODULE 1: EMBEDDED WEB SERVER (FOR SANKEY)
+# MODULE 1: EMBEDDED WEB SERVER
 # ==========================================
 def start_web_server():
     """Serves the sankey_diagram.html file at http://100.75.135.73:5000"""
@@ -26,7 +32,6 @@ def start_web_server():
                 self.path = "/sankey_diagram.html"
             return super().do_GET()
 
-    # Allow port reuse
     socketserver.TCPServer.allow_reuse_address = True
     with socketserver.TCPServer(("", PORT), CustomHandler) as httpd:
         print(f"🌍 Sankey Web Dashboard live at: http://{HP_STREAM_TAILSCALE_IP}:{PORT}")
@@ -34,16 +39,12 @@ def start_web_server():
 
 
 # ==========================================
-# MODULE 2: RICH NOTIFICATIONS (WITH LINKS)
+# MODULE 2: RICH NOTIFICATIONS
 # ==========================================
 def send_notification(title, message, link=None, tags="briefcase"):
-    """Sends ntfy notification with clickable action links and icons."""
-    headers = {
-        "Title": title,
-        "Tags": tags
-    }
+    """Sends ntfy notification with clickable action links."""
+    headers = {"Title": title, "Tags": tags}
     if link:
-        # Tapping the notification opens this URL directly
         headers["Click"] = link
 
     try:
@@ -58,104 +59,89 @@ def send_notification(title, message, link=None, tags="briefcase"):
 
 
 # ==========================================
-# MODULE 3: SANKEY GENERATOR
+# MODULE 3: GOOGLE SHEETS SANKEY GENERATOR
 # ==========================================
-def generate_sankey():
-    """Reads applications.csv and generates sankey_diagram.html."""
-    if not os.path.exists(CSV_FILE):
-        with open(CSV_FILE, "w", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow(["Company", "Stage"])
-            writer.writerow(["Google", "Ghosted"])
-            writer.writerow(["Meta", "Direct Rejection"])
-            writer.writerow(["Amazon", "HR Screening"])
-            writer.writerow(["Palantir", "Final Interview"])
-            writer.writerow(["Jane Street", "Offer"])
+def generate_sankey_from_google_sheets():
+    """Fetches data from Google Sheets CSV URL and generates Sankey Diagram."""
+    if "YOUR_GOOGLE_SHEET_ID_HERE" in GOOGLE_SHEET_CSV_URL:
+        print("⚠️ Warning: Please replace GOOGLE_SHEET_CSV_URL with your published link!")
+        return
 
-    stages = {}
-    with open(CSV_FILE, "r") as f:
-        reader = csv.DictReader(f)
+    try:
+        response = requests.get(GOOGLE_SHEET_CSV_URL)
+        if response.status_code != 200:
+            print(f"❌ Failed to fetch Google Sheet: Status {response.status_code}")
+            return
+
+        # Read CSV data directly from URL response
+        csv_data = io.StringIO(response.text)
+        reader = csv.DictReader(csv_data)
+
+        stages = {}
         for row in reader:
-            stage = row["Stage"]
-            stages[stage] = stages.get(stage, 0) + 1
+            stage = row.get("Stage", "").strip()
+            if stage:
+                stages[stage] = stages.get(stage, 0) + 1
 
-    total_applied = sum(stages.values())
+        total_applied = sum(stages.values())
+        if total_applied == 0:
+            return
 
-    labels = [
-        f"Applied ({total_applied})",
-        f"Ghosted ({stages.get('Ghosted', 0)})",
-        f"Direct Rejection ({stages.get('Direct Rejection', 0)})",
-        f"HR Screening ({stages.get('HR Screening', 0)})",
-        f"Final Round ({stages.get('Final Interview', 0)})",
-        f"Offer ({stages.get('Offer', 0)})"
-    ]
+        labels = [
+            f"Applied ({total_applied})",
+            f"Ghosted ({stages.get('Ghosted', 0)})",
+            f"Direct Rejection ({stages.get('Direct Rejection', 0)})",
+            f"HR Screening ({stages.get('HR Screening', 0)})",
+            f"Final Round ({stages.get('Final Interview', 0)})",
+            f"Offer ({stages.get('Offer', 0)})"
+        ]
 
-    fig = go.Figure(data=[go.Sankey(
-        node=dict(
-            pad=15,
-            thickness=20,
-            line=dict(color="black", width=0.5),
-            label=labels,
-            color=["#3182bd", "#969696", "#de2d26", "#e6550d", "#756bb1", "#31a354"]
-        ),
-        link=dict(
-            source=[0, 0, 0, 3, 4],
-            target=[1, 2, 3, 4, 5],
-            value=[
-                stages.get('Ghosted', 1),
-                stages.get('Direct Rejection', 1),
-                stages.get('HR Screening', 1),
-                stages.get('Final Interview', 1),
-                stages.get('Offer', 1)
-            ]
-        )
-    )])
+        fig = go.Figure(data=[go.Sankey(
+            node=dict(
+                pad=15,
+                thickness=20,
+                line=dict(color="black", width=0.5),
+                label=labels,
+                color=["#3182bd", "#969696", "#de2d26", "#e6550d", "#756bb1", "#31a354"]
+            ),
+            link=dict(
+                source=[0, 0, 0, 3, 4],
+                target=[1, 2, 3, 4, 5],
+                value=[
+                    stages.get('Ghosted', 1),
+                    stages.get('Direct Rejection', 1),
+                    stages.get('HR Screening', 1),
+                    stages.get('Final Interview', 1),
+                    stages.get('Offer', 1)
+                ]
+            )
+        )])
 
-    fig.update_layout(title_text="ApplicationTrackr - Internship Funnel", font_size=12)
-    fig.write_html("sankey_diagram.html")
-    print("📊 Generated updated sankey_diagram.html")
+        fig.update_layout(title_text="ApplicationTrackr - Live Google Sheets Funnel", font_size=12)
+        fig.write_html("sankey_diagram.html")
+        print("📊 Updated Sankey diagram from Google Sheets data.")
 
-
-# ==========================================
-# MODULE 4: INITIALIZATION SELF-TEST
-# ==========================================
-def run_initialization_test():
-    """Runs a full system test on startup."""
-    print("\n🚀 --- STARTING INITIALIZATION SELF-TEST ---")
-    
-    # 1. Generate test Sankey
-    generate_sankey()
-    
-    # 2. Send test notification with link
-    dashboard_url = f"http://{HP_STREAM_TAILSCALE_IP}:{PORT}"
-    sample_job_url = "https://the-trackr.com"
-    
-    send_notification(
-        title="🎉 ApplicationTrackr Ready!",
-        message=f"System online!\n\nTap to test clickable link (Trackr).\nView Sankey chart at: {dashboard_url}",
-        link=sample_job_url,
-        tags="rocket,check-mark"
-    )
-    print("🚀 --- INITIALIZATION TEST COMPLETE ---\n")
+    except Exception as e:
+        print(f"Error parsing Google Sheet: {e}")
 
 
 # ==========================================
 # MAIN EXECUTION
 # ==========================================
 if __name__ == "__main__":
-    # Start Web Server in a background thread
     web_thread = threading.Thread(target=start_web_server, daemon=True)
     web_thread.start()
-    
-    # Give web server a second to initialize
     time.sleep(1)
 
-    # Run initial feature self-test
-    run_initialization_test()
+    print("\n🚀 ApplicationTrackr connected to Google Sheets!")
+    send_notification(
+        title="🎉 ApplicationTrackr Google Sheets Active",
+        message=f"Live Dashboard: http://{HP_STREAM_TAILSCALE_IP}:{PORT}",
+        link=f"http://{HP_STREAM_TAILSCALE_IP}:{PORT}",
+        tags="google,rocket"
+    )
 
-    # Main Scraper / Monitoring Loop
     while True:
-        # Re-generate Sankey diagram periodically
-        generate_sankey()
-        # Sleep for 4 hours
-        time.sleep(14400)
+        generate_sankey_from_google_sheets()
+        # Refresh every 15 minutes
+        time.sleep(900)
