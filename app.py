@@ -28,12 +28,16 @@ GMAIL_APP_PASS = os.getenv("GMAIL_APP_PASS", "")
 GOOGLE_SHEET_WEBHOOK_URL = os.getenv("GOOGLE_SHEET_WEBHOOK_URL", "")
 GOOGLE_SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS94NpozDGeHO9UPag662CXcH-C5TGN9Y61-nW04VDlPJSZGVTq62E1lRvnXl8gq_CbR5kvMx5XnMFi/pub?output=csv"
 
+# Global Debug Status State
 SCRAPER_STATUS = {
     "last_run": "Never",
     "total_seen_jobs": 0,
     "last_new_jobs_found": 0,
     "source_status": {}
 }
+
+LAST_BRIEFING_DATE = ""
+LAST_WEEKLY_REPORT_DATE = ""
 
 EXCLUDE_KEYWORDS = ["vice president", "vp", "director", "head of", "principal", "senior manager", "sales development", "account executive", "recruiter", "marketing", "legal"]
 LEVEL_KEYWORDS = ["intern", "internship", "placement", "industrial placement", "sandwich", "spring week", "insight week", "graduate", "grad", "early talent", "early career"]
@@ -64,12 +68,11 @@ def is_relevant_role(title, location, company):
 
 
 # ==========================================
-# MODULE 1: EMBEDDED WEB SERVER & API ENDPOINT
+# MODULE 1: EMBEDDED WEB SERVER & API ENDPOINTS
 # ==========================================
 def start_web_server():
     class CustomHandler(http.server.SimpleHTTPRequestHandler):
         def do_OPTIONS(self):
-            """Handle CORS Preflight requests for Safari."""
             self.send_response(200)
             self.send_header("Access-Control-Allow-Origin", "*")
             self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
@@ -77,7 +80,6 @@ def start_web_server():
             self.end_headers()
 
         def do_POST(self):
-            """Endpoint /api/log: Receives 1-click logs from Safari Bookmarklet."""
             if self.path == "/api/log":
                 content_length = int(self.headers.get("Content-Length", 0))
                 body = self.rfile.read(content_length).decode("utf-8")
@@ -86,11 +88,9 @@ def start_web_server():
                     company = data.get("company", "Unknown")
                     role = data.get("role", "Software/Quant Role")
 
-                    # Log to Google Sheets
                     update_google_sheet_via_webhook(company, "Applied", role)
                     generate_sankey_from_google_sheets()
 
-                    # Trigger alert
                     send_notification(
                         title=f"Logged: {company}",
                         message=f"Added {company} ({role}) as 'Applied' in Google Sheets.",
@@ -128,6 +128,18 @@ def start_web_server():
                 self.end_headers()
                 self.wfile.write(json.dumps(SCRAPER_STATUS, indent=2).encode("utf-8"))
                 return
+            elif self.path == "/test-briefing":
+                send_daily_briefing()
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"Daily Briefing Test Triggered!")
+                return
+            elif self.path == "/test-weekly":
+                send_weekly_funnel_report()
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"Weekly Funnel Report Test Triggered!")
+                return
             return super().do_GET()
 
     socketserver.TCPServer.allow_reuse_address = True
@@ -137,7 +149,7 @@ def start_web_server():
 
 
 # ==========================================
-# MODULE 2: NOTIFICATION & SHEET HELPERS
+# MODULE 2: NOTIFICATIONS & SHEET HELPERS
 # ==========================================
 def send_notification(title, message, link=None, tags="briefcase", priority=3, sound="chime"):
     clean_title = title.encode("ascii", "ignore").decode("ascii").strip()
@@ -179,7 +191,113 @@ def update_google_sheet_via_webhook(company, stage, role="Software/Quant Role"):
 
 
 # ==========================================
-# MODULE 3: EMAIL INBOX LISTENER (IMAP)
+# MODULE 3: MORNING BRIEFING & WEEKLY REPORTS
+# ==========================================
+def fetch_google_sheet_stats():
+    """Reads current statistics from Google Sheets."""
+    stats = {"total": 0, "applied": 0, "assessments": 0, "interviews": 0, "offers": 0, "rejections": 0, "ghosted": 0}
+    try:
+        cache_url = f"{GOOGLE_SHEET_CSV_URL}&_cb={int(time.time())}"
+        response = requests.get(cache_url, timeout=10)
+        if response.status_code == 200:
+            csv_data = io.StringIO(response.text)
+            reader = csv.DictReader(csv_data)
+            for row in reader:
+                stages = [val.strip() for col, val in row.items() if val and val.strip() and col.lower() not in ["company", "role", "link", "date"]]
+                if stages:
+                    stats["total"] += 1
+                    last_stage = stages[-1].lower()
+                    if "offer" in last_stage:
+                        stats["offers"] += 1
+                    elif "interview" in last_stage:
+                        stats["interviews"] += 1
+                    elif "assessment" in last_stage or "oa" in last_stage:
+                        stats["assessments"] += 1
+                    elif "reject" in last_stage:
+                        stats["rejections"] += 1
+                    elif "ghost" in last_stage:
+                        stats["ghosted"] += 1
+                    else:
+                        stats["applied"] += 1
+    except Exception as e:
+        print(f"Error fetching sheet stats: {e}")
+    return stats
+
+
+def send_daily_briefing():
+    """8:00 AM Daily Morning Briefing."""
+    print("☀️ Sending Daily Morning Briefing...")
+    stats = fetch_google_sheet_stats()
+    new_jobs_24h = SCRAPER_STATUS.get("last_new_jobs_found", 0)
+
+    msg = (
+        f"Good morning, Jog!\n\n"
+        f"• New UK Roles Found (24h): {new_jobs_24h}\n"
+        f"• Total Applications Logged: {stats['total']}\n"
+        f"• Active Assessments/Interviews: {stats['assessments'] + stats['interviews']}\n"
+        f"• Pending Applications: {stats['applied']}\n\n"
+        f"View Live Dashboard: http://{HP_STREAM_TAILSCALE_IP}:{PORT}"
+    )
+
+    send_notification(
+        title="☀️ Daily Morning Briefing",
+        message=msg,
+        link=f"http://{HP_STREAM_TAILSCALE_IP}:{PORT}",
+        tags="sun,sunrise,briefcase",
+        priority=3,
+        sound="chime"
+    )
+
+
+def send_weekly_funnel_report():
+    """Sunday 6:00 PM Weekly Analytics Funnel Report."""
+    print("📊 Sending Sunday Weekly Funnel Report...")
+    stats = fetch_google_sheet_stats()
+    total = stats["total"]
+    advancements = stats["assessments"] + stats["interviews"] + stats["offers"]
+    conversion_rate = round((advancements / total * 100), 1) if total > 0 else 0
+
+    msg = (
+        f"Weekly Application Funnel Summary:\n\n"
+        f"• Total Logged Applications: {total}\n"
+        f"• Online Assessments (OAs): {stats['assessments']}\n"
+        f"• Interviews: {stats['interviews']}\n"
+        f"• Offers Received: {stats['offers']} 🎉\n"
+        f"• Rejections: {stats['rejections']}\n"
+        f"• Ghosted: {stats['ghosted']}\n\n"
+        f"📈 Funnel Conversion Rate: {conversion_rate}%\n"
+        f"View Sankey Flow: http://{HP_STREAM_TAILSCALE_IP}:{PORT}"
+    )
+
+    send_notification(
+        title="📊 Sunday Weekly Analytics Report",
+        message=msg,
+        link=f"http://{HP_STREAM_TAILSCALE_IP}:{PORT}",
+        tags="bar_chart,chart_with_upwards_trend",
+        priority=4,
+        sound="fanfare"
+    )
+
+
+def check_scheduled_reports():
+    """Checks system time and triggers 8 AM Morning Briefing and Sunday 6 PM Weekly Report."""
+    global LAST_BRIEFING_DATE, LAST_WEEKLY_REPORT_DATE
+    now = time.localtime()
+    today_str = time.strftime("%Y-%m-%d", now)
+
+    # Daily Briefing at 8:00 AM
+    if now.tm_hour == 8 and LAST_BRIEFING_DATE != today_str:
+        LAST_BRIEFING_DATE = today_str
+        send_daily_briefing()
+
+    # Sunday Weekly Funnel Report at 6:00 PM (tm_wday == 6 is Sunday)
+    if now.tm_wday == 6 and now.tm_hour == 18 and LAST_WEEKLY_REPORT_DATE != today_str:
+        LAST_WEEKLY_REPORT_DATE = today_str
+        send_weekly_funnel_report()
+
+
+# ==========================================
+# MODULE 4: EMAIL INBOX LISTENER (IMAP)
 # ==========================================
 def load_seen_emails():
     if os.path.exists(SEEN_EMAILS_FILE):
@@ -285,7 +403,7 @@ def check_email_inbox():
 
 
 # ==========================================
-# MODULE 4: SCRAPER ENGINE SOURCES
+# MODULE 5: SCRAPER ENGINE SOURCES
 # ==========================================
 def load_seen_jobs():
     if os.path.exists(SEEN_JOBS_FILE):
@@ -355,6 +473,10 @@ def run_all_scrapers():
     all_new_jobs.extend(scrape_lever_jobs(seen_jobs))
     save_seen_jobs(seen_jobs)
 
+    SCRAPER_STATUS["last_run"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    SCRAPER_STATUS["total_seen_jobs"] = len(seen_jobs)
+    SCRAPER_STATUS["last_new_jobs_found"] = len(all_new_jobs)
+
     if all_new_jobs:
         print(f"🚨 FOUND {len(all_new_jobs)} NEW MATCHING ROLES!")
         for title, location, link in all_new_jobs:
@@ -369,7 +491,7 @@ def run_all_scrapers():
 
 
 # ==========================================
-# MODULE 5: SANKEY FLOW GENERATOR
+# MODULE 6: SANKEY FLOW GENERATOR
 # ==========================================
 def generate_sankey_from_google_sheets():
     try:
@@ -455,6 +577,7 @@ if __name__ == "__main__":
     )
 
     while True:
+        check_scheduled_reports()  # Checks for 8:00 AM Daily Briefing & Sunday 6:00 PM Report
         check_email_inbox()
         run_all_scrapers()
         generate_sankey_from_google_sheets()
