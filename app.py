@@ -65,7 +65,7 @@ def is_relevant_role(title, location, company):
 
 
 # ==========================================
-# MODULE 1: EMBEDDED WEB SERVER & API ENDPOINT
+# MODULE 1: EMBEDDED WEB SERVER & API ENDPOINTS
 # ==========================================
 def start_web_server():
     class CustomHandler(http.server.SimpleHTTPRequestHandler):
@@ -115,17 +115,61 @@ def start_web_server():
         def do_GET(self):
             self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
             self.send_header("Access-Control-Allow-Origin", "*")
+
+            # 1. SANKEY DIAGRAM DASHBOARD
             if self.path in ["/", "/sankey", "/refresh"]:
                 generate_sankey_from_google_sheets()
-                self.path = "/sankey_diagram.html"
-                return super().do_GET()
+                if os.path.exists("sankey_diagram.html"):
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.end_headers()
+                    with open("sankey_diagram.html", "rb") as f:
+                        self.wfile.write(f.read())
+                    return
+                else:
+                    self.send_response(500)
+                    self.end_headers()
+                    self.wfile.write(b"Sankey diagram rendering in progress...")
+                    return
+
+            # 2. DIAGNOSTICS STATUS
             elif self.path == "/status":
                 self.send_response(200)
-                self.send_header("Content-type", "application/json")
+                self.send_header("Content-Type", "application/json")
                 self.end_headers()
                 self.wfile.write(json.dumps(SCRAPER_STATUS, indent=2).encode("utf-8"))
                 return
-            return super().do_GET()
+
+            # 3. TEST ENDPOINT: DAILY BRIEFING
+            elif self.path == "/test-briefing":
+                trigger_daily_briefing()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain")
+                self.end_headers()
+                self.wfile.write(b"✅ Triggered test Daily Morning Briefing! Check ntfy on your phone/Mac.")
+                return
+
+            # 4. TEST ENDPOINT: WEEKLY REPORT
+            elif self.path == "/test-weekly":
+                trigger_weekly_report()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain")
+                self.end_headers()
+                self.wfile.write(b"✅ Triggered test Sunday Weekly Funnel Report! Check ntfy on your phone/Mac.")
+                return
+
+            # 5. TEST ENDPOINT: SCRAPER RUN
+            elif self.path == "/test-scraper":
+                run_all_scrapers()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain")
+                self.end_headers()
+                self.wfile.write(b"✅ Triggered manual scraper run!")
+                return
+
+            self.send_response(404)
+            self.end_headers()
+            self.wfile.write(b"404 Not Found")
 
     socketserver.TCPServer.allow_reuse_address = True
     with socketserver.TCPServer(("", PORT), CustomHandler) as httpd:
@@ -209,6 +253,37 @@ def parse_sheet_stats():
     except Exception as e:
         print(f"Error parsing stats for report: {e}")
         return {"total": 0, "active": 0, "offers": 0, "rejections": 0}
+
+
+def trigger_daily_briefing():
+    """Triggers the Daily Morning Briefing alert."""
+    stats = parse_sheet_stats()
+    new_jobs_today = SCRAPER_STATUS.get("last_new_jobs_found", 0)
+    
+    send_notification(
+        title="Daily Morning Briefing",
+        message=f"Good morning! ☀️\nTotal Logged: {stats['total']}\nActive/Pending Rounds: {stats['active']}\nNew Schemes Found Yesterday: {new_jobs_today}",
+        link=f"http://{HP_STREAM_TAILSCALE_IP}:{PORT}/sankey",
+        tags="sun,briefcase",
+        priority=3,
+        sound="bing"
+    )
+
+
+def trigger_weekly_report():
+    """Triggers the Sunday Weekly Funnel Report alert."""
+    stats = parse_sheet_stats()
+    total = stats["total"]
+    conv_rate = round((stats["active"] + stats["offers"]) / total * 100, 1) if total > 0 else 0.0
+
+    send_notification(
+        title="Sunday Weekly Funnel Report",
+        message=f"Weekly Funnel Summary 📊\nApplied Total: {total}\nActive Rounds/Interviews: {stats['active']}\nOffers: {stats['offers']}\nRejections/Ghosted: {stats['rejections']}\nConversion Rate: {conv_rate}%",
+        link=f"http://{HP_STREAM_TAILSCALE_IP}:{PORT}/sankey",
+        tags="bar_chart,trophy",
+        priority=4,
+        sound="fanfare"
+    )
 
 
 # ==========================================
@@ -472,7 +547,6 @@ def generate_sankey_from_google_sheets():
 # MODULE 6: DAILY BRIEFING & SUNDAY REPORT SCHEDULER
 # ==========================================
 def scheduler_loop():
-    """Background thread checking time for 08:00 AM daily briefing & Sunday 18:00 report."""
     last_daily_date = ""
     last_weekly_date = ""
 
@@ -481,41 +555,18 @@ def scheduler_loop():
             now = datetime.now()
             today_str = now.strftime("%Y-%m-%d")
 
-            # 1. DAILY BRIEFING (Every morning at 08:00 AM)
             if now.hour == 8 and now.minute == 0 and last_daily_date != today_str:
-                stats = parse_sheet_stats()
-                new_jobs_today = SCRAPER_STATUS.get("last_new_jobs_found", 0)
-                
-                send_notification(
-                    title="Daily Morning Briefing",
-                    message=f"Good morning! ☀️\nTotal Logged: {stats['total']}\nActive/Pending Rounds: {stats['active']}\nNew Schemes Found Yesterday: {new_jobs_today}",
-                    link=f"http://{HP_STREAM_TAILSCALE_IP}:{PORT}/sankey",
-                    tags="sun,briefcase",
-                    priority=3,
-                    sound="bing"
-                )
+                trigger_daily_briefing()
                 last_daily_date = today_str
 
-            # 2. SUNDAY WEEKLY FUNNEL REPORT (Every Sunday at 18:00 / 6:00 PM)
             if now.weekday() == 6 and now.hour == 18 and now.minute == 0 and last_weekly_date != today_str:
-                stats = parse_sheet_stats()
-                total = stats["total"]
-                conv_rate = round((stats["active"] + stats["offers"]) / total * 100, 1) if total > 0 else 0.0
-
-                send_notification(
-                    title="Sunday Weekly Funnel Report",
-                    message=f"Weekly Funnel Summary 📊\nApplied Total: {total}\nActive Rounds/Interviews: {stats['active']}\nOffers: {stats['offers']}\nRejections/Ghosted: {stats['rejections']}\nConversion Rate: {conv_rate}%",
-                    link=f"http://{HP_STREAM_TAILSCALE_IP}:{PORT}/sankey",
-                    tags="bar_chart,trophy",
-                    priority=4,
-                    sound="fanfare"
-                )
+                trigger_weekly_report()
                 last_weekly_date = today_str
 
         except Exception as e:
             print(f"⚠️ Scheduler Error: {e}")
 
-        time.sleep(30)  # Check every 30 seconds
+        time.sleep(30)
 
 
 # ==========================================
@@ -524,11 +575,9 @@ def scheduler_loop():
 if __name__ == "__main__":
     generate_sankey_from_google_sheets()
 
-    # Start Web Dashboard Thread
     web_thread = threading.Thread(target=start_web_server, daemon=True)
     web_thread.start()
 
-    # Start Scheduled Briefing Thread
     scheduler_thread = threading.Thread(target=scheduler_loop, daemon=True)
     scheduler_thread.start()
 
