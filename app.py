@@ -7,6 +7,7 @@ import re
 import imaplib
 import email
 from email.header import decode_header
+from datetime import datetime
 import threading
 import http.server
 import socketserver
@@ -28,16 +29,12 @@ GMAIL_APP_PASS = os.getenv("GMAIL_APP_PASS", "")
 GOOGLE_SHEET_WEBHOOK_URL = os.getenv("GOOGLE_SHEET_WEBHOOK_URL", "")
 GOOGLE_SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS94NpozDGeHO9UPag662CXcH-C5TGN9Y61-nW04VDlPJSZGVTq62E1lRvnXl8gq_CbR5kvMx5XnMFi/pub?output=csv"
 
-# Global Debug Status State
 SCRAPER_STATUS = {
     "last_run": "Never",
     "total_seen_jobs": 0,
     "last_new_jobs_found": 0,
     "source_status": {}
 }
-
-LAST_BRIEFING_DATE = ""
-LAST_WEEKLY_REPORT_DATE = ""
 
 EXCLUDE_KEYWORDS = ["vice president", "vp", "director", "head of", "principal", "senior manager", "sales development", "account executive", "recruiter", "marketing", "legal"]
 LEVEL_KEYWORDS = ["intern", "internship", "placement", "industrial placement", "sandwich", "spring week", "insight week", "graduate", "grad", "early talent", "early career"]
@@ -68,7 +65,7 @@ def is_relevant_role(title, location, company):
 
 
 # ==========================================
-# MODULE 1: EMBEDDED WEB SERVER & API ENDPOINTS
+# MODULE 1: EMBEDDED WEB SERVER & API ENDPOINT
 # ==========================================
 def start_web_server():
     class CustomHandler(http.server.SimpleHTTPRequestHandler):
@@ -128,18 +125,6 @@ def start_web_server():
                 self.end_headers()
                 self.wfile.write(json.dumps(SCRAPER_STATUS, indent=2).encode("utf-8"))
                 return
-            elif self.path == "/test-briefing":
-                send_daily_briefing()
-                self.send_response(200)
-                self.end_headers()
-                self.wfile.write(b"Daily Briefing Test Triggered!")
-                return
-            elif self.path == "/test-weekly":
-                send_weekly_funnel_report()
-                self.send_response(200)
-                self.end_headers()
-                self.wfile.write(b"Weekly Funnel Report Test Triggered!")
-                return
             return super().do_GET()
 
     socketserver.TCPServer.allow_reuse_address = True
@@ -149,7 +134,7 @@ def start_web_server():
 
 
 # ==========================================
-# MODULE 2: NOTIFICATIONS & SHEET HELPERS
+# MODULE 2: NOTIFICATION & SHEET HELPERS
 # ==========================================
 def send_notification(title, message, link=None, tags="briefcase", priority=3, sound="chime"):
     clean_title = title.encode("ascii", "ignore").decode("ascii").strip()
@@ -190,114 +175,44 @@ def update_google_sheet_via_webhook(company, stage, role="Software/Quant Role"):
         print(f"⚠️ Error sending Webhook to Google Sheet: {e}")
 
 
-# ==========================================
-# MODULE 3: MORNING BRIEFING & WEEKLY REPORTS
-# ==========================================
-def fetch_google_sheet_stats():
-    """Reads current statistics from Google Sheets."""
-    stats = {"total": 0, "applied": 0, "assessments": 0, "interviews": 0, "offers": 0, "rejections": 0, "ghosted": 0}
+def parse_sheet_stats():
+    """Parses Google Sheet and returns summary statistics for briefings."""
     try:
         cache_url = f"{GOOGLE_SHEET_CSV_URL}&_cb={int(time.time())}"
-        response = requests.get(cache_url, timeout=10)
-        if response.status_code == 200:
-            csv_data = io.StringIO(response.text)
-            reader = csv.DictReader(csv_data)
-            for row in reader:
-                stages = [val.strip() for col, val in row.items() if val and val.strip() and col.lower() not in ["company", "role", "link", "date"]]
-                if stages:
-                    stats["total"] += 1
-                    last_stage = stages[-1].lower()
-                    if "offer" in last_stage:
-                        stats["offers"] += 1
-                    elif "interview" in last_stage:
-                        stats["interviews"] += 1
-                    elif "assessment" in last_stage or "oa" in last_stage:
-                        stats["assessments"] += 1
-                    elif "reject" in last_stage:
-                        stats["rejections"] += 1
-                    elif "ghost" in last_stage:
-                        stats["ghosted"] += 1
-                    else:
-                        stats["applied"] += 1
+        resp = requests.get(cache_url, timeout=10)
+        if resp.status_code != 200:
+            return {"total": 0, "active": 0, "offers": 0, "rejections": 0}
+
+        reader = csv.DictReader(io.StringIO(resp.text))
+        total = 0
+        active = 0
+        offers = 0
+        rejections = 0
+
+        for row in reader:
+            stages = []
+            for k, v in row.items():
+                if v and v.strip() and k.strip().lower() not in ["company", "role", "link", "date"]:
+                    stages.append(v.strip())
+
+            if stages:
+                total += 1
+                latest = stages[-1].lower()
+                if "offer" in latest:
+                    offers += 1
+                elif "reject" in latest or "fail" in latest or "ghost" in latest:
+                    rejections += 1
+                else:
+                    active += 1
+
+        return {"total": total, "active": active, "offers": offers, "rejections": rejections}
     except Exception as e:
-        print(f"Error fetching sheet stats: {e}")
-    return stats
-
-
-def send_daily_briefing():
-    """8:00 AM Daily Morning Briefing."""
-    print("☀️ Sending Daily Morning Briefing...")
-    stats = fetch_google_sheet_stats()
-    new_jobs_24h = SCRAPER_STATUS.get("last_new_jobs_found", 0)
-
-    msg = (
-        f"Good morning, Jog!\n\n"
-        f"• New UK Roles Found (24h): {new_jobs_24h}\n"
-        f"• Total Applications Logged: {stats['total']}\n"
-        f"• Active Assessments/Interviews: {stats['assessments'] + stats['interviews']}\n"
-        f"• Pending Applications: {stats['applied']}\n\n"
-        f"View Live Dashboard: http://{HP_STREAM_TAILSCALE_IP}:{PORT}"
-    )
-
-    send_notification(
-        title="☀️ Daily Morning Briefing",
-        message=msg,
-        link=f"http://{HP_STREAM_TAILSCALE_IP}:{PORT}",
-        tags="sun,sunrise,briefcase",
-        priority=3,
-        sound="chime"
-    )
-
-
-def send_weekly_funnel_report():
-    """Sunday 6:00 PM Weekly Analytics Funnel Report."""
-    print("📊 Sending Sunday Weekly Funnel Report...")
-    stats = fetch_google_sheet_stats()
-    total = stats["total"]
-    advancements = stats["assessments"] + stats["interviews"] + stats["offers"]
-    conversion_rate = round((advancements / total * 100), 1) if total > 0 else 0
-
-    msg = (
-        f"Weekly Application Funnel Summary:\n\n"
-        f"• Total Logged Applications: {total}\n"
-        f"• Online Assessments (OAs): {stats['assessments']}\n"
-        f"• Interviews: {stats['interviews']}\n"
-        f"• Offers Received: {stats['offers']} 🎉\n"
-        f"• Rejections: {stats['rejections']}\n"
-        f"• Ghosted: {stats['ghosted']}\n\n"
-        f"📈 Funnel Conversion Rate: {conversion_rate}%\n"
-        f"View Sankey Flow: http://{HP_STREAM_TAILSCALE_IP}:{PORT}"
-    )
-
-    send_notification(
-        title="📊 Sunday Weekly Analytics Report",
-        message=msg,
-        link=f"http://{HP_STREAM_TAILSCALE_IP}:{PORT}",
-        tags="bar_chart,chart_with_upwards_trend",
-        priority=4,
-        sound="fanfare"
-    )
-
-
-def check_scheduled_reports():
-    """Checks system time and triggers 8 AM Morning Briefing and Sunday 6 PM Weekly Report."""
-    global LAST_BRIEFING_DATE, LAST_WEEKLY_REPORT_DATE
-    now = time.localtime()
-    today_str = time.strftime("%Y-%m-%d", now)
-
-    # Daily Briefing at 8:00 AM
-    if now.tm_hour == 8 and LAST_BRIEFING_DATE != today_str:
-        LAST_BRIEFING_DATE = today_str
-        send_daily_briefing()
-
-    # Sunday Weekly Funnel Report at 6:00 PM (tm_wday == 6 is Sunday)
-    if now.tm_wday == 6 and now.tm_hour == 18 and LAST_WEEKLY_REPORT_DATE != today_str:
-        LAST_WEEKLY_REPORT_DATE = today_str
-        send_weekly_funnel_report()
+        print(f"Error parsing stats for report: {e}")
+        return {"total": 0, "active": 0, "offers": 0, "rejections": 0}
 
 
 # ==========================================
-# MODULE 4: EMAIL INBOX LISTENER (IMAP)
+# MODULE 3: EMAIL INBOX LISTENER (IMAP)
 # ==========================================
 def load_seen_emails():
     if os.path.exists(SEEN_EMAILS_FILE):
@@ -403,7 +318,7 @@ def check_email_inbox():
 
 
 # ==========================================
-# MODULE 5: SCRAPER ENGINE SOURCES
+# MODULE 4: SCRAPER ENGINE SOURCES
 # ==========================================
 def load_seen_jobs():
     if os.path.exists(SEEN_JOBS_FILE):
@@ -473,10 +388,6 @@ def run_all_scrapers():
     all_new_jobs.extend(scrape_lever_jobs(seen_jobs))
     save_seen_jobs(seen_jobs)
 
-    SCRAPER_STATUS["last_run"] = time.strftime("%Y-%m-%d %H:%M:%S")
-    SCRAPER_STATUS["total_seen_jobs"] = len(seen_jobs)
-    SCRAPER_STATUS["last_new_jobs_found"] = len(all_new_jobs)
-
     if all_new_jobs:
         print(f"🚨 FOUND {len(all_new_jobs)} NEW MATCHING ROLES!")
         for title, location, link in all_new_jobs:
@@ -491,7 +402,7 @@ def run_all_scrapers():
 
 
 # ==========================================
-# MODULE 6: SANKEY FLOW GENERATOR
+# MODULE 5: SANKEY FLOW GENERATOR
 # ==========================================
 def generate_sankey_from_google_sheets():
     try:
@@ -558,26 +469,81 @@ def generate_sankey_from_google_sheets():
 
 
 # ==========================================
+# MODULE 6: DAILY BRIEFING & SUNDAY REPORT SCHEDULER
+# ==========================================
+def scheduler_loop():
+    """Background thread checking time for 08:00 AM daily briefing & Sunday 18:00 report."""
+    last_daily_date = ""
+    last_weekly_date = ""
+
+    while True:
+        try:
+            now = datetime.now()
+            today_str = now.strftime("%Y-%m-%d")
+
+            # 1. DAILY BRIEFING (Every morning at 08:00 AM)
+            if now.hour == 8 and now.minute == 0 and last_daily_date != today_str:
+                stats = parse_sheet_stats()
+                new_jobs_today = SCRAPER_STATUS.get("last_new_jobs_found", 0)
+                
+                send_notification(
+                    title="Daily Morning Briefing",
+                    message=f"Good morning! ☀️\nTotal Logged: {stats['total']}\nActive/Pending Rounds: {stats['active']}\nNew Schemes Found Yesterday: {new_jobs_today}",
+                    link=f"http://{HP_STREAM_TAILSCALE_IP}:{PORT}/sankey",
+                    tags="sun,briefcase",
+                    priority=3,
+                    sound="bing"
+                )
+                last_daily_date = today_str
+
+            # 2. SUNDAY WEEKLY FUNNEL REPORT (Every Sunday at 18:00 / 6:00 PM)
+            if now.weekday() == 6 and now.hour == 18 and now.minute == 0 and last_weekly_date != today_str:
+                stats = parse_sheet_stats()
+                total = stats["total"]
+                conv_rate = round((stats["active"] + stats["offers"]) / total * 100, 1) if total > 0 else 0.0
+
+                send_notification(
+                    title="Sunday Weekly Funnel Report",
+                    message=f"Weekly Funnel Summary 📊\nApplied Total: {total}\nActive Rounds/Interviews: {stats['active']}\nOffers: {stats['offers']}\nRejections/Ghosted: {stats['rejections']}\nConversion Rate: {conv_rate}%",
+                    link=f"http://{HP_STREAM_TAILSCALE_IP}:{PORT}/sankey",
+                    tags="bar_chart,trophy",
+                    priority=4,
+                    sound="fanfare"
+                )
+                last_weekly_date = today_str
+
+        except Exception as e:
+            print(f"⚠️ Scheduler Error: {e}")
+
+        time.sleep(30)  # Check every 30 seconds
+
+
+# ==========================================
 # MAIN LOOP
 # ==========================================
 if __name__ == "__main__":
     generate_sankey_from_google_sheets()
 
+    # Start Web Dashboard Thread
     web_thread = threading.Thread(target=start_web_server, daemon=True)
     web_thread.start()
+
+    # Start Scheduled Briefing Thread
+    scheduler_thread = threading.Thread(target=scheduler_loop, daemon=True)
+    scheduler_thread.start()
+
     time.sleep(1)
 
     print("\n🚀 ApplicationTrackr Engine Online!")
     send_notification(
         title="Scraper Engine Online",
-        message="Monitoring UK Maths & CS Roles + Email Inbox.",
+        message="Monitoring UK Maths & CS Roles + Email Inbox + Scheduled Reports.",
         tags="rocket,uk",
         priority=3,
         sound="chime"
     )
 
     while True:
-        check_scheduled_reports()  # Checks for 8:00 AM Daily Briefing & Sunday 6:00 PM Report
         check_email_inbox()
         run_all_scrapers()
         generate_sankey_from_google_sheets()
