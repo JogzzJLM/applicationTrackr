@@ -103,17 +103,32 @@ def is_relevant_role(title, location, company):
 def start_web_server():
     class CustomHandler(http.server.SimpleHTTPRequestHandler):
         def do_GET(self):
-            if self.path in ["/", "/sankey"]:
-                if not os.path.exists("sankey_diagram.html"):
-                    generate_default_sankey()
+            # Re-generate Sankey on demand when user accesses dashboard
+            if self.path in ["/", "/sankey", "/refresh"]:
+                generate_sankey_from_google_sheets()
                 self.path = "/sankey_diagram.html"
-                return super().do_GET()
+                
+                # Send anti-caching headers so browser always displays latest file
+                self.send_response(200)
+                self.send_header("Content-type", "text/html")
+                self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+                self.send_header("Pragma", "no-cache")
+                self.send_header("Expires", "0")
+                self.end_headers()
+
+                if os.path.exists("sankey_diagram.html"):
+                    with open("sankey_diagram.html", "rb") as f:
+                        self.wfile.write(f.read())
+                return
+
             elif self.path == "/status":
                 self.send_response(200)
                 self.send_header("Content-type", "application/json")
+                self.send_header("Cache-Control", "no-cache")
                 self.end_headers()
                 self.wfile.write(json.dumps(SCRAPER_STATUS, indent=2).encode("utf-8"))
                 return
+
             return super().do_GET()
 
     socketserver.TCPServer.allow_reuse_address = True
@@ -326,9 +341,13 @@ def generate_default_sankey():
 
 
 def generate_sankey_from_google_sheets():
-    """Parses sequential multi-stage flows across columns and generates Sankey Diagram."""
+    """Parses sequential multi-stage flows with Google CDN cache-busting."""
     try:
-        response = requests.get(GOOGLE_SHEET_CSV_URL, timeout=10)
+        # Cache-busting parameter forces Google CDN to return live spreadsheet updates
+        cache_buster_url = f"{GOOGLE_SHEET_CSV_URL}&_cb={int(time.time())}"
+        headers = {"Cache-Control": "no-cache, no-store"}
+        response = requests.get(cache_buster_url, headers=headers, timeout=10)
+
         if response.status_code != 200:
             generate_default_sankey()
             return
@@ -340,7 +359,6 @@ def generate_sankey_from_google_sheets():
         all_nodes = set()
 
         for row in reader:
-            # Gather sequential stage columns in order (skipping metadata columns)
             stages = []
             for col_name, val in row.items():
                 if val and val.strip():
@@ -349,7 +367,6 @@ def generate_sankey_from_google_sheets():
                         continue
                     stages.append(clean_val)
 
-            # Record pairwise transitions (Stage N -> Stage N+1)
             for i in range(len(stages) - 1):
                 src = stages[i]
                 tgt = stages[i + 1]
@@ -375,7 +392,6 @@ def generate_sankey_from_google_sheets():
             targets.append(node_indices[tgt])
             values.append(count)
 
-        # Dynamic Node Colors based on stage outcomes
         colors = []
         for name in node_list:
             lower = name.lower()
