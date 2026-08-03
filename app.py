@@ -3,6 +3,10 @@ import json
 import os
 import time
 import io
+import re
+import imaplib
+import email
+from email.header import decode_header
 import threading
 import http.server
 import socketserver
@@ -15,10 +19,14 @@ import plotly.graph_objects as go
 # ==========================================
 NTFY_TOPIC = "jog_applicationtrackr_alerts"
 SEEN_JOBS_FILE = "seen_jobs.json"
+SEEN_EMAILS_FILE = "seen_emails.json"
 PORT = 5000
 HP_STREAM_TAILSCALE_IP = "100.75.135.73"
 
-# Live Google Sheet CSV URL
+# Credentials from Environment Variables
+GMAIL_USER = os.getenv("GMAIL_USER", "")
+GMAIL_APP_PASS = os.getenv("GMAIL_APP_PASS", "")
+GOOGLE_SHEET_WEBHOOK_URL = os.getenv("GOOGLE_SHEET_WEBHOOK_URL", "")
 GOOGLE_SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS94NpozDGeHO9UPag662CXcH-C5TGN9Y61-nW04VDlPJSZGVTq62E1lRvnXl8gq_CbR5kvMx5XnMFi/pub?output=csv"
 
 # Global Debug Status State
@@ -29,45 +37,14 @@ SCRAPER_STATUS = {
     "source_status": {}
 }
 
-# ==========================================
-# TAILORED FILTERING CRITERIA (Maths + CS)
-# ==========================================
+# Tailored Filtering Criteria
+EXCLUDE_KEYWORDS = ["vice president", "vp", "director", "head of", "principal", "senior manager", "sales development", "account executive", "recruiter", "marketing", "legal"]
+LEVEL_KEYWORDS = ["intern", "internship", "placement", "industrial placement", "sandwich", "spring week", "insight week", "graduate", "grad", "early talent", "early career"]
+ROLE_KEYWORDS = ["software", "developer", "engineer", "engineering", "backend", "fullstack", "full-stack", "systems", "quant", "quantitative", "trader", "trading", "research", "machine learning", "ml", "ai", "data science", "cyber", "security", "cloud", "devops"]
+LOCATION_KEYWORDS = ["london", "birmingham", "oxford", "aylesbury", "west midlands", "remote", "uk", "united kingdom", "cambridge", "manchester", "edinburgh"]
+SPECIAL_INTL_COMPANIES = ["beamng", "janestreet", "optiver", "citadel", "hudsonrivertrading", "hrt", "twosigma", "imc", "flowtraders", "wayve"]
 
-EXCLUDE_KEYWORDS = [
-    "vice president", "vp", "director", "head of", "principal", "senior manager",
-    "sales development", "account executive", "account manager", "sdr", "bdr",
-    "recruiter", "recruitment", "human resources", "marketing", "legal", "counsel",
-    "payroll", "facilities", "receptionist", "executive assistant", "office manager"
-]
-
-LEVEL_KEYWORDS = [
-    "intern", "internship", "placement", "industrial placement", "sandwich",
-    "spring week", "insight week", "insight programme", "graduate", "grad",
-    "early talent", "early career", "trainee"
-]
-
-ROLE_KEYWORDS = [
-    "software", "developer", "engineer", "engineering", "backend", "fullstack",
-    "full-stack", "full stack", "systems", "quant", "quantitative", "trader",
-    "trading", "research", "machine learning", "ml", "ai", "artificial intelligence",
-    "data science", "data scientist", "data engineer", "cyber", "security",
-    "cloud", "devops", "infrastructure", "technology", "tech"
-]
-
-LOCATION_KEYWORDS = [
-    "london", "birmingham", "oxford", "aylesbury", "west midlands", "remote",
-    "uk", "united kingdom", "cambridge", "manchester", "edinburgh", "bristol"
-]
-
-SPECIAL_INTL_COMPANIES = [
-    "beamng", "janestreet", "optiver", "citadel", "hudsonrivertrading", 
-    "hrt", "twosigma", "imc", "flowtraders", "wayve"
-]
-
-GREENHOUSE_COMPANIES = [
-    "deliveroo", "cloudflare", "snyk", "monzo", "starlingbank", 
-    "janestreet", "optiver", "canonical", "citadel", "hudsonrivertrading"
-]
+GREENHOUSE_COMPANIES = ["deliveroo", "cloudflare", "snyk", "monzo", "starlingbank", "janestreet", "optiver", "canonical", "citadel", "hudsonrivertrading"]
 LEVER_COMPANIES = ["spotify", "revolut", "checkout", "beamng", "wayve"]
 
 
@@ -78,57 +55,34 @@ def is_relevant_role(title, location, company):
 
     if any(ex in title_lower for ex in EXCLUDE_KEYWORDS):
         return False
-
-    has_level = any(lvl in title_lower for lvl in LEVEL_KEYWORDS)
-    if not has_level:
+    if not any(lvl in title_lower for lvl in LEVEL_KEYWORDS):
         return False
-
-    has_role = any(rk in title_lower for rk in ROLE_KEYWORDS)
-    if not has_role:
+    if not any(rk in title_lower for rk in ROLE_KEYWORDS):
         return False
-
     if any(sc in comp_lower for sc in SPECIAL_INTL_COMPANIES):
         return True
-
-    has_loc = any(loc in loc_lower for loc in LOCATION_KEYWORDS)
-    if has_loc or "remote" in loc_lower or "uk" in loc_lower or loc_lower == "":
+    if any(loc in loc_lower for loc in LOCATION_KEYWORDS) or "remote" in loc_lower or "uk" in loc_lower or loc_lower == "":
         return True
-
     return False
 
 
 # ==========================================
-# MODULE 1: EMBEDDED WEB SERVER & DASHBOARD
+# MODULE 1: EMBEDDED WEB SERVER
 # ==========================================
 def start_web_server():
     class CustomHandler(http.server.SimpleHTTPRequestHandler):
         def do_GET(self):
-            # Re-generate Sankey on demand when user accesses dashboard
+            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
             if self.path in ["/", "/sankey", "/refresh"]:
                 generate_sankey_from_google_sheets()
                 self.path = "/sankey_diagram.html"
-                
-                # Send anti-caching headers so browser always displays latest file
-                self.send_response(200)
-                self.send_header("Content-type", "text/html")
-                self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
-                self.send_header("Pragma", "no-cache")
-                self.send_header("Expires", "0")
-                self.end_headers()
-
-                if os.path.exists("sankey_diagram.html"):
-                    with open("sankey_diagram.html", "rb") as f:
-                        self.wfile.write(f.read())
-                return
-
+                return super().do_GET()
             elif self.path == "/status":
                 self.send_response(200)
                 self.send_header("Content-type", "application/json")
-                self.send_header("Cache-Control", "no-cache")
                 self.end_headers()
                 self.wfile.write(json.dumps(SCRAPER_STATUS, indent=2).encode("utf-8"))
                 return
-
             return super().do_GET()
 
     socketserver.TCPServer.allow_reuse_address = True
@@ -138,14 +92,24 @@ def start_web_server():
 
 
 # ==========================================
-# MODULE 2: NOTIFICATION HELPER
+# MODULE 2: NOTIFICATION HELPER (WITH CUSTOM SOUNDS)
 # ==========================================
-def send_notification(title, message, link=None, tags="briefcase"):
+def send_notification(title, message, link=None, tags="briefcase", priority=3, sound="chime"):
+    """
+    Sends ntfy push notifications with custom alert sounds & priority levels.
+    Sounds: 'fanfare', 'gong', 'bing', 'subtle', 'chime', 'minion'
+    Priority: 5 = Urgent (breaks through Silent mode on iOS), 3 = Default, 2 = Low
+    """
     clean_title = title.encode("ascii", "ignore").decode("ascii").strip()
     if not clean_title:
-        clean_title = title.replace("🚀", "").replace("🚨", "").replace("🎉", "").strip()
+        clean_title = "ApplicationTrackr Alert"
 
-    headers = {"Title": clean_title, "Tags": tags}
+    headers = {
+        "Title": clean_title,
+        "Tags": tags,
+        "Priority": str(priority),
+        "Sound": sound
+    }
     if link:
         headers["Click"] = link
 
@@ -156,200 +120,231 @@ def send_notification(title, message, link=None, tags="briefcase"):
             headers=headers,
             timeout=10
         )
-        print(f"✅ Notification Sent: {clean_title}")
+        print(f"✅ Notification Sent [{sound}]: {clean_title}")
     except Exception as e:
         print(f"❌ Failed to send notification: {e}")
 
 
+def update_google_sheet_via_webhook(company, stage, role="Software/Quant Role"):
+    """Sends POST request to Google Apps Script Webhook to update Google Sheet."""
+    if not GOOGLE_SHEET_WEBHOOK_URL or "YOUR_WEBHOOK_ID" in GOOGLE_SHEET_WEBHOOK_URL:
+        print("⚠️ Google Sheet Webhook URL not set in docker-compose.yml.")
+        return
+
+    payload = {"company": company, "stage": stage, "role": role}
+    try:
+        resp = requests.post(GOOGLE_SHEET_WEBHOOK_URL, json=payload, timeout=10)
+        if resp.status_code == 200:
+            print(f"📊 Auto-updated Google Sheet: {company} -> {stage}")
+    except Exception as e:
+        print(f"⚠️ Error sending Webhook to Google Sheet: {e}")
+
+
 # ==========================================
-# MODULE 3: SCRAPER ENGINE SOURCES
+# MODULE 3: EMAIL INBOX LISTENER (IMAP)
+# ==========================================
+def load_seen_emails():
+    if os.path.exists(SEEN_EMAILS_FILE):
+        try:
+            with open(SEEN_EMAILS_FILE, "r") as f:
+                return set(json.load(f))
+        except Exception:
+            pass
+    return set()
+
+def save_seen_emails(seen):
+    try:
+        with open(SEEN_EMAILS_FILE, "w") as f:
+            json.dump(list(seen), f)
+    except Exception:
+        pass
+
+
+def check_email_inbox():
+    """Scans Gmail Inbox for application updates, OAs, interviews, and rejections."""
+    if not GMAIL_USER or not GMAIL_APP_PASS or "your_email" in GMAIL_USER:
+        return
+
+    print("📧 Checking Gmail Inbox for application updates...")
+    seen_emails = load_seen_emails()
+
+    try:
+        mail = imaplib.IMAP4_SSL("imap.gmail.com")
+        mail.login(GMAIL_USER, GMAIL_APP_PASS)
+        mail.select("inbox")
+
+        # Search recent emails from last 7 days
+        status, messages = mail.search(None, '(UNSEEN)')
+        if status != "OK":
+            return
+
+        email_ids = messages[0].split()
+        for e_id in email_ids[-15:]:  # Check latest 15 unread emails
+            if e_id.decode() in seen_emails:
+                continue
+
+            status, msg_data = mail.fetch(e_id, "(RFC822)")
+            for response_part in msg_data:
+                if isinstance(response_part, tuple):
+                    msg = email.message_from_bytes(response_part[1])
+                    
+                    # Extract Subject & From
+                    subject, encoding = decode_header(msg["Subject"])[0]
+                    if isinstance(subject, bytes):
+                        subject = subject.decode(encoding or "utf-8", errors="ignore")
+                    
+                    from_sender = msg.get("From", "")
+                    body_text = ""
+                    if msg.is_multipart():
+                        for part in msg.walk():
+                            if part.get_content_type() == "text/plain":
+                                body_text = part.get_payload(decode=True).decode("utf-8", errors="ignore")
+                                break
+                    else:
+                        body_text = msg.get_payload(decode=True).decode("utf-8", errors="ignore")
+
+                    combined_text = f"{subject} {body_text}".lower()
+
+                    # Extract Company Name from Sender/Subject
+                    company_match = re.search(r"at ([A-Z][a-zA-Z0-9]+)", subject) or re.search(r"@([a-zA-Z0-9]+)\.", from_sender)
+                    company_name = company_match.group(1).capitalize() if company_match else "Company"
+
+                    # 1. ONLINE ASSESSMENT / INTERVIEW INVITE (HIGH PRIORITY ALERT)
+                    if any(k in combined_text for k in ["online assessment", "coding test", "hackerrank", "codility", "hirevue", "invitation to interview", "schedule your interview"]):
+                        seen_emails.add(e_id.decode())
+                        stage = "Online Assessment" if "assessment" in combined_text or "hackerrank" in combined_text else "Interview"
+                        update_google_sheet_via_webhook(company_name, stage)
+                        send_notification(
+                            title=f"🚨 {stage} Invite: {company_name}!",
+                            message=f"New interview/assessment email received from {company_name}.\nCheck your inbox!",
+                            tags="tada,fire",
+                            priority=5,      # URGENT PRIORITY
+                            sound="fanfare"  # HIGH-PRIORITY ALERT SOUND
+                        )
+
+                    # 2. APPLICATION CONFIRMATION
+                    elif any(k in combined_text for k in ["thank you for applying", "application received", "thanks for your interest", "received your application"]):
+                        seen_emails.add(e_id.decode())
+                        update_google_sheet_via_webhook(company_name, "Applied")
+                        send_notification(
+                            title=f"Application Confirmed: {company_name}",
+                            message=f"Logged 'Applied' status for {company_name} in Google Sheets.",
+                            tags="check-mark",
+                            priority=2,
+                            sound="subtle"
+                        )
+
+                    # 3. REJECTION
+                    elif any(k in combined_text for k in ["we regret to inform you", "unfortunately", "will not be moving forward", "pursue other candidates"]):
+                        seen_emails.add(e_id.decode())
+                        update_google_sheet_via_webhook(company_name, "Rejected")
+                        send_notification(
+                            title=f"Update: {company_name}",
+                            message=f"Application status updated to Rejected for {company_name}.",
+                            tags="x",
+                            priority=2,
+                            sound="minion"
+                        )
+
+        mail.logout()
+        save_seen_emails(seen_emails)
+
+    except Exception as e:
+        print(f"⚠️ Email Listener Error: {e}")
+
+
+# ==========================================
+# MODULE 4: SCRAPER ENGINE SOURCES
 # ==========================================
 def load_seen_jobs():
     if os.path.exists(SEEN_JOBS_FILE):
         try:
             with open(SEEN_JOBS_FILE, "r") as f:
                 return set(json.load(f))
-        except Exception as e:
-            print(f"⚠️ Error reading {SEEN_JOBS_FILE}: {e}")
+        except Exception:
+            pass
     return set()
 
 def save_seen_jobs(seen_jobs):
     try:
         with open(SEEN_JOBS_FILE, "w") as f:
             json.dump(list(seen_jobs), f)
-    except Exception as e:
-        print(f"⚠️ Error saving {SEEN_JOBS_FILE}: {e}")
+    except Exception:
+        pass
 
 
 def scrape_greenhouse_jobs(seen_jobs):
     new_jobs = []
-    source_name = "Greenhouse API"
-    errors = 0
-
     for company in GREENHOUSE_COMPANIES:
         url = f"https://boards-api.greenhouse.io/v1/boards/{company}/jobs"
         try:
             resp = requests.get(url, timeout=10)
             if resp.status_code == 200:
-                data = resp.json()
-                for job in data.get("jobs", []):
+                for job in resp.json().get("jobs", []):
                     title = job.get("title", "")
                     location = job.get("location", {}).get("name", "")
                     job_url = job.get("absolute_url", "")
                     job_id = f"gh_{company}_{job.get('id')}"
 
-                    if job_id not in seen_jobs:
-                        if is_relevant_role(title, location, company):
-                            seen_jobs.add(job_id)
-                            new_jobs.append((f"{company.capitalize()} - {title}", location, job_url))
-            else:
-                errors += 1
-        except Exception as e:
-            errors += 1
-
-    SCRAPER_STATUS["source_status"][source_name] = f"OK ({errors} warnings)"
+                    if job_id not in seen_jobs and is_relevant_role(title, location, company):
+                        seen_jobs.add(job_id)
+                        new_jobs.append((f"{company.capitalize()} - {title}", location, job_url))
+        except Exception:
+            pass
     return new_jobs
 
 
 def scrape_lever_jobs(seen_jobs):
     new_jobs = []
-    source_name = "Lever API"
-    errors = 0
-
     for company in LEVER_COMPANIES:
         url = f"https://api.lever.co/v0/postings/{company}?mode=json"
         try:
             resp = requests.get(url, timeout=10)
             if resp.status_code == 200:
-                jobs = resp.json()
-                for job in jobs:
+                for job in resp.json():
                     title = job.get("text", "")
                     location = job.get("categories", {}).get("location", "")
                     job_url = job.get("hostedUrl", "")
                     job_id = f"lever_{company}_{job.get('id')}"
 
-                    if job_id not in seen_jobs:
-                        if is_relevant_role(title, location, company):
-                            seen_jobs.add(job_id)
-                            new_jobs.append((f"{company.capitalize()} - {title}", location, job_url))
-            else:
-                errors += 1
-        except Exception as e:
-            errors += 1
-
-    SCRAPER_STATUS["source_status"][source_name] = f"OK ({errors} warnings)"
-    return new_jobs
-
-
-def scrape_github_lists(seen_jobs):
-    new_jobs = []
-    source_name = "GitHub Repos"
-    urls = [
-        "https://raw.githubusercontent.com/simplify-jobs/Summer2026-Internships/dev/README.md",
-        "https://raw.githubusercontent.com/pittcsc/Summer2025-Internships/main/README.md"
-    ]
-
-    for url in urls:
-        try:
-            resp = requests.get(url, timeout=10)
-            if resp.status_code == 200:
-                lines = resp.text.split("\n")
-                for line in lines:
-                    if is_relevant_role(line, "UK", "GitHubRepo"):
-                        job_id = f"ghrepo_{hash(line)}"
-                        if job_id not in seen_jobs:
-                            seen_jobs.add(job_id)
-                            new_jobs.append(("GitHub Tech Role", "UK / Remote", "https://github.com/simplify-jobs/Summer2026-Internships"))
-        except Exception as e:
-            print(f"⚠️ [GitHub Scraper Error]: {e}")
-
-    SCRAPER_STATUS["source_status"][source_name] = "OK"
-    return new_jobs
-
-
-def scrape_trackr_website(seen_jobs):
-    new_jobs = []
-    source_name = "Trackr Web"
-    url = "https://the-trackr.com"
-
-    try:
-        headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
-        resp = requests.get(url, headers=headers, timeout=10)
-        if resp.status_code == 200:
-            soup = BeautifulSoup(resp.text, "html.parser")
-            for a in soup.find_all("a", href=True):
-                text = a.get_text(strip=True)
-                href = a["href"]
-                if is_relevant_role(text, "UK", "Trackr"):
-                    job_id = f"trackr_{hash(href)}"
-                    if job_id not in seen_jobs:
+                    if job_id not in seen_jobs and is_relevant_role(title, location, company):
                         seen_jobs.add(job_id)
-                        full_url = href if href.startswith("http") else f"https://the-trackr.com{href}"
-                        new_jobs.append((f"Trackr: {text[:40]}", "UK", full_url))
-        SCRAPER_STATUS["source_status"][source_name] = "OK"
-    except Exception as e:
-        SCRAPER_STATUS["source_status"][source_name] = f"Error: {e}"
-
+                        new_jobs.append((f"{company.capitalize()} - {title}", location, job_url))
+        except Exception:
+            pass
     return new_jobs
 
 
 def run_all_scrapers():
-    print("\n🔍 Running Tailored UK Maths & CS Scraper Engine...")
+    print("\n🔍 Running Scraper Engine...")
     seen_jobs = load_seen_jobs()
     all_new_jobs = []
 
     all_new_jobs.extend(scrape_greenhouse_jobs(seen_jobs))
     all_new_jobs.extend(scrape_lever_jobs(seen_jobs))
-    all_new_jobs.extend(scrape_github_lists(seen_jobs))
-    all_new_jobs.extend(scrape_trackr_website(seen_jobs))
-
     save_seen_jobs(seen_jobs)
-
-    SCRAPER_STATUS["last_run"] = time.strftime("%Y-%m-%d %H:%M:%S")
-    SCRAPER_STATUS["total_seen_jobs"] = len(seen_jobs)
-    SCRAPER_STATUS["last_new_jobs_found"] = len(all_new_jobs)
 
     if all_new_jobs:
         print(f"🚨 FOUND {len(all_new_jobs)} NEW MATCHING ROLES!")
         for title, location, link in all_new_jobs:
             send_notification(
                 title=f"New Role: {title}",
-                message=f"Location: {location}\nTap to open direct application link!",
+                message=f"Location: {location}\nTap to open application link!",
                 link=link,
-                tags="rotating_light,sparkles,uk"
+                tags="sparkles,uk",
+                priority=3,
+                sound="bing"  # CUSTOM NEW JOB SOUND
             )
-    else:
-        print("✅ No new matching internship listings found this cycle.")
 
 
 # ==========================================
-# MODULE 4: MULTI-STAGE SANKEY FLOW GENERATOR
+# MODULE 5: SANKEY FLOW GENERATOR
 # ==========================================
-def generate_default_sankey():
-    fig = go.Figure(data=[go.Sankey(
-        node=dict(
-            pad=15,
-            thickness=20,
-            line=dict(color="black", width=0.5),
-            label=["Applied (0)", "Ghosted (0)", "Direct Rejection (0)", "HR Screening (0)", "Final Round (0)", "Offer (0)"],
-            color=["#3182bd", "#969696", "#de2d26", "#e6550d", "#756bb1", "#31a354"]
-        ),
-        link=dict(source=[0], target=[1], value=[0])
-    )])
-    fig.update_layout(title_text="ApplicationTrackr - Waiting for Google Sheets Data", font_size=12)
-    fig.write_html("sankey_diagram.html")
-
-
 def generate_sankey_from_google_sheets():
-    """Parses sequential multi-stage flows with Google CDN cache-busting."""
     try:
-        # Cache-busting parameter forces Google CDN to return live spreadsheet updates
-        cache_buster_url = f"{GOOGLE_SHEET_CSV_URL}&_cb={int(time.time())}"
-        headers = {"Cache-Control": "no-cache, no-store"}
-        response = requests.get(cache_buster_url, headers=headers, timeout=10)
-
+        cache_url = f"{GOOGLE_SHEET_CSV_URL}&_cb={int(time.time())}"
+        response = requests.get(cache_url, timeout=10)
         if response.status_code != 200:
-            generate_default_sankey()
             return
 
         csv_data = io.StringIO(response.text)
@@ -377,62 +372,40 @@ def generate_sankey_from_google_sheets():
                     all_nodes.add(tgt)
 
         if not flow_counts:
-            generate_default_sankey()
             return
 
         node_list = list(all_nodes)
         node_indices = {name: idx for idx, name in enumerate(node_list)}
 
-        sources = []
-        targets = []
-        values = []
-
-        for (src, tgt), count in flow_counts.items():
-            sources.append(node_indices[src])
-            targets.append(node_indices[tgt])
-            values.append(count)
+        sources = [node_indices[src] for (src, tgt) in flow_counts.keys()]
+        targets = [node_indices[tgt] for (src, tgt) in flow_counts.keys()]
+        values = list(flow_counts.values())
 
         colors = []
         for name in node_list:
             lower = name.lower()
             if "offer" in lower:
-                colors.append("#2ecc71")  # Emerald Green
+                colors.append("#2ecc71")
             elif "reject" in lower or "fail" in lower:
-                colors.append("#e74c3c")  # Coral Red
+                colors.append("#e74c3c")
             elif "ghost" in lower:
-                colors.append("#95a5a6")  # Gray
+                colors.append("#95a5a6")
             else:
-                colors.append("#3498db")  # Blue for in-progress rounds
+                colors.append("#3498db")
 
         fig = go.Figure(data=[go.Sankey(
-            node=dict(
-                pad=15,
-                thickness=20,
-                line=dict(color="black", width=0.5),
-                label=node_list,
-                color=colors
-            ),
-            link=dict(
-                source=sources,
-                target=targets,
-                value=values
-            )
+            node=dict(pad=15, thickness=20, label=node_list, color=colors),
+            link=dict(source=sources, target=targets, value=values)
         )])
-
-        fig.update_layout(
-            title_text="ApplicationTrackr - Multi-Round Application Flow",
-            font_size=12
-        )
+        fig.update_layout(title_text="ApplicationTrackr - Multi-Round Application Flow", font_size=12)
         fig.write_html("sankey_diagram.html")
-        print("📊 Updated Multi-Round Sankey Diagram from Google Sheets.")
 
-    except Exception as e:
-        print(f"Error parsing Google Sheet flow: {e}")
-        generate_default_sankey()
+    except Exception:
+        pass
 
 
 # ==========================================
-# MAIN EXECUTION LOOP
+# MAIN LOOP
 # ==========================================
 if __name__ == "__main__":
     generate_sankey_from_google_sheets()
@@ -444,12 +417,14 @@ if __name__ == "__main__":
     print("\n🚀 ApplicationTrackr Engine Online!")
     send_notification(
         title="Scraper Engine Online",
-        message=f"Monitoring UK Maths & CS Roles.\nView Status: http://{HP_STREAM_TAILSCALE_IP}:{PORT}/status",
-        link=f"http://{HP_STREAM_TAILSCALE_IP}:{PORT}/status",
-        tags="rocket,uk"
+        message="Monitoring UK Maths & CS Roles + Email Inbox.",
+        tags="rocket,uk",
+        priority=3,
+        sound="chime"
     )
 
     while True:
+        check_email_inbox()
         run_all_scrapers()
         generate_sankey_from_google_sheets()
-        time.sleep(3600)
+        time.sleep(1800)  # Check inbox & scrapers every 30 minutes

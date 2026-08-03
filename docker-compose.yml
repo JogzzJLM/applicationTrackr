@@ -9,3 +9,6 @@ services:
       - "5000:5000"
     environment:
       - PYTHONUNBUFFERED=1
+      - GMAIL_USER=nodagala.joga@gmail.com
+      - GMAIL_APP_PASS=hmvq mnix oijf race
+      - GOOGLE_SHEET_WEBHOOK_URL=https://script.google.com/macros/s/AKfycbyDnaLbrKcZJYhdAsM3vhTGgfmF-evwZxrDDY0oFuIaTw92andC-Um6NJoXjNOHLJgx/exec
