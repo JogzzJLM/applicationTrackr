@@ -18,7 +18,7 @@ SEEN_JOBS_FILE = "seen_jobs.json"
 PORT = 5000
 HP_STREAM_TAILSCALE_IP = "100.75.135.73"
 
-# Your Live Published Google Sheet CSV URL
+# Live Google Sheet CSV URL
 GOOGLE_SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS94NpozDGeHO9UPag662CXcH-C5TGN9Y61-nW04VDlPJSZGVTq62E1lRvnXl8gq_CbR5kvMx5XnMFi/pub?output=csv"
 
 # Global Debug Status State
@@ -33,7 +33,6 @@ SCRAPER_STATUS = {
 # TAILORED FILTERING CRITERIA (Maths + CS)
 # ==========================================
 
-# 1. EXCLUSIONS (Instantly drop non-technical or senior roles)
 EXCLUDE_KEYWORDS = [
     "vice president", "vp", "director", "head of", "principal", "senior manager",
     "sales development", "account executive", "account manager", "sdr", "bdr",
@@ -41,14 +40,12 @@ EXCLUDE_KEYWORDS = [
     "payroll", "facilities", "receptionist", "executive assistant", "office manager"
 ]
 
-# 2. OPPORTUNITY TYPES (Year 2 Maths & CS Focus)
 LEVEL_KEYWORDS = [
     "intern", "internship", "placement", "industrial placement", "sandwich",
     "spring week", "insight week", "insight programme", "graduate", "grad",
     "early talent", "early career", "trainee"
 ]
 
-# 3. ROLE DOMAINS (Software, Quant, ML/AI, Cyber, FinTech)
 ROLE_KEYWORDS = [
     "software", "developer", "engineer", "engineering", "backend", "fullstack",
     "full-stack", "full stack", "systems", "quant", "quantitative", "trader",
@@ -57,19 +54,16 @@ ROLE_KEYWORDS = [
     "cloud", "devops", "infrastructure", "technology", "tech"
 ]
 
-# 4. LOCATION PREFERENCES
 LOCATION_KEYWORDS = [
     "london", "birmingham", "oxford", "aylesbury", "west midlands", "remote",
     "uk", "united kingdom", "cambridge", "manchester", "edinburgh", "bristol"
 ]
 
-# 5. SPECIAL INTERNATIONAL EXCEPTIONS (Cool Tech/Quant/Cars like BeamNG, Jane Street, Citadel)
 SPECIAL_INTL_COMPANIES = [
     "beamng", "janestreet", "optiver", "citadel", "hudsonrivertrading", 
     "hrt", "twosigma", "imc", "flowtraders", "wayve"
 ]
 
-# Companies to Monitor via ATS APIs
 GREENHOUSE_COMPANIES = [
     "deliveroo", "cloudflare", "snyk", "monzo", "starlingbank", 
     "janestreet", "optiver", "canonical", "citadel", "hudsonrivertrading"
@@ -78,30 +72,24 @@ LEVER_COMPANIES = ["spotify", "revolut", "checkout", "beamng", "wayve"]
 
 
 def is_relevant_role(title, location, company):
-    """Filters roles specifically for Year 2 Maths & CS Student."""
     title_lower = title.lower()
     loc_lower = location.lower()
     comp_lower = company.lower()
 
-    # Step 1: Reject excluded/irrelevant keywords
     if any(ex in title_lower for ex in EXCLUDE_KEYWORDS):
         return False
 
-    # Step 2: Must be an Internship, Placement, Spring Week, or Grad Role
     has_level = any(lvl in title_lower for lvl in LEVEL_KEYWORDS)
     if not has_level:
         return False
 
-    # Step 3: Must match Software / Quant / AI / Tech domain
     has_role = any(rk in title_lower for rk in ROLE_KEYWORDS)
     if not has_role:
         return False
 
-    # Step 4: Special International Exception (e.g. BeamNG or Top Quant)
     if any(sc in comp_lower for sc in SPECIAL_INTL_COMPANIES):
         return True
 
-    # Step 5: Location Match (UK / Preferred / Remote)
     has_loc = any(loc in loc_lower for loc in LOCATION_KEYWORDS)
     if has_loc or "remote" in loc_lower or "uk" in loc_lower or loc_lower == "":
         return True
@@ -113,7 +101,6 @@ def is_relevant_role(title, location, company):
 # MODULE 1: EMBEDDED WEB SERVER & DASHBOARD
 # ==========================================
 def start_web_server():
-    """Serves Sankey (/sankey) and Scraper Status (/status) on port 5000."""
     class CustomHandler(http.server.SimpleHTTPRequestHandler):
         def do_GET(self):
             if self.path in ["/", "/sankey"]:
@@ -139,7 +126,6 @@ def start_web_server():
 # MODULE 2: NOTIFICATION HELPER
 # ==========================================
 def send_notification(title, message, link=None, tags="briefcase"):
-    """Sends ntfy push notification with clean headers."""
     clean_title = title.encode("ascii", "ignore").decode("ascii").strip()
     if not clean_title:
         clean_title = title.replace("🚀", "").replace("🚨", "").replace("🎉", "").strip()
@@ -322,10 +308,9 @@ def run_all_scrapers():
 
 
 # ==========================================
-# MODULE 4: GOOGLE SHEETS SANKEY GENERATOR
+# MODULE 4: MULTI-STAGE SANKEY FLOW GENERATOR
 # ==========================================
 def generate_default_sankey():
-    """Generates a default Sankey diagram if Google Sheet hasn't populated yet."""
     fig = go.Figure(data=[go.Sankey(
         node=dict(
             pad=15,
@@ -341,7 +326,7 @@ def generate_default_sankey():
 
 
 def generate_sankey_from_google_sheets():
-    """Fetches data from Google Sheets CSV URL and generates Sankey Diagram."""
+    """Parses sequential multi-stage flows across columns and generates Sankey Diagram."""
     try:
         response = requests.get(GOOGLE_SHEET_CSV_URL, timeout=10)
         if response.status_code != 200:
@@ -351,53 +336,82 @@ def generate_sankey_from_google_sheets():
         csv_data = io.StringIO(response.text)
         reader = csv.DictReader(csv_data)
 
-        stages = {}
-        for row in reader:
-            stage = row.get("Stage", "").strip()
-            if stage:
-                stages[stage] = stages.get(stage, 0) + 1
+        flow_counts = {}
+        all_nodes = set()
 
-        total_applied = sum(stages.values())
-        if total_applied == 0:
+        for row in reader:
+            # Gather sequential stage columns in order (skipping metadata columns)
+            stages = []
+            for col_name, val in row.items():
+                if val and val.strip():
+                    clean_val = val.strip()
+                    if col_name and col_name.strip().lower() in ["company", "role", "link", "date"]:
+                        continue
+                    stages.append(clean_val)
+
+            # Record pairwise transitions (Stage N -> Stage N+1)
+            for i in range(len(stages) - 1):
+                src = stages[i]
+                tgt = stages[i + 1]
+                if src != tgt:
+                    pair = (src, tgt)
+                    flow_counts[pair] = flow_counts.get(pair, 0) + 1
+                    all_nodes.add(src)
+                    all_nodes.add(tgt)
+
+        if not flow_counts:
             generate_default_sankey()
             return
 
-        labels = [
-            f"Applied ({total_applied})",
-            f"Ghosted ({stages.get('Ghosted', 0)})",
-            f"Direct Rejection ({stages.get('Direct Rejection', 0)})",
-            f"HR Screening ({stages.get('HR Screening', 0)})",
-            f"Final Round ({stages.get('Final Interview', 0)})",
-            f"Offer ({stages.get('Offer', 0)})"
-        ]
+        node_list = list(all_nodes)
+        node_indices = {name: idx for idx, name in enumerate(node_list)}
+
+        sources = []
+        targets = []
+        values = []
+
+        for (src, tgt), count in flow_counts.items():
+            sources.append(node_indices[src])
+            targets.append(node_indices[tgt])
+            values.append(count)
+
+        # Dynamic Node Colors based on stage outcomes
+        colors = []
+        for name in node_list:
+            lower = name.lower()
+            if "offer" in lower:
+                colors.append("#2ecc71")  # Emerald Green
+            elif "reject" in lower or "fail" in lower:
+                colors.append("#e74c3c")  # Coral Red
+            elif "ghost" in lower:
+                colors.append("#95a5a6")  # Gray
+            else:
+                colors.append("#3498db")  # Blue for in-progress rounds
 
         fig = go.Figure(data=[go.Sankey(
             node=dict(
                 pad=15,
                 thickness=20,
                 line=dict(color="black", width=0.5),
-                label=labels,
-                color=["#3182bd", "#969696", "#de2d26", "#e6550d", "#756bb1", "#31a354"]
+                label=node_list,
+                color=colors
             ),
             link=dict(
-                source=[0, 0, 0, 3, 4],
-                target=[1, 2, 3, 4, 5],
-                value=[
-                    stages.get('Ghosted', 1),
-                    stages.get('Direct Rejection', 1),
-                    stages.get('HR Screening', 1),
-                    stages.get('Final Interview', 1),
-                    stages.get('Offer', 1)
-                ]
+                source=sources,
+                target=targets,
+                value=values
             )
         )])
 
-        fig.update_layout(title_text="ApplicationTrackr - Live Google Sheets Funnel", font_size=12)
+        fig.update_layout(
+            title_text="ApplicationTrackr - Multi-Round Application Flow",
+            font_size=12
+        )
         fig.write_html("sankey_diagram.html")
-        print("📊 Updated Sankey diagram from Google Sheets.")
+        print("📊 Updated Multi-Round Sankey Diagram from Google Sheets.")
 
     except Exception as e:
-        print(f"Error parsing Google Sheet: {e}")
+        print(f"Error parsing Google Sheet flow: {e}")
         generate_default_sankey()
 
 
@@ -405,10 +419,8 @@ def generate_sankey_from_google_sheets():
 # MAIN EXECUTION LOOP
 # ==========================================
 if __name__ == "__main__":
-    # Generate initial Sankey page on startup
     generate_sankey_from_google_sheets()
 
-    # Start Web Dashboard Thread
     web_thread = threading.Thread(target=start_web_server, daemon=True)
     web_thread.start()
     time.sleep(1)
