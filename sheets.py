@@ -17,9 +17,10 @@ def update_google_sheet_via_webhook(company, stage, role="Software/Quant Role"):
     except Exception as e:
         print(f"⚠️ Error sending Webhook to Google Sheet: {e}")
 
-def get_applied_companies_set():
-    """Fetches Google Sheet and returns a set of lowercased company names already logged."""
-    applied = set()
+def get_applied_jobs_set():
+    """Fetches Google Sheet and returns a set of (company.lower(), role.lower()) tuples and set of applied company names."""
+    applied_jobs = set()
+    applied_companies = set()
     try:
         cache_url = f"{GOOGLE_SHEET_CSV_URL}&_cb={int(time.time() * 1000)}"
         resp = requests.get(cache_url, timeout=10)
@@ -27,11 +28,20 @@ def get_applied_companies_set():
             reader = csv.DictReader(io.StringIO(resp.text))
             for row in reader:
                 comp = row.get("Company", "").strip().lower()
+                role = row.get("Role", "").strip().lower()
                 if comp:
-                    applied.add(comp)
+                    applied_companies.add(comp)
+                    if role:
+                        applied_jobs.add((comp, role))
     except Exception:
         pass
-    return applied
+    return applied_jobs, applied_companies
+
+def get_applied_companies_set():
+    """Fetches Google Sheet and returns a set of lowercased company names already logged."""
+    _, applied_companies = get_applied_jobs_set()
+    return applied_companies
+
 
 def parse_sheet_stats():
     try:

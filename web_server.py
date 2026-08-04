@@ -9,7 +9,7 @@ from config import PORT, SCRAPER_STATUS, HP_STREAM_TAILSCALE_IP, load_settings, 
 from notifications import send_notification
 from sheets import (
     update_google_sheet_via_webhook, generate_sankey_from_google_sheets,
-    generate_default_sankey, get_applied_companies_set, parse_sheet_stats,
+    generate_default_sankey, get_applied_jobs_set, parse_sheet_stats,
     get_detailed_applications
 )
 from scrapers import run_all_scrapers, load_discovered_jobs
@@ -23,7 +23,7 @@ def render_unified_dashboard_html(active_tab="flow"):
     stats = parse_sheet_stats()
     apps = get_detailed_applications()
     all_jobs = load_discovered_jobs()
-    applied_set = get_applied_companies_set()
+    applied_jobs, _ = get_applied_jobs_set()
     settings = load_settings()
 
     total = stats.get("total", 0)
@@ -69,10 +69,19 @@ def render_unified_dashboard_html(active_tab="flow"):
         comp_name = j.get('company', 'Unknown')
         title_name = j.get('title', 'Role')
         comp_lower = comp_name.lower().strip()
-        is_applied = comp_lower in applied_set
+        title_lower = title_name.lower().strip()
+
+        is_applied = (comp_lower, title_lower) in applied_jobs
+        if not is_applied:
+            for (ac, ar) in applied_jobs:
+                if ac == comp_lower:
+                    if ar and (ar in title_lower or title_lower in ar):
+                        is_applied = True
+                        break
 
         comp_js = comp_name.replace("'", "\\'").replace('"', '&quot;')
         title_js = title_name.replace("'", "\\'").replace('"', '&quot;')
+
 
         title_lower = title_name.lower()
         cat = "other"
