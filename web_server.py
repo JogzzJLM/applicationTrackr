@@ -10,11 +10,18 @@ from sheets import update_google_sheet_via_webhook, generate_sankey_from_google_
 from scrapers import run_all_scrapers, load_discovered_jobs
 from scheduler import trigger_daily_briefing, trigger_weekly_report
 
+# Multi-Threaded HTTP Server (Prevents web requests from blocking each other)
+class ThreadedHTTPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+    allow_reuse_address = True
+    daemon_threads = True
+
 def render_jobs_page_html():
-    jobs = load_discovered_jobs()
+    all_jobs = load_discovered_jobs()
+    # Display top 100 most recent jobs for instant <50ms page load times
+    displayed_jobs = all_jobs[:100]
     cards_html = ""
 
-    for j in jobs:
+    for j in displayed_jobs:
         cards_html += f"""
         <div class="job-card" data-search="{j['company'].lower()} {j['title'].lower()} {j['location'].lower()}">
             <div class="job-header">
@@ -33,6 +40,9 @@ def render_jobs_page_html():
     if not cards_html:
         cards_html = '<div class="empty-msg">No job listings indexed yet. <a href="/test-scraper">Click here to trigger an immediate scraper scan!</a></div>'
 
+    total_count = len(all_jobs)
+    showing_str = f"Showing Latest {len(displayed_jobs)} of {total_count} Active Schemes" if total_count > len(displayed_jobs) else f"{total_count} Active Schemes"
+
     return f"""<!DOCTYPE html>
 <html>
 <head>
@@ -45,8 +55,9 @@ def render_jobs_page_html():
         .nav a:hover, .nav a.active {{ background: #1e293b; color: #38bdf8; }}
         .container {{ max-width: 900px; margin: 0 auto; }}
         .header-box {{ text-align: center; margin-bottom: 25px; }}
-        h1 {{ color: #38bdf8; margin-bottom: 10px; font-size: 26px; }}
-        .rescan-btn {{ display: inline-block; background: #0284c7; color: white; text-decoration: none; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: bold; margin-top: 5px; }}
+        h1 {{ color: #38bdf8; margin-bottom: 5px; font-size: 26px; }}
+        .subtitle {{ color: #94a3b8; font-size: 14px; margin-bottom: 12px; }}
+        .rescan-btn {{ display: inline-block; background: #0284c7; color: white; text-decoration: none; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: bold; }}
         .rescan-btn:hover {{ background: #0369a1; }}
         .search-input {{ width: 100%; box-sizing: border-box; padding: 14px 20px; border-radius: 10px; border: 1px solid #334155; background: #1e293b; color: white; font-size: 16px; margin-bottom: 20px; outline: none; }}
         .search-input:focus {{ border-color: #38bdf8; }}
@@ -86,12 +97,12 @@ def render_jobs_page_html():
     <div class="container">
         <div class="nav">
             <a href="/">📊 Application Flow</a>
-            <a href="/jobs" class="active">💼 Discovered Schemes ({len(jobs)})</a>
+            <a href="/jobs" class="active">💼 Discovered Schemes ({total_count})</a>
             <a href="/status">⚙️ Diagnostics</a>
         </div>
         <div class="header-box">
-            <h1>Discovered UK Schemes ({len(jobs)})</h1>
-            <p style="color: #94a3b8;">Real-time UK Maths, Quant & CS Internship Listings</p>
+            <h1>Discovered UK Schemes</h1>
+            <div class="subtitle">{showing_str}</div>
             <a href="/test-scraper" class="rescan-btn">🔄 Trigger Re-Scan Scrapers</a>
         </div>
         <input type="text" id="search" onkeyup="filterJobs()" placeholder="🔍 Search company, role title, or location..." class="search-input">
@@ -250,7 +261,6 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
         self.wfile.write("404 Not Found".encode("utf-8"))
 
 def start_web_server():
-    socketserver.TCPServer.allow_reuse_address = True
-    with socketserver.TCPServer(("", PORT), CleanHandler) as httpd:
-        print(f"🌍 Web Dashboard running at: http://{HP_STREAM_TAILSCALE_IP}:{PORT}")
+    with ThreadedHTTPServer(("", PORT), CleanHandler) as httpd:
+        print(f"🌍 Threaded Web Dashboard running at: http://{HP_STREAM_TAILSCALE_IP}:{PORT}")
         httpd.serve_forever()
