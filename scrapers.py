@@ -3,6 +3,7 @@ import json
 import time
 import re
 import requests
+from datetime import datetime, timedelta
 from config import (
     SEEN_JOBS_FILE, DISCOVERED_JOBS_FILE, SCRAPER_STATUS, EXCLUDE_KEYWORDS, EXCLUDE_LOCATIONS,
     LEVEL_KEYWORDS, ROLE_KEYWORDS, LOCATION_KEYWORDS, SPECIAL_INTL_COMPANIES,
@@ -10,7 +11,69 @@ from config import (
 )
 from notifications import send_notification
 
+def is_trackr_item_active_and_recent(item):
+    """
+    Validates Trackr listings:
+    1. Rejects unopened, upcoming, closed, or expired statuses.
+    2. Rejects roles closed prior to today.
+    3. Requires opening date to be within the last 6 months (180 days).
+    """
+    status_raw = str(
+        item.get("status") or item.get("openStatus") or item.get("state") or ""
+    ).lower().strip()
+
+    # Reject non-open statuses
+    if status_raw in ["closed", "unopened", "upcoming", "closed for applications", "expired"]:
+        return False
+
+    if item.get("isOpen") is False or item.get("isClosed") is True:
+        return False
+
+    now = datetime.now()
+    six_months_ago = now - timedelta(days=180)
+
+    open_date_str = (
+        item.get("openDate") or item.get("openingDate") or item.get("open_date") or 
+        item.get("openedAt") or item.get("created_at") or ""
+    )
+    close_date_str = (
+        item.get("closeDate") or item.get("closingDate") or item.get("close_date") or 
+        item.get("closedAt") or ""
+    )
+
+    # 1. Check Closing Date (Must NOT be in the past)
+    if close_date_str:
+        c_match = re.search(r"(\d{4}-\d{2}-\d{2})", str(close_date_str))
+        if c_match:
+            try:
+                close_dt = datetime.strptime(c_match.group(1), "%Y-%m-%d")
+                if close_dt < now - timedelta(days=1):
+                    return False
+            except Exception:
+                pass
+
+    # 2. Check Opening Date (Must be within last 6 months)
+    if not open_date_str:
+        if status_raw != "open":
+            return False
+        return True
+
+    o_match = re.search(r"(\d{4}-\d{2}-\d{2})", str(open_date_str))
+    if o_match:
+        try:
+            open_dt = datetime.strptime(o_match.group(1), "%Y-%m-%d")
+            if open_dt < six_months_ago:
+                return False
+            if open_dt > now + timedelta(days=1):  # Future opening date
+                return False
+            return True
+        except Exception:
+            pass
+
+    return True
+
 def extract_and_register_ats_company(url):
+    """Dynamically extracts clean company name from Greenhouse/Lever URLs and adds to target list."""
     try:
         clean_url = url.split("?")[0].split("#")[0].strip()
         if "greenhouse.io" in clean_url:
@@ -78,7 +141,7 @@ def load_discovered_jobs():
 def save_discovered_jobs(jobs):
     try:
         with open(DISCOVERED_JOBS_FILE, "w") as f:
-            json.dump(jobs[:1000], f, indent=2)  # Expanded capacity to 1,000 schemes
+            json.dump(jobs[:1000], f, indent=2)
     except Exception:
         pass
 
@@ -184,6 +247,7 @@ def scrape_lever_jobs(seen_jobs, discovered_list):
     return new_jobs
 
 def scrape_trackr_website(seen_jobs, discovered_list):
+    """Scrapes official Trackr REST API (api.the-trackr.com) with 6-month opening date validation."""
     new_jobs = []
     source_name = "Trackr API"
     types = ["summer-internships", "industrial-placements", "graduate-schemes", "spring-weeks"]
@@ -211,6 +275,10 @@ def scrape_trackr_website(seen_jobs, discovered_list):
 
                         for item in items:
                             if isinstance(item, dict):
+                                # 1. Validate: Must be currently open and opened within last 6 months
+                                if not is_trackr_item_active_and_recent(item):
+                                    continue
+
                                 company = item.get("companyName") or item.get("company_name") or ""
                                 if isinstance(item.get("company"), dict):
                                     company = item.get("company", {}).get("name", company)
@@ -224,6 +292,7 @@ def scrape_trackr_website(seen_jobs, discovered_list):
                                     full_title = f"{company} - {role}"
                                     job_id = f"trackr_api_{hash(full_title)}"
 
+                                    # Clean & dynamically register Greenhouse/Lever ATS company names
                                     extract_and_register_ats_company(link)
 
                                     if is_relevant_role(full_title, "UK", company):
@@ -239,8 +308,8 @@ def scrape_trackr_website(seen_jobs, discovered_list):
             except Exception:
                 pass
 
-    print(f"  [Trackr Summary] Fetched {total_items_fetched} raw items across categories ({relevant_found} relevant schemes matching Maths & CS)")
-    SCRAPER_STATUS["source_status"][source_name] = f"OK ({total_items_fetched} items fetched, {relevant_found} active schemes)"
+    print(f"  [Trackr Summary] Fetched {total_items_fetched} raw items across categories ({relevant_found} active schemes opened in last 6 months matching Maths & CS)")
+    SCRAPER_STATUS["source_status"][source_name] = f"OK ({total_items_fetched} items fetched, {relevant_found} active recent schemes)"
     return new_jobs
 
 def run_all_scrapers():
