@@ -16,18 +16,30 @@ def is_relevant_role(title, location, company):
     comp_lower = company.lower()
     full_text = f"{title_lower} {loc_lower}"
 
+    # 1. Reject non-technical keywords
     if any(ex in title_lower for ex in EXCLUDE_KEYWORDS):
         return False
-    if any(ex_loc in full_text for ex in EXCLUDE_LOCATIONS):
+
+    # 2. Reject foreign/non-UK locations (e.g., US Government, France, Poland)
+    if any(ex_loc in full_text for ex_loc in EXCLUDE_LOCATIONS):
         return False
+
+    # 3. Must match internship/grad level
     if not any(lvl in title_lower for lvl in LEVEL_KEYWORDS):
         return False
+
+    # 4. Must match software/quant domain
     if not any(rk in title_lower for rk in ROLE_KEYWORDS):
         return False
+
+    # 5. Allow special international companies (e.g., BeamNG in Germany)
     if any(sc in comp_lower for sc in SPECIAL_INTL_COMPANIES):
         return True
+
+    # 6. Must be UK / London / Remote / West Midlands
     if any(loc in loc_lower for loc in LOCATION_KEYWORDS) or "remote" in loc_lower or "uk" in loc_lower or loc_lower == "":
         return True
+
     return False
 
 def load_seen_jobs():
@@ -63,7 +75,6 @@ def save_discovered_jobs(jobs):
         pass
 
 def add_discovered_job(discovered_list, job_id, company, title, location, link, source):
-    # Avoid duplicate dict entries in discovered_list
     for item in discovered_list:
         if item.get("id") == job_id:
             return
@@ -192,7 +203,7 @@ def scrape_trackr_website(seen_jobs, discovered_list):
                                 new_jobs.append((full_title, "UK", full_url))
 
             print(f"    ↳ Trackr: Scraped {len(rows)} rows ({relevant_found} relevant matching schemes)")
-            SCRAPER_STATUS["source_status"][source_name] = f"OK ({len(rows)} table rows, {relevant_found} active schemes)"
+            SCRAPER_STATUS["source_status"][source_name] = f"OK ({relevant_found} active schemes found)"
         else:
             SCRAPER_STATUS["source_status"][source_name] = f"HTTP {resp.status_code}"
     except Exception as e:
