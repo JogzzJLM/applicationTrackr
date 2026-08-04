@@ -17,6 +17,22 @@ def update_google_sheet_via_webhook(company, stage, role="Software/Quant Role"):
     except Exception as e:
         print(f"⚠️ Error sending Webhook to Google Sheet: {e}")
 
+def get_applied_companies_set():
+    """Fetches Google Sheet and returns a set of lowercased company names already logged."""
+    applied = set()
+    try:
+        cache_url = f"{GOOGLE_SHEET_CSV_URL}&_cb={int(time.time() * 1000)}"
+        resp = requests.get(cache_url, timeout=10)
+        if resp.status_code == 200:
+            reader = csv.DictReader(io.StringIO(resp.text))
+            for row in reader:
+                comp = row.get("Company", "").strip().lower()
+                if comp:
+                    applied.add(comp)
+    except Exception:
+        pass
+    return applied
+
 def parse_sheet_stats():
     try:
         cache_url = f"{GOOGLE_SHEET_CSV_URL}&_cb={int(time.time() * 1000)}"
@@ -89,7 +105,6 @@ def generate_default_sankey():
         f.write(html_content)
 
 def generate_sankey_from_google_sheets():
-    """Fetches Google Sheet directly with cache-busting and renders Sankey Diagram."""
     try:
         cache_url = f"{GOOGLE_SHEET_CSV_URL}&_cb={int(time.time() * 1000)}"
         response = requests.get(cache_url, timeout=10)
@@ -172,5 +187,5 @@ def generate_sankey_from_google_sheets():
         )
         fig.write_html("sankey_diagram.html")
 
-    except Exception as e:
+    except Exception:
         generate_default_sankey()

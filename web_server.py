@@ -1,47 +1,58 @@
 import os
 import json
+import threading
 import http.server
 import socketserver
 from urllib.parse import parse_qs, urlparse
 
 from config import PORT, SCRAPER_STATUS, HP_STREAM_TAILSCALE_IP
 from notifications import send_notification
-from sheets import update_google_sheet_via_webhook, generate_sankey_from_google_sheets, generate_default_sankey
+from sheets import update_google_sheet_via_webhook, generate_sankey_from_google_sheets, generate_default_sankey, get_applied_companies_set
 from scrapers import run_all_scrapers, load_discovered_jobs
 from scheduler import trigger_daily_briefing, trigger_weekly_report
 
-# Multi-Threaded HTTP Server (Prevents web requests from blocking each other)
 class ThreadedHTTPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     allow_reuse_address = True
     daemon_threads = True
 
 def render_jobs_page_html():
     all_jobs = load_discovered_jobs()
-    # Display top 100 most recent jobs for instant <50ms page load times
-    displayed_jobs = all_jobs[:100]
+    applied_set = get_applied_companies_set()
     cards_html = ""
 
-    for j in displayed_jobs:
+    for j in all_jobs:
+        comp_lower = j['company'].lower().strip()
+        is_applied = comp_lower in applied_set
+
+        if is_applied:
+            status_badge = '<span class="badge badge-applied">✅ APPLIED</span>'
+            action_btn = '<button class="btn btn-disabled" disabled>✓ Logged</button>'
+        else:
+            status_badge = '<span class="badge badge-not-applied">⚡ NOT APPLIED</span>'
+            action_btn = f'<button onclick="logJob(\'{j[\'company\']}\', \'{j[\'title\']}\')" class="btn btn-success">+ Log to Sheet</button>'
+
         cards_html += f"""
-        <div class="job-card" data-search="{j['company'].lower()} {j['title'].lower()} {j['location'].lower()}">
+        <div class="job-card" data-search="{j['company'].lower()} {j['title'].lower()} {j['location'].lower()} {'applied' if is_applied else 'not applied'}">
             <div class="job-header">
-                <span class="company">{j['company']}</span>
-                <span class="badge">{j['source']}</span>
+                <div>
+                    <span class="company">{j['company']}</span> &nbsp;
+                    {status_badge}
+                </div>
+                <span class="badge badge-source">🌐 Source: {j['source']}</span>
             </div>
             <div class="job-title">{j['title']}</div>
             <div class="job-meta">📍 {j['location']} &nbsp;•&nbsp; 🕒 Discovered: {j['date_found']}</div>
             <div class="job-actions">
                 <a href="{j['link']}" target="_blank" class="btn btn-primary">Apply Direct ↗</a>
-                <button onclick="logJob('{j['company']}', '{j['title']}')" class="btn btn-success">+ Log to Sheet</button>
+                {action_btn}
             </div>
         </div>
         """
 
     if not cards_html:
-        cards_html = '<div class="empty-msg">No job listings indexed yet. <a href="/test-scraper">Click here to trigger an immediate scraper scan!</a></div>'
+        cards_html = '<div class="empty-msg">No job listings indexed yet. Click "Trigger Re-Scan" above to run scrapers!</div>'
 
     total_count = len(all_jobs)
-    showing_str = f"Showing Latest {len(displayed_jobs)} of {total_count} Active Schemes" if total_count > len(displayed_jobs) else f"{total_count} Active Schemes"
 
     return f"""<!DOCTYPE html>
 <html>
@@ -57,14 +68,17 @@ def render_jobs_page_html():
         .header-box {{ text-align: center; margin-bottom: 25px; }}
         h1 {{ color: #38bdf8; margin-bottom: 5px; font-size: 26px; }}
         .subtitle {{ color: #94a3b8; font-size: 14px; margin-bottom: 12px; }}
-        .rescan-btn {{ display: inline-block; background: #0284c7; color: white; text-decoration: none; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: bold; }}
+        .rescan-btn {{ display: inline-block; background: #0284c7; color: white; text-decoration: none; padding: 10px 20px; border-radius: 8px; font-size: 14px; font-weight: bold; border: none; cursor: pointer; }}
         .rescan-btn:hover {{ background: #0369a1; }}
         .search-input {{ width: 100%; box-sizing: border-box; padding: 14px 20px; border-radius: 10px; border: 1px solid #334155; background: #1e293b; color: white; font-size: 16px; margin-bottom: 20px; outline: none; }}
         .search-input:focus {{ border-color: #38bdf8; }}
         .job-card {{ background: #1e293b; border-radius: 12px; padding: 20px; margin-bottom: 15px; border: 1px solid #334155; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }}
-        .job-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }}
+        .job-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 10px; }}
         .company {{ color: #f1f5f9; font-weight: bold; font-size: 18px; }}
-        .badge {{ background: #0284c7; color: white; font-size: 12px; padding: 4px 10px; border-radius: 12px; font-weight: bold; }}
+        .badge {{ font-size: 11px; padding: 4px 10px; border-radius: 12px; font-weight: bold; display: inline-block; }}
+        .badge-source {{ background: #334155; color: #cbd5e1; }}
+        .badge-applied {{ background: #064e3b; color: #6ee7b7; border: 1px solid #047857; }}
+        .badge-not-applied {{ background: #1e3a8a; color: #93c5fd; border: 1px solid #1d4ed8; }}
         .job-title {{ color: #93c5fd; font-size: 16px; margin-bottom: 10px; line-height: 1.4; }}
         .job-meta {{ color: #64748b; font-size: 13px; margin-bottom: 15px; }}
         .job-actions {{ display: flex; gap: 10px; }}
@@ -73,8 +87,11 @@ def render_jobs_page_html():
         .btn-primary:hover {{ background: #1d4ed8; }}
         .btn-success {{ background: #10b981; color: white; }}
         .btn-success:hover {{ background: #059669; }}
+        .btn-disabled {{ background: #334155; color: #94a3b8; cursor: not-allowed; }}
+        .terminal-box {{ background: #020617; border: 1px solid #38bdf8; border-radius: 12px; padding: 20px; margin-bottom: 25px; text-align: left; font-family: monospace; box-shadow: 0 0 20px rgba(56,189,248,0.2); }}
+        .terminal-header {{ color: #38bdf8; font-weight: bold; font-size: 14px; margin-bottom: 10px; display: flex; justify-content: space-between; }}
+        .terminal-logs {{ color: #a5f3fc; font-size: 13px; margin: 0; white-space: pre-wrap; word-break: break-all; max-height: 180px; overflow-y: auto; }}
         .empty-msg {{ text-align: center; color: #64748b; padding: 40px; font-size: 16px; }}
-        .empty-msg a {{ color: #38bdf8; font-weight: bold; }}
     </style>
     <script>
         function filterJobs() {{
@@ -88,8 +105,41 @@ def render_jobs_page_html():
         function logJob(company, role) {{
             fetch('/api/log?company=' + encodeURIComponent(company) + '&role=' + encodeURIComponent(role))
                 .then(r => r.json())
-                .then(d => alert('✅ Successfully logged ' + company + ' to Google Sheets!'))
+                .then(d => {{
+                    alert('✅ Successfully logged ' + company + ' to Google Sheets!');
+                    location.reload();
+                }})
                 .catch(e => alert('❌ Error logging job: ' + e));
+        }}
+        function triggerInlineScan() {{
+            let term = document.getElementById('terminal-box');
+            let log = document.getElementById('terminal-logs');
+            let tag = document.getElementById('scan-tag');
+            term.style.display = 'block';
+            tag.innerText = 'Running...';
+            log.innerText = '⚡ Initiating background multi-source scraper run...\\nScanning Greenhouse API, Lever API, and Trackr API...\\nPlease wait...';
+            
+            fetch('/api/trigger-scan')
+                .then(r => r.json())
+                .then(d => {{
+                    let checkInterval = setInterval(() => {{
+                        fetch('/status')
+                            .then(sr => sr.json())
+                            .then(s => {{
+                                log.innerText = "⚡ Scraper Status: Run in progress...\\nLast Run: " + s.last_run + "\\nActive Schemes Indexed: " + s.total_discovered_jobs;
+                            }});
+                    }}, 2000);
+                    
+                    setTimeout(() => {{
+                        clearInterval(checkInterval);
+                        tag.innerText = 'Complete!';
+                        log.innerText += '\\n\\n✅ Scraper run completed successfully! Reloading schemes...';
+                        setTimeout(() => location.reload(), 1500);
+                    }}, 8000);
+                }})
+                .catch(e => {{
+                    log.innerText += '\\n❌ Error triggering scan: ' + e;
+                }});
         }}
     </script>
 </head>
@@ -101,18 +151,26 @@ def render_jobs_page_html():
             <a href="/status">⚙️ Diagnostics</a>
         </div>
         <div class="header-box">
-            <h1>Discovered UK Schemes</h1>
-            <div class="subtitle">{showing_str}</div>
-            <a href="/test-scraper" class="rescan-btn">🔄 Trigger Re-Scan Scrapers</a>
+            <h1>Discovered UK Schemes ({total_count})</h1>
+            <div class="subtitle">Real-time UK Maths, Quant & CS Internship Directory</div>
+            <button onclick="triggerInlineScan()" class="rescan-btn">🔄 Trigger Inline Re-Scan</button>
         </div>
-        <input type="text" id="search" onkeyup="filterJobs()" placeholder="🔍 Search company, role title, or location..." class="search-input">
+
+        <div id="terminal-box" class="terminal-box" style="display:none;">
+            <div class="terminal-header">
+                <span>⚡ Active Scraper Terminal Console</span>
+                <span id="scan-tag" style="color:#10b981;">Running...</span>
+            </div>
+            <pre id="terminal-logs" class="terminal-logs">Initializing...</pre>
+        </div>
+
+        <input type="text" id="search" onkeyup="filterJobs()" placeholder="🔍 Search company, role, location, or 'applied' / 'not applied'..." class="search-input">
         <div id="job-list">
             {cards_html}
         </div>
     </div>
 </body>
 </html>"""
-
 
 class CleanHandler(http.server.BaseHTTPRequestHandler):
     def send_cors_headers(self):
@@ -197,6 +255,17 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps({"status": "success", "message": f"Logged {company}"}).encode("utf-8"))
+            return
+
+        elif clean_path == "/api/trigger-scan":
+            # Run scrapers asynchronously in background thread so HTTP request returns instantly!
+            threading.Thread(target=run_all_scrapers, daemon=True).start()
+
+            self.send_response(200)
+            self.send_cors_headers()
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "started", "message": "Scraper run initiated"}).encode("utf-8"))
             return
 
         elif clean_path in ["/", "/sankey", "/refresh"]:

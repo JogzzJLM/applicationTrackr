@@ -11,20 +11,19 @@ from config import (
 from notifications import send_notification
 
 def extract_and_register_ats_company(url):
-    """Dynamically extracts clean company name from Greenhouse/Lever URLs and adds to target list."""
     try:
-        clean_url = url.split("?")[0].split("#")[0]
+        clean_url = url.split("?")[0].split("#")[0].strip()
         if "greenhouse.io" in clean_url:
             match = re.search(r"greenhouse\.io/([^/]+)", clean_url)
             if match:
-                company = match.group(1).lower()
+                company = match.group(1).lower().strip()
                 if company not in GREENHOUSE_COMPANIES and company not in ["embed", "jobs", "embeds"]:
                     GREENHOUSE_COMPANIES.append(company)
                     print(f"  ✨ Dynamically registered new Greenhouse company: {company}")
         elif "lever.co" in clean_url:
             match = re.search(r"lever\.co/([^/]+)", clean_url)
             if match:
-                company = match.group(1).lower()
+                company = match.group(1).lower().strip()
                 if company not in LEVER_COMPANIES and company not in ["jobs"]:
                     LEVER_COMPANIES.append(company)
                     print(f"  ✨ Dynamically registered new Lever company: {company}")
@@ -79,7 +78,7 @@ def load_discovered_jobs():
 def save_discovered_jobs(jobs):
     try:
         with open(DISCOVERED_JOBS_FILE, "w") as f:
-            json.dump(jobs[:250], f, indent=2)
+            json.dump(jobs[:1000], f, indent=2)  # Expanded capacity to 1,000 schemes
     except Exception:
         pass
 
@@ -104,11 +103,15 @@ def scrape_greenhouse_jobs(seen_jobs, discovered_list):
     companies_scanned = 0
     relevant_found = 0
 
-    print(f"  [Greenhouse API] Scanning {len(GREENHOUSE_COMPANIES)} target companies...")
-    for company in GREENHOUSE_COMPANIES:
+    clean_companies = list(set([c.split('?')[0].split('#')[0].strip() for c in GREENHOUSE_COMPANIES if c.strip()]))
+
+    print(f"  [Greenhouse API] Scanning {len(clean_companies)} target companies...")
+    for company in clean_companies:
+        if not company or company in ["embed", "jobs", "embeds"]:
+            continue
         url = f"https://boards-api.greenhouse.io/v1/boards/{company}/jobs"
         try:
-            resp = requests.get(url, timeout=10)
+            resp = requests.get(url, timeout=6)
             if resp.status_code == 200:
                 companies_scanned += 1
                 fetched = resp.json().get("jobs", [])
@@ -131,10 +134,10 @@ def scrape_greenhouse_jobs(seen_jobs, discovered_list):
 
                 if company_relevant > 0:
                     print(f"    ↳ {company.capitalize()}: {len(fetched)} jobs fetched ({company_relevant} relevant)")
-        except Exception as e:
-            print(f"    ⚠️ Greenhouse error [{company}]: {e}")
+        except Exception:
+            pass
 
-    SCRAPER_STATUS["source_status"][source_name] = f"OK ({companies_scanned}/{len(GREENHOUSE_COMPANIES)} companies online, {relevant_found} active schemes)"
+    SCRAPER_STATUS["source_status"][source_name] = f"OK ({companies_scanned}/{len(clean_companies)} companies online, {relevant_found} active schemes)"
     return new_jobs
 
 def scrape_lever_jobs(seen_jobs, discovered_list):
@@ -143,11 +146,15 @@ def scrape_lever_jobs(seen_jobs, discovered_list):
     companies_scanned = 0
     relevant_found = 0
 
-    print(f"  [Lever API] Scanning {len(LEVER_COMPANIES)} target companies...")
-    for company in LEVER_COMPANIES:
+    clean_companies = list(set([c.split('?')[0].split('#')[0].strip() for c in LEVER_COMPANIES if c.strip()]))
+
+    print(f"  [Lever API] Scanning {len(clean_companies)} target companies...")
+    for company in clean_companies:
+        if not company or company in ["jobs"]:
+            continue
         url = f"https://api.lever.co/v0/postings/{company}?mode=json"
         try:
-            resp = requests.get(url, timeout=10)
+            resp = requests.get(url, timeout=6)
             if resp.status_code == 200:
                 companies_scanned += 1
                 fetched = resp.json()
@@ -170,14 +177,13 @@ def scrape_lever_jobs(seen_jobs, discovered_list):
 
                 if company_relevant > 0:
                     print(f"    ↳ {company.capitalize()}: {len(fetched)} jobs fetched ({company_relevant} relevant)")
-        except Exception as e:
-            print(f"    ⚠️ Lever error [{company}]: {e}")
+        except Exception:
+            pass
 
-    SCRAPER_STATUS["source_status"][source_name] = f"OK ({companies_scanned}/{len(LEVER_COMPANIES)} companies online, {relevant_found} active schemes)"
+    SCRAPER_STATUS["source_status"][source_name] = f"OK ({companies_scanned}/{len(clean_companies)} companies online, {relevant_found} active schemes)"
     return new_jobs
 
 def scrape_trackr_website(seen_jobs, discovered_list):
-    """Scrapes official Trackr REST API (api.the-trackr.com) with required season parameters."""
     new_jobs = []
     source_name = "Trackr API"
     types = ["summer-internships", "industrial-placements", "graduate-schemes", "spring-weeks"]
@@ -218,7 +224,6 @@ def scrape_trackr_website(seen_jobs, discovered_list):
                                     full_title = f"{company} - {role}"
                                     job_id = f"trackr_api_{hash(full_title)}"
 
-                                    # Clean & dynamically register Greenhouse/Lever ATS company names
                                     extract_and_register_ats_company(link)
 
                                     if is_relevant_role(full_title, "UK", company):
@@ -229,9 +234,9 @@ def scrape_trackr_website(seen_jobs, discovered_list):
                                             seen_jobs.add(job_id)
                                             new_jobs.append((full_title, "UK", link))
 
-                    except Exception as parse_err:
+                    except Exception:
                         pass
-            except Exception as req_err:
+            except Exception:
                 pass
 
     print(f"  [Trackr Summary] Fetched {total_items_fetched} raw items across categories ({relevant_found} relevant schemes matching Maths & CS)")
