@@ -112,38 +112,27 @@ def get_detailed_applications():
         print(f"Error reading detailed applications: {e}")
     return apps
 
-
 def generate_default_sankey():
     """Renders a clean zero-data state when Google Sheet has 0 applications."""
     html_content = """<!DOCTYPE html>
 <html>
 <head>
-    <title>ApplicationTrackr - Live Dashboard</title>
+    <title>ApplicationTrackr - Live Flow</title>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #f8fafc; text-align: center; padding: 20px; }
-        .nav { display: flex; gap: 15px; justify-content: center; margin-bottom: 25px; border-bottom: 1px solid #334155; padding-bottom: 15px; }
-        .nav a { color: #94a3b8; text-decoration: none; font-weight: bold; padding: 8px 16px; border-radius: 8px; transition: 0.2s; }
-        .nav a:hover, .nav a.active { background: #1e293b; color: #38bdf8; }
-        .card { background: #1e293b; border-radius: 16px; padding: 40px; max-width: 550px; margin: 40px auto; box-shadow: 0 10px 30px rgba(0,0,0,0.4); border: 1px solid #334155; }
-        h1 { color: #38bdf8; font-size: 28px; margin-top: 15px; margin-bottom: 10px; }
-        p { color: #94a3b8; font-size: 15px; line-height: 1.6; }
-        .badge { background: #10b981; color: #022c22; font-weight: bold; padding: 6px 16px; border-radius: 20px; font-size: 13px; display: inline-block; }
-        .btn { display: inline-block; background: #3b82f6; color: white; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; margin-top: 20px; }
-        .btn:hover { background: #2563eb; }
+        body { font-family: 'Plus Jakarta Sans', system-ui, sans-serif; background: #090d16; color: #f8fafc; text-align: center; padding: 40px 20px; margin: 0; }
+        .card { background: rgba(19, 28, 46, 0.75); backdrop-filter: blur(16px); border-radius: 20px; padding: 40px; max-width: 500px; margin: 40px auto; border: 1px solid rgba(255, 255, 255, 0.08); box-shadow: 0 10px 30px rgba(0,0,0,0.4); }
+        h1 { color: #38bdf8; font-size: 22px; margin-top: 15px; margin-bottom: 10px; font-weight: 800; }
+        p { color: #94a3b8; font-size: 14px; line-height: 1.6; }
+        .badge { background: rgba(16, 185, 129, 0.15); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.3); font-weight: 700; padding: 6px 16px; border-radius: 20px; font-size: 12px; display: inline-block; }
     </style>
 </head>
 <body>
-    <div class="nav">
-        <a href="/" class="active">📊 Application Flow</a>
-        <a href="/jobs">💼 Discovered Schemes</a>
-        <a href="/status">⚙️ Diagnostics</a>
-    </div>
     <div class="card">
         <span class="badge">Sheet Status: Fresh Start</span>
         <h1>0 Applications Logged</h1>
         <p>Your Google Sheet is currently clean and empty.</p>
-        <p>Log your first job application using your <b>Safari Bookmarklet</b> or by editing your Google Sheet!</p>
-        <a href="/refresh" class="btn">Refresh Dashboard</a>
+        <p>Log your first job application using the <b>Safari Smart Auto-Apply Bookmarklet</b> or from the <b>Discovered Schemes</b> tab to see your live Sankey flow!</p>
     </div>
 </body>
 </html>"""
@@ -177,20 +166,28 @@ def generate_sankey_from_google_sheets():
             if stages:
                 row_count += 1
 
-            for i in range(len(stages) - 1):
-                src = stages[i]
-                tgt = stages[i + 1]
-                if src != tgt:
-                    pair = (src, tgt)
-                    flow_counts[pair] = flow_counts.get(pair, 0) + 1
-                    all_nodes.add(src)
-                    all_nodes.add(tgt)
+                # Root flow: Applications -> First Stage (e.g. Applications -> Applied)
+                pair0 = ("Applications", stages[0])
+                flow_counts[pair0] = flow_counts.get(pair0, 0) + 1
+                all_nodes.add("Applications")
+                all_nodes.add(stages[0])
+
+                # Subsequent stage flows: stages[i] -> stages[i+1]
+                for i in range(len(stages) - 1):
+                    src = stages[i]
+                    tgt = stages[i + 1]
+                    if src != tgt:
+                        pair = (src, tgt)
+                        flow_counts[pair] = flow_counts.get(pair, 0) + 1
+                        all_nodes.add(src)
+                        all_nodes.add(tgt)
 
         if row_count == 0 or not flow_counts:
             generate_default_sankey()
             return
 
-        node_list = list(all_nodes)
+        # Ensure "Applications" is the first node
+        node_list = ["Applications"] + [n for n in sorted(list(all_nodes)) if n != "Applications"]
         node_indices = {name: idx for idx, name in enumerate(node_list)}
 
         sources = [node_indices[src] for (src, tgt) in flow_counts.keys()]
@@ -200,38 +197,48 @@ def generate_sankey_from_google_sheets():
         colors = []
         for name in node_list:
             lower = name.lower()
-            if "offer" in lower:
-                colors.append("#2ecc71")
+            if name == "Applications":
+                colors.append("#818cf8")
+            elif "offer" in lower:
+                colors.append("#10b981")
             elif "reject" in lower or "fail" in lower:
-                colors.append("#e74c3c")
+                colors.append("#ef4444")
             elif "ghost" in lower:
-                colors.append("#95a5a6")
+                colors.append("#64748b")
+            elif "assessment" in lower or "interview" in lower or "oa" in lower:
+                colors.append("#f59e0b")
             else:
-                colors.append("#3498db")
+                colors.append("#38bdf8")
 
         fig = go.Figure(data=[go.Sankey(
             node=dict(
-                pad=20,
-                thickness=25,
-                line=dict(color="black", width=0.5),
+                pad=24,
+                thickness=20,
+                line=dict(color="rgba(255, 255, 255, 0.2)", width=1),
                 label=node_list,
                 color=colors
             ),
             link=dict(
                 source=sources,
                 target=targets,
-                value=values
+                value=values,
+                color="rgba(56, 189, 248, 0.25)"
             )
         )])
+
         fig.update_layout(
-            title_text="<b>ApplicationTrackr - Application Flow</b>",
+            title_text="<b>Application Trackr - Visual Application Pipeline</b>",
             font_size=13,
-            font_family="Arial, sans-serif",
+            font_color="#f8fafc",
+            font_family="Plus Jakarta Sans, sans-serif",
             autosize=True,
-            height=600,
+            height=540,
+            paper_bgcolor="#090d16",
+            plot_bgcolor="#090d16",
             margin=dict(l=20, r=20, t=50, b=20)
         )
         fig.write_html("sankey_diagram.html")
 
-    except Exception:
+    except Exception as e:
+        print(f"Error generating Sankey diagram: {e}")
         generate_default_sankey()
