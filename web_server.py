@@ -5,67 +5,60 @@ import http.server
 import socketserver
 from urllib.parse import parse_qs, urlparse
 
-from config import PORT, SCRAPER_STATUS, HP_STREAM_TAILSCALE_IP
+from config import PORT, SCRAPER_STATUS, HP_STREAM_TAILSCALE_IP, load_settings, save_settings
 from notifications import send_notification
 from sheets import update_google_sheet_via_webhook, generate_sankey_from_google_sheets, generate_default_sankey, get_applied_companies_set
 from scrapers import run_all_scrapers, load_discovered_jobs
 from scheduler import trigger_daily_briefing, trigger_weekly_report
-from settings import load_filter_settings, save_filter_settings
 
 class ThreadedHTTPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     allow_reuse_address = True
     daemon_threads = True
 
 def render_settings_page_html():
-    settings = load_filter_settings()
-    active_profile = settings.get("active_profile", "jog")
-    profiles = settings.get("profiles", {})
-    p = profiles.get(active_profile, {})
-
-    profile_options_html = ""
-    for k, v in profiles.items():
-        sel = 'selected' if k == active_profile else ''
-        profile_options_html += f'<option value="{k}" {sel}>{v.get("name", k)}</option>'
+    s = load_settings()
+    grad_years = ", ".join(s.get("grad_years_allowed", []))
+    ex_keywords = ", ".join(s.get("exclude_keywords", []))
+    ex_locations = ", ".join(s.get("exclude_locations", []))
+    my_skills = ", ".join(s.get("my_skills", []))
 
     return f"""<!DOCTYPE html>
 <html>
 <head>
-    <title>ApplicationTrackr - Live Filter Settings</title>
+    <title>ApplicationTrackr - Dynamic Settings</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 20px; }}
         .nav {{ display: flex; gap: 15px; justify-content: center; margin-bottom: 25px; border-bottom: 1px solid #334155; padding-bottom: 15px; }}
         .nav a {{ color: #94a3b8; text-decoration: none; font-weight: bold; padding: 8px 16px; border-radius: 8px; transition: 0.2s; }}
         .nav a:hover, .nav a.active {{ background: #1e293b; color: #38bdf8; }}
-        .container {{ max-width: 700px; margin: 0 auto; background: #1e293b; border-radius: 16px; padding: 30px; border: 1px solid #334155; box-shadow: 0 10px 30px rgba(0,0,0,0.4); }}
-        h1 {{ color: #38bdf8; font-size: 24px; margin-top: 0; margin-bottom: 20px; text-align: center; }}
+        .container {{ max-width: 650px; margin: 0 auto; background: #1e293b; border-radius: 16px; padding: 35px; border: 1px solid #334155; box-shadow: 0 10px 30px rgba(0,0,0,0.3); }}
+        h1 {{ color: #38bdf8; text-align: center; margin-top: 0; margin-bottom: 5px; font-size: 24px; }}
+        p.sub {{ text-align: center; color: #94a3b8; font-size: 14px; margin-bottom: 25px; }}
         .form-group {{ margin-bottom: 20px; }}
-        label {{ display: block; font-weight: bold; color: #cbd5e1; margin-bottom: 8px; font-size: 14px; }}
-        input, select, textarea {{ width: 100%; box-sizing: border-box; padding: 12px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: white; font-size: 14px; outline: none; }}
-        input:focus, textarea:focus, select:focus {{ border-color: #38bdf8; }}
-        textarea {{ resize: vertical; min-height: 80px; }}
-        .btn-save {{ width: 100%; background: #10b981; color: white; padding: 14px; border-radius: 8px; font-weight: bold; font-size: 16px; border: none; cursor: pointer; transition: 0.2s; margin-top: 10px; }}
+        label {{ display: block; color: #cbd5e1; font-weight: bold; font-size: 14px; margin-bottom: 8px; }}
+        input[type="text"] {{ width: 100%; box-sizing: border-box; padding: 12px 16px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: white; font-size: 14px; outline: none; }}
+        input[type="text"]:focus {{ border-color: #38bdf8; }}
+        .btn-save {{ width: 100%; background: #10b981; color: white; font-weight: bold; padding: 14px; border-radius: 8px; border: none; font-size: 16px; cursor: pointer; margin-top: 10px; transition: 0.2s; }}
         .btn-save:hover {{ background: #059669; }}
     </style>
     <script>
-        function saveSettings() {{
-            let data = {{
-                active_profile: document.getElementById('active_profile').value,
-                grad_years: document.getElementById('grad_years').value.split(',').map(s => s.trim()),
-                excluded_skills: document.getElementById('excluded_skills').value.split(',').map(s => s.trim()),
-                include_keywords: document.getElementById('include_keywords').value.split(',').map(s => s.trim()),
-                exclude_keywords: document.getElementById('exclude_keywords').value.split(',').map(s => s.trim()),
-                target_locations: document.getElementById('target_locations').value.split(',').map(s => s.trim())
+        function saveSettings(e) {{
+            e.preventDefault();
+            let body = {{
+                grad_years_allowed: document.getElementById('grad_years').value.split(',').map(s=>s.trim()).filter(Boolean),
+                exclude_keywords: document.getElementById('ex_keywords').value.split(',').map(s=>s.trim()).filter(Boolean),
+                exclude_locations: document.getElementById('ex_locations').value.split(',').map(s=>s.trim()).filter(Boolean),
+                my_skills: document.getElementById('my_skills').value.split(',').map(s=>s.trim()).filter(Boolean)
             }};
-
             fetch('/api/settings', {{
                 method: 'POST',
-                headers: {{ 'Content-Type': 'application/json' }},
-                body: JSON.stringify(data)
+                headers: {{'Content-Type': 'application/json'}},
+                body: JSON.stringify(body)
             }})
-            .then(r => r.json())
-            .then(d => alert('💾 Filter settings updated live on HP Stream!'))
-            .catch(e => alert('❌ Error saving settings: ' + e));
+            .then(r=>r.json())
+            .then(d=> alert('💾 Settings saved! Scrapers will use these filters on the next run.'))
+            .catch(err=> alert('❌ Error saving settings: ' + err));
         }}
     </script>
 </head>
@@ -73,49 +66,34 @@ def render_settings_page_html():
     <div class="nav">
         <a href="/">📊 Application Flow</a>
         <a href="/jobs">💼 Discovered Schemes</a>
-        <a href="/settings" class="active">⚙️ Live Filter Settings</a>
+        <a href="/settings" class="active">⚙️ Filter Settings</a>
         <a href="/status">⚙️ Diagnostics</a>
     </div>
     <div class="container">
-        <h1>⚙️ Live Scraper Filter Settings</h1>
-        
-        <div class="form-group">
-            <label>Active User Profile Preset:</label>
-            <select id="active_profile" onchange="location.reload()">
-                {profile_options_html}
-            </select>
-        </div>
-
-        <div class="form-group">
-            <label>Allowed Graduation Years (Comma-separated):</label>
-            <input type="text" id="grad_years" value="{', '.join(p.get('grad_years', []))}">
-        </div>
-
-        <div class="form-group">
-            <label>Excluded Skills / Languages (Comma-separated e.g. c++, c/c++):</label>
-            <input type="text" id="excluded_skills" value="{', '.join(p.get('excluded_skills', []))}">
-        </div>
-
-        <div class="form-group">
-            <label>Included Role Keywords (Comma-separated):</label>
-            <textarea id="include_keywords">{', '.join(p.get('include_keywords', []))}</textarea>
-        </div>
-
-        <div class="form-group">
-            <label>Excluded Keywords (Comma-separated):</label>
-            <textarea id="exclude_keywords">{', '.join(p.get('exclude_keywords', []))}</textarea>
-        </div>
-
-        <div class="form-group">
-            <label>Target Locations (Comma-separated):</label>
-            <input type="text" id="target_locations" value="{', '.join(p.get('target_locations', []))}">
-        </div>
-
-        <button onclick="saveSettings()" class="btn-save">💾 Save Settings (Live On HP Stream)</button>
+        <h1>Dynamic Scraper Filters</h1>
+        <p class="sub">Update filters on the go — No git push required!</p>
+        <form onsubmit="saveSettings(event)">
+            <div class="form-group">
+                <label>Target Graduation Years (Comma-separated)</label>
+                <input type="text" id="grad_years" value="{grad_years}">
+            </div>
+            <div class="form-group">
+                <label>Excluded Grad Years / Terms (Comma-separated)</label>
+                <input type="text" id="ex_keywords" value="{ex_keywords}">
+            </div>
+            <div class="form-group">
+                <label>Excluded Foreign Locations (Comma-separated)</label>
+                <input type="text" id="ex_locations" value="{ex_locations}">
+            </div>
+            <div class="form-group">
+                <label>My Known Skills (Comma-separated)</label>
+                <input type="text" id="my_skills" value="{my_skills}">
+            </div>
+            <button type="submit" class="btn-save">💾 Save Filter Settings</button>
+        </form>
     </div>
 </body>
 </html>"""
-
 
 def render_jobs_page_html():
     all_jobs = load_discovered_jobs()
@@ -130,7 +108,6 @@ def render_jobs_page_html():
 
         comp_js = comp_name.replace("'", "\\'").replace('"', '&quot;')
         title_js = title_name.replace("'", "\\'").replace('"', '&quot;')
-        link_js = j['link'].replace("'", "\\'").replace('"', '&quot;')
 
         if is_applied:
             status_badge = '<span class="badge badge-applied">✅ APPLIED</span>'
@@ -138,7 +115,7 @@ def render_jobs_page_html():
         else:
             status_badge = '<span class="badge badge-not-applied">⚡ NOT APPLIED</span>'
             action_btn = f'''
-            <button onclick="autoApply('{comp_js}', '{title_js}', '{link_js}')" class="btn btn-auto">⚡ Auto-Apply & Log</button>
+            <button onclick="autoApply('{comp_js}', '{title_js}', '{j['link']}')" class="btn btn-auto">⚡ Auto-Apply & Log</button>
             <button onclick="logJob('{comp_js}', '{title_js}')" class="btn btn-success">+ Log Only</button>
             '''
 
@@ -225,9 +202,7 @@ def render_jobs_page_html():
                 .catch(e => alert('❌ Error logging job: ' + e));
         }}
         function autoApply(company, role, link) {{
-            // 1. Open job application link immediately on user click gesture (bypasses Safari popup blocker)
             window.open(link, '_blank');
-            // 2. Automatically log to Google Sheets in background
             fetch('/api/log?company=' + encodeURIComponent(company) + '&role=' + encodeURIComponent(role))
                 .then(r => r.json())
                 .then(d => {{
@@ -271,7 +246,7 @@ def render_jobs_page_html():
         <div class="nav">
             <a href="/">📊 Application Flow</a>
             <a href="/jobs" class="active">💼 Discovered Schemes ({total_count})</a>
-            <a href="/settings">⚙️ Live Filter Settings</a>
+            <a href="/settings">⚙️ Filter Settings</a>
             <a href="/status">⚙️ Diagnostics</a>
         </div>
         <div class="header-box">
@@ -321,39 +296,7 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
         )
 
     def do_POST(self):
-        if self.path.startswith("/api/settings"):
-            content_length = int(self.headers.get("Content-Length", 0))
-            body_raw = self.rfile.read(content_length).decode("utf-8", errors="ignore")
-            try:
-                new_data = json.loads(body_raw)
-                current_settings = load_filter_settings()
-                active_profile = new_data.get("active_profile", current_settings.get("active_profile", "jog"))
-                
-                current_settings["active_profile"] = active_profile
-                if active_profile in current_settings.get("profiles", {}):
-                    p = current_settings["profiles"][active_profile]
-                    p["grad_years"] = new_data.get("grad_years", p.get("grad_years", []))
-                    p["excluded_skills"] = new_data.get("excluded_skills", p.get("excluded_skills", []))
-                    p["include_keywords"] = new_data.get("include_keywords", p.get("include_keywords", []))
-                    p["exclude_keywords"] = new_data.get("exclude_keywords", p.get("exclude_keywords", []))
-                    p["target_locations"] = new_data.get("target_locations", p.get("target_locations", []))
-
-                save_filter_settings(current_settings)
-
-                self.send_response(200)
-                self.send_cors_headers()
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
-                self.wfile.write(json.dumps({"status": "success", "message": "Settings saved"}).encode("utf-8"))
-                return
-            except Exception as e:
-                self.send_response(500)
-                self.send_cors_headers()
-                self.end_headers()
-                self.wfile.write(json.dumps({"status": "error", "message": str(e)}).encode("utf-8"))
-                return
-
-        elif self.path.startswith("/api/log"):
+        if self.path.startswith("/api/log"):
             company = "Unknown"
             role = "Software/Quant Role"
             link = ""
@@ -389,6 +332,28 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({"status": "success", "message": f"Logged {company}"}).encode("utf-8"))
             return
+
+        elif self.path == "/api/settings":
+            content_length = int(self.headers.get("Content-Length", 0))
+            body_raw = self.rfile.read(content_length).decode("utf-8", errors="ignore")
+            try:
+                data = json.loads(body_raw)
+                current = load_settings()
+                current.update(data)
+                save_settings(current)
+
+                self.send_response(200)
+                self.send_cors_headers()
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "success", "message": "Settings updated"}).encode("utf-8"))
+                return
+            except Exception as e:
+                self.send_response(500)
+                self.send_cors_headers()
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "error", "message": str(e)}).encode("utf-8"))
+                return
 
         self.send_response(404)
         self.send_cors_headers()
