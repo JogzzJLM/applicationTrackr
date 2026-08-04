@@ -1,6 +1,7 @@
 import os
 import json
 import requests
+import time
 from bs4 import BeautifulSoup
 from config import (
     SEEN_JOBS_FILE, SCRAPER_STATUS, EXCLUDE_KEYWORDS, EXCLUDE_LOCATIONS,
