@@ -1,6 +1,7 @@
 import os
 import json
 import time
+import re
 import requests
 from bs4 import BeautifulSoup
 from config import (
@@ -10,6 +11,26 @@ from config import (
 )
 from notifications import send_notification
 
+def extract_and_register_ats_company(url):
+    """Dynamically extracts company name from Greenhouse/Lever URLs and adds to target list."""
+    try:
+        if "greenhouse.io" in url:
+            match = re.search(r"greenhouse\.io/([^/]+)", url) or re.search(r"for=([^&]+)", url)
+            if match:
+                company = match.group(1).lower()
+                if company not in GREENHOUSE_COMPANIES:
+                    GREENHOUSE_COMPANIES.append(company)
+                    print(f"  ✨ Dynamically registered new Greenhouse company: {company}")
+        elif "lever.co" in url:
+            match = re.search(r"lever\.co/([^/]+)", url)
+            if match:
+                company = match.group(1).lower()
+                if company not in LEVER_COMPANIES:
+                    LEVER_COMPANIES.append(company)
+                    print(f"  ✨ Dynamically registered new Lever company: {company}")
+    except Exception:
+        pass
+
 def is_relevant_role(title, location, company):
     title_lower = title.lower()
     loc_lower = location.lower()
@@ -18,7 +39,7 @@ def is_relevant_role(title, location, company):
 
     if any(ex in title_lower for ex in EXCLUDE_KEYWORDS):
         return False
-    if any(ex_loc in full_text for ex in EXCLUDE_LOCATIONS):
+    if any(ex_loc in full_text for ex_loc in EXCLUDE_LOCATIONS):
         return False
     if not any(lvl in title_lower for lvl in LEVEL_KEYWORDS):
         return False
@@ -159,24 +180,25 @@ def scrape_trackr_website(seen_jobs, discovered_list):
     new_jobs = []
     source_name = "Trackr Web"
     trackr_urls = [
-        "https://app.the-trackr.com/uk-tech/summer-internships",
-        "https://app.the-trackr.com/uk-tech/industrial-placements",
-        "https://app.the-trackr.com/uk-tech/graduate-schemes",
-        "https://app.the-trackr.com/uk-tech/spring-weeks"
+        ("Summer Internships", "https://app.the-trackr.com/uk-tech/summer-internships"),
+        ("Industrial Placements", "https://app.the-trackr.com/uk-tech/industrial-placements"),
+        ("Graduate Schemes", "https://app.the-trackr.com/uk-tech/graduate-schemes"),
+        ("Spring Weeks", "https://app.the-trackr.com/uk-tech/spring-weeks")
     ]
     relevant_found = 0
     total_rows = 0
 
     print("  [Trackr Web] Scraping app.the-trackr.com UK Tech categories...")
-    headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"}
+    headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
 
-    for url in trackr_urls:
+    for category, url in trackr_urls:
         try:
             resp = requests.get(url, headers=headers, timeout=10)
             if resp.status_code == 200:
                 soup = BeautifulSoup(resp.text, "html.parser")
                 rows = soup.find_all("tr")
                 total_rows += len(rows)
+                cat_relevant = 0
 
                 for row in rows:
                     cols = [td.get_text(strip=True) for td in row.find_all(["td", "th"])]
@@ -189,19 +211,28 @@ def scrape_trackr_website(seen_jobs, discovered_list):
                             link_tag = row.find("a", href=True)
                             href = link_tag["href"] if link_tag else url
                             full_url = href if href.startswith("http") else f"https://app.the-trackr.com{href}"
+
+                            # Auto-discover Greenhouse/Lever company name from link
+                            extract_and_register_ats_company(full_url)
+
                             job_id = f"trackr_{hash(full_title)}"
 
                             if is_relevant_role(full_title, "UK", company):
+                                cat_relevant += 1
                                 relevant_found += 1
                                 add_discovered_job(discovered_list, job_id, company, role, "UK", full_url, source_name)
 
                                 if job_id not in seen_jobs:
                                     seen_jobs.add(job_id)
                                     new_jobs.append((full_title, "UK", full_url))
-        except Exception as e:
-            print(f"    ⚠️ Trackr category error [{url}]: {e}")
 
-    print(f"    ↳ Trackr: Scraped {total_rows} rows across 4 categories ({relevant_found} relevant schemes)")
+                print(f"    ↳ {category}: HTTP {resp.status_code} | HTML: {len(resp.text)} bytes | Rows: {len(rows)} | Relevant: {cat_relevant}")
+            else:
+                print(f"    ⚠️ {category}: Failed with HTTP {resp.status_code}")
+        except Exception as e:
+            print(f"    ⚠️ Trackr error [{category}]: {e}")
+
+    print(f"  [Trackr Summary] Total {total_rows} rows parsed across 4 categories ({relevant_found} relevant schemes)")
     SCRAPER_STATUS["source_status"][source_name] = f"OK ({total_rows} table rows, {relevant_found} active schemes)"
     return new_jobs
 

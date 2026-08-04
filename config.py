@@ -28,5 +28,10 @@ ROLE_KEYWORDS = ["software", "developer", "engineer", "engineering", "backend", 
 LOCATION_KEYWORDS = ["london", "birmingham", "oxford", "aylesbury", "west midlands", "remote", "uk", "united kingdom", "cambridge", "manchester", "edinburgh"]
 SPECIAL_INTL_COMPANIES = ["beamng", "janestreet", "optiver", "citadel", "hudsonrivertrading", "hrt", "twosigma", "imc", "flowtraders", "wayve", "samsara", "quadrature", "millennium"]
 
-GREENHOUSE_COMPANIES = ["deliveroo", "cloudflare", "snyk", "monzo", "starlingbank", "janestreet", "optiver", "canonical", "citadel", "hudsonrivertrading", "palantir", "millennium", "quadrature", "samsara", "imc"]
-LEVER_COMPANIES = ["spotify", "revolut", "checkout", "beamng", "wayve", "palantir"]
+GREENHOUSE_COMPANIES = [
+    "deliveroo", "cloudflare", "snyk", "monzo", "starlingbank", 
+    "janestreet", "optiver", "canonical", "citadel", "hudsonrivertrading", 
+    "palantir", "millennium", "quadrature", "samsara", "imc", "bloomberg",
+    "two-sigma", "jump-trading", "barclays"
+]
+LEVER_COMPANIES = ["spotify", "revolut", "checkout", "beamng", "wayve", "palantir", "five-ai"]
