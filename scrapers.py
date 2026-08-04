@@ -180,7 +180,7 @@ def scrape_trackr_website(seen_jobs, discovered_list):
     new_jobs = []
     source_name = "Trackr API"
     types = ["summer-internships", "industrial-placements", "graduate-schemes", "spring-weeks"]
-    seasons = ["2027", "2026", ""]
+    seasons = ["2027", "2026", "2025"]
     relevant_found = 0
     total_items_fetched = 0
 
