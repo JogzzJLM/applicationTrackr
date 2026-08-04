@@ -770,11 +770,20 @@ def render_unified_dashboard_html(active_tab="flow"):
 </html>"""
 
 class CleanHandler(http.server.BaseHTTPRequestHandler):
+    def handle_one_request(self):
+        try:
+            super().handle_one_request()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        except Exception:
+            pass
+
     def send_cors_headers(self):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+
 
     def do_OPTIONS(self):
         self.send_response(200)
@@ -899,7 +908,17 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
                 self.wfile.write(f.read())
             return
 
+        elif clean_path in ["/favicon.ico", "/apple-touch-icon.png", "/apple-touch-icon-precomposed.png"]:
+            self.send_response(200)
+            self.send_cors_headers()
+            self.send_header("Content-Type", "image/svg+xml")
+            self.end_headers()
+            svg_icon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">⚡</text></svg>'
+            self.wfile.write(svg_icon.encode("utf-8"))
+            return
+
         elif clean_path in ["/", "/sankey", "/refresh"]:
+
             self.send_response(200)
             self.send_cors_headers()
             self.send_header("Content-Type", "text/html; charset=utf-8")
