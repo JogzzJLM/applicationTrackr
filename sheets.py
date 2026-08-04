@@ -53,24 +53,35 @@ def parse_sheet_stats():
 
 def generate_default_sankey():
     """Renders a clean zero-data state when Google Sheet has 0 applications."""
-    fig = go.Figure(data=[go.Sankey(
-        node=dict(
-            pad=15,
-            thickness=20,
-            line=dict(color="black", width=0.5),
-            label=["0 Applications Logged (Sheet Empty)", "Ready for Applications"],
-            color=["#3498db", "#2ecc71"]
-        ),
-        link=dict(source=[0], target=[1], value=[0.0001])
-    )])
-    fig.update_layout(
-        title_text="ApplicationTrackr - 0 Applications Logged (Fresh Start)",
-        font_size=14
-    )
-    fig.write_html("sankey_diagram.html")
+    html_content = """<!DOCTYPE html>
+<html>
+<head>
+    <title>ApplicationTrackr - Live Dashboard</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #f8fafc; text-align: center; padding: 60px 20px; }
+        .card { background: #1e293b; border-radius: 16px; padding: 40px; max-width: 550px; margin: 0 auto; box-shadow: 0 10px 30px rgba(0,0,0,0.4); border: 1px solid #334155; }
+        h1 { color: #38bdf8; font-size: 28px; margin-top: 15px; margin-bottom: 10px; }
+        p { color: #94a3b8; font-size: 15px; line-height: 1.6; }
+        .badge { background: #10b981; color: #022c22; font-weight: bold; padding: 6px 16px; border-radius: 20px; font-size: 13px; display: inline-block; }
+        .btn { display: inline-block; background: #3b82f6; color: white; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; margin-top: 20px; }
+        .btn:hover { background: #2563eb; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <span class="badge">Sheet Status: Fresh Start</span>
+        <h1>0 Applications Logged</h1>
+        <p>Your Google Sheet is currently clean and empty.</p>
+        <p>Log your first job application using your <b>Safari Bookmarklet</b> or by editing your Google Sheet!</p>
+        <a href="/refresh" class="btn">Refresh Dashboard</a>
+    </div>
+</body>
+</html>"""
+    with open("sankey_diagram.html", "w", encoding="utf-8") as f:
+        f.write(html_content)
 
 def generate_sankey_from_google_sheets():
-    """Fetches Google Sheet and renders multi-round Sankey diagram."""
+    """Fetches Google Sheet directly with cache-busting and renders Sankey Diagram."""
     try:
         cache_url = f"{GOOGLE_SHEET_CSV_URL}&_cb={int(time.time() * 1000)}"
         response = requests.get(cache_url, timeout=10)
@@ -130,10 +141,27 @@ def generate_sankey_from_google_sheets():
                 colors.append("#3498db")
 
         fig = go.Figure(data=[go.Sankey(
-            node=dict(pad=15, thickness=20, label=node_list, color=colors),
-            link=dict(source=sources, target=targets, value=values)
+            node=dict(
+                pad=20,
+                thickness=25,
+                line=dict(color="black", width=0.5),
+                label=node_list,
+                color=colors
+            ),
+            link=dict(
+                source=sources,
+                target=targets,
+                value=values
+            )
         )])
-        fig.update_layout(title_text="ApplicationTrackr - Multi-Round Application Flow", font_size=12)
+        fig.update_layout(
+            title_text="<b>ApplicationTrackr - Application Flow</b>",
+            font_size=13,
+            font_family="Arial, sans-serif",
+            autosize=True,
+            height=600,
+            margin=dict(l=20, r=20, t=50, b=20)
+        )
         fig.write_html("sankey_diagram.html")
 
     except Exception as e:
