@@ -68,12 +68,16 @@ def is_relevant_role(title, location, company):
 # MODULE 1: EMBEDDED WEB SERVER & API ENDPOINTS
 # ==========================================
 def start_web_server():
-    class CustomHandler(http.server.SimpleHTTPRequestHandler):
-        def do_OPTIONS(self):
-            self.send_response(200)
+    class CleanHandler(http.server.BaseHTTPRequestHandler):
+        def send_cors_headers(self):
             self.send_header("Access-Control-Allow-Origin", "*")
             self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
             self.send_header("Access-Control-Allow-Headers", "Content-Type")
+            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+
+        def do_OPTIONS(self):
+            self.send_response(200)
+            self.send_cors_headers()
             self.end_headers()
 
         def do_POST(self):
@@ -97,25 +101,23 @@ def start_web_server():
                     )
 
                     self.send_response(200)
+                    self.send_cors_headers()
                     self.send_header("Content-Type", "application/json")
-                    self.send_header("Access-Control-Allow-Origin", "*")
                     self.end_headers()
                     self.wfile.write(json.dumps({"status": "success", "message": f"Logged {company}"}).encode("utf-8"))
                     return
                 except Exception as e:
                     self.send_response(500)
-                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.send_cors_headers()
                     self.end_headers()
                     self.wfile.write(json.dumps({"status": "error", "message": str(e)}).encode("utf-8"))
                     return
 
             self.send_response(404)
+            self.send_cors_headers()
             self.end_headers()
 
         def do_GET(self):
-            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
-            self.send_header("Access-Control-Allow-Origin", "*")
-
             # 1. SANKEY DIAGRAM DASHBOARD
             if self.path in ["/", "/sankey", "/refresh"]:
                 generate_sankey_from_google_sheets()
@@ -123,6 +125,7 @@ def start_web_server():
                     generate_default_sankey()
 
                 self.send_response(200)
+                self.send_cors_headers()
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.end_headers()
                 with open("sankey_diagram.html", "rb") as f:
@@ -132,6 +135,7 @@ def start_web_server():
             # 2. DIAGNOSTICS STATUS
             elif self.path == "/status":
                 self.send_response(200)
+                self.send_cors_headers()
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
                 self.wfile.write(json.dumps(SCRAPER_STATUS, indent=2).encode("utf-8"))
@@ -141,35 +145,39 @@ def start_web_server():
             elif self.path == "/test-briefing":
                 trigger_daily_briefing()
                 self.send_response(200)
+                self.send_cors_headers()
                 self.send_header("Content-Type", "text/plain; charset=utf-8")
                 self.end_headers()
-                self.wfile.write("Triggered test Daily Morning Briefing! Check ntfy on your phone/Mac.".encode("utf-8"))
+                self.wfile.write("✅ Triggered test Daily Morning Briefing! Check ntfy on your phone/Mac.".encode("utf-8"))
                 return
 
             # 4. TEST ENDPOINT: WEEKLY REPORT
             elif self.path == "/test-weekly":
                 trigger_weekly_report()
                 self.send_response(200)
+                self.send_cors_headers()
                 self.send_header("Content-Type", "text/plain; charset=utf-8")
                 self.end_headers()
-                self.wfile.write("Triggered test Sunday Weekly Funnel Report! Check ntfy on your phone/Mac.".encode("utf-8"))
+                self.wfile.write("✅ Triggered test Sunday Weekly Funnel Report! Check ntfy on your phone/Mac.".encode("utf-8"))
                 return
 
             # 5. TEST ENDPOINT: SCRAPER RUN
             elif self.path == "/test-scraper":
                 run_all_scrapers()
                 self.send_response(200)
+                self.send_cors_headers()
                 self.send_header("Content-Type", "text/plain; charset=utf-8")
                 self.end_headers()
-                self.wfile.write("Triggered manual scraper run!".encode("utf-8"))
+                self.wfile.write("✅ Triggered manual scraper run!".encode("utf-8"))
                 return
 
             self.send_response(404)
+            self.send_cors_headers()
             self.end_headers()
             self.wfile.write("404 Not Found".encode("utf-8"))
 
     socketserver.TCPServer.allow_reuse_address = True
-    with socketserver.TCPServer(("", PORT), CustomHandler) as httpd:
+    with socketserver.TCPServer(("", PORT), CleanHandler) as httpd:
         print(f"🌍 Web Dashboard running at: http://{HP_STREAM_TAILSCALE_IP}:{PORT}")
         httpd.serve_forever()
 
