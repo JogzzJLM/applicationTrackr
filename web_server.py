@@ -21,15 +21,21 @@ def render_jobs_page_html():
     cards_html = ""
 
     for j in all_jobs:
-        comp_lower = j['company'].lower().strip()
+        comp_name = j['company']
+        title_name = j['title']
+        comp_lower = comp_name.lower().strip()
         is_applied = comp_lower in applied_set
+
+        # Escape single quotes safely for JS onclick handlers outside f-string brackets
+        comp_js = comp_name.replace("'", "\\'").replace('"', '&quot;')
+        title_js = title_name.replace("'", "\\'").replace('"', '&quot;')
 
         if is_applied:
             status_badge = '<span class="badge badge-applied">✅ APPLIED</span>'
             action_btn = '<button class="btn btn-disabled" disabled>✓ Logged</button>'
         else:
             status_badge = '<span class="badge badge-not-applied">⚡ NOT APPLIED</span>'
-            action_btn = f'<button onclick="logJob(\'{j[\'company\']}\', \'{j[\'title\']}\')" class="btn btn-success">+ Log to Sheet</button>'
+            action_btn = f'<button onclick="logJob(\'{comp_js}\', \'{title_js}\')" class="btn btn-success">+ Log to Sheet</button>'
 
         cards_html += f"""
         <div class="job-card" data-search="{j['company'].lower()} {j['title'].lower()} {j['location'].lower()} {'applied' if is_applied else 'not applied'}">
@@ -258,7 +264,6 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             return
 
         elif clean_path == "/api/trigger-scan":
-            # Run scrapers asynchronously in background thread so HTTP request returns instantly!
             threading.Thread(target=run_all_scrapers, daemon=True).start()
 
             self.send_response(200)
