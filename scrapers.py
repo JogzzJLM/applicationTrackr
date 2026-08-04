@@ -58,11 +58,15 @@ def load_discovered_jobs():
 def save_discovered_jobs(jobs):
     try:
         with open(DISCOVERED_JOBS_FILE, "w") as f:
-            json.dump(jobs[:250], f, indent=2)  # Keep latest 250 discovered roles
+            json.dump(jobs[:250], f, indent=2)
     except Exception:
         pass
 
 def add_discovered_job(discovered_list, job_id, company, title, location, link, source):
+    # Avoid duplicate dict entries in discovered_list
+    for item in discovered_list:
+        if item.get("id") == job_id:
+            return
     entry = {
         "id": job_id,
         "company": company,
@@ -77,60 +81,95 @@ def add_discovered_job(discovered_list, job_id, company, title, location, link, 
 def scrape_greenhouse_jobs(seen_jobs, discovered_list):
     new_jobs = []
     source_name = "Greenhouse API"
+    companies_scanned = 0
+    relevant_found = 0
+
+    print(f"  [Greenhouse API] Scanning {len(GREENHOUSE_COMPANIES)} target companies...")
     for company in GREENHOUSE_COMPANIES:
         url = f"https://boards-api.greenhouse.io/v1/boards/{company}/jobs"
         try:
             resp = requests.get(url, timeout=10)
             if resp.status_code == 200:
-                for job in resp.json().get("jobs", []):
+                companies_scanned += 1
+                fetched = resp.json().get("jobs", [])
+                company_relevant = 0
+
+                for job in fetched:
                     title = job.get("title", "")
                     location = job.get("location", {}).get("name", "")
                     job_url = job.get("absolute_url", "")
                     job_id = f"gh_{company}_{job.get('id')}"
 
-                    if job_id not in seen_jobs and is_relevant_role(title, location, company):
-                        seen_jobs.add(job_id)
-                        full_title = f"{company.capitalize()} - {title}"
-                        new_jobs.append((full_title, location, job_url))
+                    if is_relevant_role(title, location, company):
+                        company_relevant += 1
+                        relevant_found += 1
                         add_discovered_job(discovered_list, job_id, company.capitalize(), title, location, job_url, source_name)
-        except Exception:
-            pass
+
+                        if job_id not in seen_jobs:
+                            seen_jobs.add(job_id)
+                            new_jobs.append((f"{company.capitalize()} - {title}", location, job_url))
+
+                if company_relevant > 0:
+                    print(f"    ↳ {company.capitalize()}: {len(fetched)} jobs fetched ({company_relevant} relevant)")
+        except Exception as e:
+            print(f"    ⚠️ Greenhouse error [{company}]: {e}")
+
+    SCRAPER_STATUS["source_status"][source_name] = f"OK ({companies_scanned}/{len(GREENHOUSE_COMPANIES)} companies online, {relevant_found} active schemes)"
     return new_jobs
 
 def scrape_lever_jobs(seen_jobs, discovered_list):
     new_jobs = []
     source_name = "Lever API"
+    companies_scanned = 0
+    relevant_found = 0
+
+    print(f"  [Lever API] Scanning {len(LEVER_COMPANIES)} target companies...")
     for company in LEVER_COMPANIES:
         url = f"https://api.lever.co/v0/postings/{company}?mode=json"
         try:
             resp = requests.get(url, timeout=10)
             if resp.status_code == 200:
-                for job in resp.json():
+                companies_scanned += 1
+                fetched = resp.json()
+                company_relevant = 0
+
+                for job in fetched:
                     title = job.get("text", "")
                     location = job.get("categories", {}).get("location", "")
                     job_url = job.get("hostedUrl", "")
                     job_id = f"lever_{company}_{job.get('id')}"
 
-                    if job_id not in seen_jobs and is_relevant_role(title, location, company):
-                        seen_jobs.add(job_id)
-                        full_title = f"{company.capitalize()} - {title}"
-                        new_jobs.append((full_title, location, job_url))
+                    if is_relevant_role(title, location, company):
+                        company_relevant += 1
+                        relevant_found += 1
                         add_discovered_job(discovered_list, job_id, company.capitalize(), title, location, job_url, source_name)
-        except Exception:
-            pass
+
+                        if job_id not in seen_jobs:
+                            seen_jobs.add(job_id)
+                            new_jobs.append((f"{company.capitalize()} - {title}", location, job_url))
+
+                if company_relevant > 0:
+                    print(f"    ↳ {company.capitalize()}: {len(fetched)} jobs fetched ({company_relevant} relevant)")
+        except Exception as e:
+            print(f"    ⚠️ Lever error [{company}]: {e}")
+
+    SCRAPER_STATUS["source_status"][source_name] = f"OK ({companies_scanned}/{len(LEVER_COMPANIES)} companies online, {relevant_found} active schemes)"
     return new_jobs
 
 def scrape_trackr_website(seen_jobs, discovered_list):
     new_jobs = []
     source_name = "Trackr Web"
     url = "https://the-trackr.com"
+    relevant_found = 0
 
+    print("  [Trackr Web] Scraping the-trackr.com table listings...")
     try:
         headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"}
         resp = requests.get(url, headers=headers, timeout=10)
         if resp.status_code == 200:
             soup = BeautifulSoup(resp.text, "html.parser")
             rows = soup.find_all("tr")
+
             for row in rows:
                 cols = [td.get_text(strip=True) for td in row.find_all(["td", "th"])]
                 if len(cols) >= 2:
@@ -142,22 +181,28 @@ def scrape_trackr_website(seen_jobs, discovered_list):
                         link_tag = row.find("a", href=True)
                         href = link_tag["href"] if link_tag else url
                         full_url = href if href.startswith("http") else f"https://the-trackr.com{href}"
-                        
                         job_id = f"trackr_{hash(full_title)}"
-                        if job_id not in seen_jobs:
-                            if is_relevant_role(full_title, "UK", company):
+
+                        if is_relevant_role(full_title, "UK", company):
+                            relevant_found += 1
+                            add_discovered_job(discovered_list, job_id, company, role, "UK", full_url, source_name)
+
+                            if job_id not in seen_jobs:
                                 seen_jobs.add(job_id)
                                 new_jobs.append((full_title, "UK", full_url))
-                                add_discovered_job(discovered_list, job_id, company, role, "UK", full_url, source_name)
 
-        SCRAPER_STATUS["source_status"][source_name] = "OK"
+            print(f"    ↳ Trackr: Scraped {len(rows)} rows ({relevant_found} relevant matching schemes)")
+            SCRAPER_STATUS["source_status"][source_name] = f"OK ({len(rows)} table rows, {relevant_found} active schemes)"
+        else:
+            SCRAPER_STATUS["source_status"][source_name] = f"HTTP {resp.status_code}"
     except Exception as e:
+        print(f"    ⚠️ Trackr Error: {e}")
         SCRAPER_STATUS["source_status"][source_name] = f"Error: {e}"
 
     return new_jobs
 
 def run_all_scrapers():
-    print("\n🔍 Running Scraper Engine...")
+    print("\n🔍 Running Active UK Scraper Engine...")
     seen_jobs = load_seen_jobs()
     discovered_list = load_discovered_jobs()
     all_new_jobs = []
@@ -171,11 +216,12 @@ def run_all_scrapers():
 
     SCRAPER_STATUS["last_run"] = time.strftime("%Y-%m-%d %H:%M:%S")
     SCRAPER_STATUS["total_seen_jobs"] = len(seen_jobs)
+    SCRAPER_STATUS["total_discovered_jobs"] = len(discovered_list)
     SCRAPER_STATUS["last_new_jobs_found"] = len(all_new_jobs)
 
+    print(f"📊 Scraper Run Complete: {len(discovered_list)} total active schemes indexed ({len(all_new_jobs)} new alerts sent).")
+
     if all_new_jobs:
-        print(f"🚨 FOUND {len(all_new_jobs)} NEW MATCHING ROLES!")
-        
         if len(all_new_jobs) > 5:
             summary = "\n".join([f"• {t[0]}" for t in all_new_jobs[:3]])
             send_notification(

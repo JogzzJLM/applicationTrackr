@@ -31,7 +31,7 @@ def render_jobs_page_html():
         """
 
     if not cards_html:
-        cards_html = '<div class="empty-msg">No job listings discovered yet. Run a scraper check or wait for the next automatic cycle!</div>'
+        cards_html = '<div class="empty-msg">No job listings indexed yet. <a href="/test-scraper">Click here to trigger an immediate scraper scan!</a></div>'
 
     return f"""<!DOCTYPE html>
 <html>
@@ -46,6 +46,8 @@ def render_jobs_page_html():
         .container {{ max-width: 900px; margin: 0 auto; }}
         .header-box {{ text-align: center; margin-bottom: 25px; }}
         h1 {{ color: #38bdf8; margin-bottom: 10px; font-size: 26px; }}
+        .rescan-btn {{ display: inline-block; background: #0284c7; color: white; text-decoration: none; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: bold; margin-top: 5px; }}
+        .rescan-btn:hover {{ background: #0369a1; }}
         .search-input {{ width: 100%; box-sizing: border-box; padding: 14px 20px; border-radius: 10px; border: 1px solid #334155; background: #1e293b; color: white; font-size: 16px; margin-bottom: 20px; outline: none; }}
         .search-input:focus {{ border-color: #38bdf8; }}
         .job-card {{ background: #1e293b; border-radius: 12px; padding: 20px; margin-bottom: 15px; border: 1px solid #334155; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }}
@@ -61,6 +63,7 @@ def render_jobs_page_html():
         .btn-success {{ background: #10b981; color: white; }}
         .btn-success:hover {{ background: #059669; }}
         .empty-msg {{ text-align: center; color: #64748b; padding: 40px; font-size: 16px; }}
+        .empty-msg a {{ color: #38bdf8; font-weight: bold; }}
     </style>
     <script>
         function filterJobs() {{
@@ -87,8 +90,9 @@ def render_jobs_page_html():
             <a href="/status">⚙️ Diagnostics</a>
         </div>
         <div class="header-box">
-            <h1>Discovered UK Schemes</h1>
+            <h1>Discovered UK Schemes ({len(jobs)})</h1>
             <p style="color: #94a3b8;">Real-time UK Maths, Quant & CS Internship Listings</p>
+            <a href="/test-scraper" class="rescan-btn">🔄 Trigger Re-Scan Scrapers</a>
         </div>
         <input type="text" id="search" onkeyup="filterJobs()" placeholder="🔍 Search company, role title, or location..." class="search-input">
         <div id="job-list">
