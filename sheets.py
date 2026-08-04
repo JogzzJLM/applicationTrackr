@@ -3,7 +3,7 @@ import time
 import io
 import requests
 import plotly.graph_objects as go
-from config import GOOGLE_SHEET_WEBHOOK_URL, GOOGLE_SHEET_CSV_URL
+from config import GOOGLE_SHEET_WEBHOOK_URL, GOOGLE_SHEET_CSV_URL, normalize_company, normalize_role
 
 _SHEET_CSV_CACHE = {"timestamp": 0, "content": ""}
 
@@ -28,11 +28,11 @@ def fetch_google_sheet_csv(force_refresh=False):
 
     return _SHEET_CSV_CACHE.get("content", "")
 
-def update_google_sheet_via_webhook(company, stage, role="Software/Quant Role"):
+def update_google_sheet_via_webhook(company, stage, role="Software/Quant Role", link=""):
     if not GOOGLE_SHEET_WEBHOOK_URL or "YOUR_WEBHOOK_ID" in GOOGLE_SHEET_WEBHOOK_URL:
         return
 
-    payload = {"company": company, "stage": stage, "role": role}
+    payload = {"company": company, "stage": stage, "role": role, "link": link}
     try:
         resp = requests.post(GOOGLE_SHEET_WEBHOOK_URL, json=payload, timeout=10)
         if resp.status_code == 200:
@@ -42,7 +42,7 @@ def update_google_sheet_via_webhook(company, stage, role="Software/Quant Role"):
         print(f"⚠️ Error sending Webhook to Google Sheet: {e}")
 
 def get_applied_jobs_set():
-    """Fetches Google Sheet and returns a set of (company.lower(), role.lower()) tuples and set of applied company names."""
+    """Fetches Google Sheet and returns a set of (norm_comp, norm_role) tuples and set of normalized company names."""
     applied_jobs = set()
     applied_companies = set()
     csv_text = fetch_google_sheet_csv()
@@ -50,15 +50,18 @@ def get_applied_jobs_set():
         try:
             reader = csv.DictReader(io.StringIO(csv_text))
             for row in reader:
-                comp = row.get("Company", "").strip().lower()
-                role = row.get("Role", "").strip().lower()
-                if comp:
-                    applied_companies.add(comp)
-                    if role:
-                        applied_jobs.add((comp, role))
+                comp = row.get("Company", "").strip()
+                role = row.get("Role", "").strip()
+                norm_c = normalize_company(comp)
+                norm_r = normalize_role(role)
+                if norm_c:
+                    applied_companies.add(norm_c)
+                    if norm_r:
+                        applied_jobs.add((norm_c, norm_r))
         except Exception:
             pass
     return applied_jobs, applied_companies
+
 
 def get_applied_companies_set():
     """Fetches Google Sheet and returns a set of lowercased company names already logged."""

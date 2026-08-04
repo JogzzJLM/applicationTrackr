@@ -139,10 +139,24 @@ def save_discovered_jobs(discovered_jobs):
     except Exception as e:
         print(f"⚠️ Error saving discovered_jobs: {e}")
 
+from config import (
+    SEEN_JOBS_FILE, DISCOVERED_JOBS_FILE, SCRAPER_STATUS,
+    GREENHOUSE_COMPANIES, LEVER_COMPANIES, ASHBY_COMPANIES,
+    SMARTRECRUITERS_COMPANIES, load_settings, normalize_company, normalize_role
+)
+
 def add_discovered_job(discovered_list, job_id, company, title, location, link, source):
+    norm_c = normalize_company(company)
+    norm_t = normalize_role(title)
+
     for item in discovered_list:
         if item.get("id") == job_id:
             return
+        item_c = normalize_company(item.get("company"))
+        item_t = normalize_role(item.get("title"))
+        if norm_c and norm_t and item_c == norm_c and item_t == norm_t:
+            return
+
     entry = {
         "id": job_id,
         "company": company,
@@ -153,6 +167,7 @@ def add_discovered_job(discovered_list, job_id, company, title, location, link, 
         "date_found": time.strftime("%Y-%m-%d %H:%M")
     }
     discovered_list.insert(0, entry)
+
 
 def scrape_greenhouse_jobs(seen_jobs, discovered_list):
     new_jobs = []

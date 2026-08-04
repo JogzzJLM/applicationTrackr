@@ -1,6 +1,8 @@
 import os
 import json
 
+import re
+
 NTFY_TOPIC = "jog_applicationtrackr_alerts"
 SEEN_JOBS_FILE = "seen_jobs.json"
 SEEN_EMAILS_FILE = "seen_emails.json"
@@ -8,6 +10,25 @@ DISCOVERED_JOBS_FILE = "discovered_jobs.json"
 SETTINGS_FILE = "settings.json"
 PORT = 5000
 HP_STREAM_TAILSCALE_IP = "100.75.135.73"
+
+def normalize_company(name):
+    if not name:
+        return ""
+    cleaned = str(name).lower().strip()
+    cleaned = re.sub(r'[^a-z0-9]', '', cleaned)
+    for suffix in ["ltd", "inc", "plc", "llc", "capital", "technologies", "technology", "group", "uk", "europe", "limited"]:
+        if cleaned.endswith(suffix) and len(cleaned) > len(suffix) + 2:
+            cleaned = cleaned[:-len(suffix)]
+    return cleaned
+
+def normalize_role(title):
+    if not title:
+        return ""
+    cleaned = str(title).lower().strip()
+    cleaned = re.sub(r'[^a-z0-9\s]', ' ', cleaned)
+    cleaned = " ".join(cleaned.split())
+    return cleaned
+
 
 GMAIL_USER = os.getenv("GMAIL_USER", "")
 GMAIL_APP_PASS = os.getenv("GMAIL_APP_PASS", "")

@@ -5,7 +5,7 @@ import http.server
 import socketserver
 from urllib.parse import parse_qs, urlparse
 
-from config import PORT, SCRAPER_STATUS, HP_STREAM_TAILSCALE_IP, load_settings, save_settings
+from config import PORT, SCRAPER_STATUS, HP_STREAM_TAILSCALE_IP, load_settings, save_settings, normalize_company, normalize_role
 from notifications import send_notification
 from sheets import (
     update_google_sheet_via_webhook, generate_sankey_from_google_sheets,
@@ -30,10 +30,29 @@ def render_unified_dashboard_html(active_tab="flow"):
     active = stats.get("active", 0)
     offers = stats.get("offers", 0)
     rejections = stats.get("rejections", 0)
-    discovered_count = len(all_jobs)
     conv_rate = round((offers / total * 100), 1) if total > 0 else 0.0
 
     last_run = SCRAPER_STATUS.get("last_run", "Never")
+
+    # Ensure every logged application ALWAYS stays in the Discovered Schemes directory even if external ATS closes
+    existing_keys = set((normalize_company(j.get('company')), normalize_role(j.get('title'))) for j in all_jobs)
+    for a in apps:
+        ac_norm = normalize_company(a.get('company'))
+        ar_norm = normalize_role(a.get('role'))
+        if ac_norm and (ac_norm, ar_norm) not in existing_keys:
+            synthetic_job = {
+                "id": f"applied_{ac_norm}_{hash(ar_norm)}",
+                "company": a['company'],
+                "title": a['role'],
+                "location": "UK / Remote",
+                "link": "#",
+                "source": "Logged Application",
+                "date_found": "Active Application"
+            }
+            all_jobs.insert(0, synthetic_job)
+            existing_keys.add((ac_norm, ar_norm))
+
+    discovered_count = len(all_jobs)
 
     # Active Apps Table Rows
     apps_table_rows = ""
@@ -63,41 +82,53 @@ def render_unified_dashboard_html(active_tab="flow"):
             </tr>
             """
 
+    # Dynamic Category Counters
+    applied_count = 0
+    not_applied_count = 0
+    quant_count = 0
+    sw_count = 0
+    ml_count = 0
+    cyber_count = 0
+
     # Job Cards HTML
     cards_html = ""
     for j in all_jobs:
         comp_name = j.get('company', 'Unknown')
         title_name = j.get('title', 'Role')
-        comp_lower = comp_name.lower().strip()
-        title_lower = title_name.lower().strip()
+        comp_norm = normalize_company(comp_name)
+        title_norm = normalize_role(title_name)
 
-        is_applied = (comp_lower, title_lower) in applied_jobs
+        is_applied = (comp_norm, title_norm) in applied_jobs
         if not is_applied:
             for (ac, ar) in applied_jobs:
-                if ac == comp_lower:
-                    if ar and (ar in title_lower or title_lower in ar):
+                if ac == comp_norm:
+                    if ar and (ar in title_norm or title_norm in ar):
                         is_applied = True
                         break
 
         comp_js = comp_name.replace("'", "\\'").replace('"', '&quot;')
         title_js = title_name.replace("'", "\\'").replace('"', '&quot;')
 
-
         title_lower = title_name.lower()
         cat = "other"
         if any(k in title_lower for k in ["quant", "trader", "trading", "finance", "financial"]):
             cat = "quant"
+            quant_count += 1
         elif any(k in title_lower for k in ["software", "developer", "backend", "fullstack", "full-stack", "engineer"]):
             cat = "software"
+            sw_count += 1
         elif any(k in title_lower for k in ["machine learning", "ml", "ai", "data science"]):
             cat = "ml"
+            ml_count += 1
         elif any(k in title_lower for k in ["cyber", "security", "cloud", "devops"]):
             cat = "cyber"
+            cyber_count += 1
 
         if is_applied:
             status_badge = '<span class="badge badge-applied">✅ APPLIED</span>'
             action_btn = '<button class="btn btn-disabled" disabled>✓ Logged</button>'
             status_tag = "applied"
+            applied_count += 1
         else:
             status_badge = '<span class="badge badge-not-applied">⚡ NOT APPLIED</span>'
             action_btn = f'''
@@ -105,6 +136,7 @@ def render_unified_dashboard_html(active_tab="flow"):
             <button onclick="logJob('{comp_js}', '{title_js}')" class="btn btn-success">+ Log Only</button>
             '''
             status_tag = "notapplied"
+            not_applied_count += 1
 
         cards_html += f"""
         <div class="job-card" data-search="{j['company'].lower()} {j['title'].lower()} {j['location'].lower()} {status_tag} {cat}" data-status="{status_tag}" data-cat="{cat}">
@@ -133,6 +165,7 @@ def render_unified_dashboard_html(active_tab="flow"):
     my_skills = ", ".join(settings.get("my_skills", []))
 
     status_json_formatted = json.dumps(SCRAPER_STATUS, indent=2)
+
 
     flow_display = "block" if active_tab == "flow" else "none"
     jobs_display = "block" if active_tab == "jobs" else "none"
@@ -716,12 +749,13 @@ def render_unified_dashboard_html(active_tab="flow"):
 
                 <div class="filter-pills">
                     <button class="pill active" onclick="filterPill('all', this)">All Schemes ({discovered_count})</button>
-                    <button class="pill" onclick="filterPill('notapplied', this)">⚡ Not Applied</button>
-                    <button class="pill" onclick="filterPill('applied', this)">✅ Applied</button>
-                    <button class="pill" onclick="filterPill('software', this)">💻 Software / Dev</button>
-                    <button class="pill" onclick="filterPill('quant', this)">📈 Quant / Trading</button>
-                    <button class="pill" onclick="filterPill('ml', this)">🧠 ML / AI</button>
-                    <button class="pill" onclick="filterPill('cyber', this)">🔒 Cyber / Cloud</button>
+
+                    <button class="pill" onclick="filterPill('notapplied', this)">⚡ Not Applied ({not_applied_count})</button>
+                    <button class="pill" onclick="filterPill('applied', this)">✅ Applied ({applied_count})</button>
+                    <button class="pill" onclick="filterPill('software', this)">💻 Software / Dev ({sw_count})</button>
+                    <button class="pill" onclick="filterPill('quant', this)">📈 Quant / Trading ({quant_count})</button>
+                    <button class="pill" onclick="filterPill('ml', this)">🧠 ML / AI ({ml_count})</button>
+                    <button class="pill" onclick="filterPill('cyber', this)">🔒 Cyber / Cloud ({cyber_count})</button>
                 </div>
 
                 <div id="job-list">
@@ -793,15 +827,14 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
 
-
     def do_OPTIONS(self):
         self.send_response(200)
         self.send_cors_headers()
         self.end_headers()
 
     def process_log_request(self, company, role, link):
-        update_google_sheet_via_webhook(company, "Applied", role)
-        generate_sankey_from_google_sheets()
+        update_google_sheet_via_webhook(company, "Applied", role, link)
+        generate_sankey_from_google_sheets(force_refresh=True)
 
         send_notification(
             title=f"Logged: {company}",
@@ -810,6 +843,7 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             priority=3,
             sound="chime"
         )
+
 
     def do_POST(self):
         if self.path.startswith("/api/log"):
