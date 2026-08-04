@@ -27,6 +27,7 @@ HP_STREAM_TAILSCALE_IP = "100.75.135.73"
 GMAIL_USER = os.getenv("GMAIL_USER", "")
 GMAIL_APP_PASS = os.getenv("GMAIL_APP_PASS", "")
 GOOGLE_SHEET_WEBHOOK_URL = os.getenv("GOOGLE_SHEET_WEBHOOK_URL", "")
+HEALTHCHECKS_PING_URL = os.getenv("HEALTHCHECKS_PING_URL", "")
 GOOGLE_SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS94NpozDGeHO9UPag662CXcH-C5TGN9Y61-nW04VDlPJSZGVTq62E1lRvnXl8gq_CbR5kvMx5XnMFi/pub?output=csv"
 
 SCRAPER_STATUS = {
@@ -62,6 +63,16 @@ def is_relevant_role(title, location, company):
     if any(loc in loc_lower for loc in LOCATION_KEYWORDS) or "remote" in loc_lower or "uk" in loc_lower or loc_lower == "":
         return True
     return False
+
+
+def send_heartbeat_ping():
+    """Sends a ping to healthchecks.io to confirm server is alive."""
+    if HEALTHCHECKS_PING_URL and "YOUR_HEALTHCHECKS_UUID" not in HEALTHCHECKS_PING_URL:
+        try:
+            requests.get(HEALTHCHECKS_PING_URL, timeout=10)
+            print("💓 Sent Watchdog Heartbeat Ping to Healthchecks.io")
+        except Exception as e:
+            print(f"⚠️ Heartbeat Ping Error: {e}")
 
 
 # ==========================================
@@ -148,7 +159,7 @@ def start_web_server():
                 self.send_cors_headers()
                 self.send_header("Content-Type", "text/plain; charset=utf-8")
                 self.end_headers()
-                self.wfile.write("✅ Triggered test Daily Morning Briefing! Check ntfy on your phone/Mac.".encode("utf-8"))
+                self.wfile.write("Triggered test Daily Morning Briefing! Check ntfy on your phone/Mac.".encode("utf-8"))
                 return
 
             # 4. TEST ENDPOINT: WEEKLY REPORT
@@ -158,7 +169,7 @@ def start_web_server():
                 self.send_cors_headers()
                 self.send_header("Content-Type", "text/plain; charset=utf-8")
                 self.end_headers()
-                self.wfile.write("✅ Triggered test Sunday Weekly Funnel Report! Check ntfy on your phone/Mac.".encode("utf-8"))
+                self.wfile.write("Triggered test Sunday Weekly Funnel Report! Check ntfy on your phone/Mac.".encode("utf-8"))
                 return
 
             # 5. TEST ENDPOINT: SCRAPER RUN
@@ -168,7 +179,7 @@ def start_web_server():
                 self.send_cors_headers()
                 self.send_header("Content-Type", "text/plain; charset=utf-8")
                 self.end_headers()
-                self.wfile.write("✅ Triggered manual scraper run!".encode("utf-8"))
+                self.wfile.write("Triggered manual scraper run!".encode("utf-8"))
                 return
 
             self.send_response(404)
@@ -225,7 +236,6 @@ def update_google_sheet_via_webhook(company, stage, role="Software/Quant Role"):
 
 
 def parse_sheet_stats():
-    """Parses Google Sheet and returns summary statistics for briefings."""
     try:
         cache_url = f"{GOOGLE_SHEET_CSV_URL}&_cb={int(time.time())}"
         resp = requests.get(cache_url, timeout=10)
@@ -261,7 +271,6 @@ def parse_sheet_stats():
 
 
 def trigger_daily_briefing():
-    """Triggers the Daily Morning Briefing alert."""
     stats = parse_sheet_stats()
     new_jobs_today = SCRAPER_STATUS.get("last_new_jobs_found", 0)
     
@@ -276,7 +285,6 @@ def trigger_daily_briefing():
 
 
 def trigger_weekly_report():
-    """Triggers the Sunday Weekly Funnel Report alert."""
     stats = parse_sheet_stats()
     total = stats["total"]
     conv_rate = round((stats["active"] + stats["offers"]) / total * 100, 1) if total > 0 else 0.0
@@ -618,4 +626,5 @@ if __name__ == "__main__":
         check_email_inbox()
         run_all_scrapers()
         generate_sankey_from_google_sheets()
+        send_heartbeat_ping()  # 💓 Send Heartbeat Ping to Healthchecks.io
         time.sleep(1800)
