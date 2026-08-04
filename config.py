@@ -61,3 +61,5 @@ GREENHOUSE_COMPANIES = [
     "two-sigma", "jump-trading", "barclays"
 ]
 LEVER_COMPANIES = ["spotify", "revolut", "checkout", "beamng", "wayve", "palantir", "five-ai"]
+ASHBY_COMPANIES = ["mistral", "synthesia", "multiverse", "ramp", "huggingface", "cohere", "notion", "scaleai"]
+SMARTRECRUITERS_COMPANIES = ["squarepointcapital", "visa", "ubisoft", "zalando", "bosch"]
