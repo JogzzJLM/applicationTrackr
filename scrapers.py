@@ -1,6 +1,7 @@
 import os
 import json
 import requests
+from bs4 import BeautifulSoup
 from config import (
     SEEN_JOBS_FILE, SCRAPER_STATUS, EXCLUDE_KEYWORDS, LEVEL_KEYWORDS,
     ROLE_KEYWORDS, LOCATION_KEYWORDS, SPECIAL_INTL_COMPANIES,
@@ -81,6 +82,55 @@ def scrape_lever_jobs(seen_jobs):
             pass
     return new_jobs
 
+def scrape_trackr_website(seen_jobs):
+    """Scrapes the-trackr.com table rows for UK schemes."""
+    new_jobs = []
+    source_name = "Trackr Web"
+    url = "https://the-trackr.com"
+
+    try:
+        headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"}
+        resp = requests.get(url, headers=headers, timeout=10)
+        if resp.status_code == 200:
+            soup = BeautifulSoup(resp.text, "html.parser")
+            
+            # Scrape HTML Table Rows
+            rows = soup.find_all("tr")
+            for row in rows:
+                cols = [td.get_text(strip=True) for td in row.find_all(["td", "th"])]
+                if len(cols) >= 2:
+                    company = cols[1] if len(cols) > 1 else ""
+                    role = cols[2] if len(cols) > 2 else ""
+                    
+                    if company and role and company.lower() != "company name":
+                        full_title = f"{company} - {role}"
+                        link_tag = row.find("a", href=True)
+                        href = link_tag["href"] if link_tag else url
+                        full_url = href if href.startswith("http") else f"https://the-trackr.com{href}"
+                        
+                        job_id = f"trackr_{hash(full_title)}"
+                        if job_id not in seen_jobs:
+                            if is_relevant_role(full_title, "UK", company):
+                                seen_jobs.add(job_id)
+                                new_jobs.append((full_title, "UK", full_url))
+
+            # Fallback for dynamic cards/links
+            for a in soup.find_all("a", href=True):
+                text = a.get_text(strip=True)
+                href = a["href"]
+                if len(text) > 5 and is_relevant_role(text, "UK", "Trackr"):
+                    job_id = f"trackr_link_{hash(href)}"
+                    if job_id not in seen_jobs:
+                        full_url = href if href.startswith("http") else f"https://the-trackr.com{href}"
+                        seen_jobs.add(job_id)
+                        new_jobs.append((f"Trackr: {text[:50]}", "UK", full_url))
+
+        SCRAPER_STATUS["source_status"][source_name] = "OK"
+    except Exception as e:
+        SCRAPER_STATUS["source_status"][source_name] = f"Error: {e}"
+
+    return new_jobs
+
 def run_all_scrapers():
     print("\n🔍 Running Scraper Engine...")
     seen_jobs = load_seen_jobs()
@@ -88,6 +138,7 @@ def run_all_scrapers():
 
     all_new_jobs.extend(scrape_greenhouse_jobs(seen_jobs))
     all_new_jobs.extend(scrape_lever_jobs(seen_jobs))
+    all_new_jobs.extend(scrape_trackr_website(seen_jobs))
     save_seen_jobs(seen_jobs)
 
     if all_new_jobs:

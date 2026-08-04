@@ -19,7 +19,7 @@ def update_google_sheet_via_webhook(company, stage, role="Software/Quant Role"):
 
 def parse_sheet_stats():
     try:
-        cache_url = f"{GOOGLE_SHEET_CSV_URL}&_cb={int(time.time())}"
+        cache_url = f"{GOOGLE_SHEET_CSV_URL}&_cb={int(time.time() * 1000)}"
         resp = requests.get(cache_url, timeout=10)
         if resp.status_code != 200:
             return {"total": 0, "active": 0, "offers": 0, "rejections": 0}
@@ -52,22 +52,27 @@ def parse_sheet_stats():
         return {"total": 0, "active": 0, "offers": 0, "rejections": 0}
 
 def generate_default_sankey():
+    """Renders a clean zero-data state when Google Sheet has 0 applications."""
     fig = go.Figure(data=[go.Sankey(
         node=dict(
             pad=15,
             thickness=20,
             line=dict(color="black", width=0.5),
-            label=["Applied (0)", "Ghosted (0)", "Direct Rejection (0)", "HR Screening (0)", "Final Round (0)", "Offer (0)"],
-            color=["#3182bd", "#969696", "#de2d26", "#e6550d", "#756bb1", "#31a354"]
+            label=["0 Applications Logged (Sheet Empty)", "Ready for Applications"],
+            color=["#3498db", "#2ecc71"]
         ),
-        link=dict(source=[0], target=[1], value=[0])
+        link=dict(source=[0], target=[1], value=[0.0001])
     )])
-    fig.update_layout(title_text="ApplicationTrackr - Waiting for Google Sheets Data", font_size=12)
+    fig.update_layout(
+        title_text="ApplicationTrackr - 0 Applications Logged (Fresh Start)",
+        font_size=14
+    )
     fig.write_html("sankey_diagram.html")
 
 def generate_sankey_from_google_sheets():
+    """Fetches Google Sheet and renders multi-round Sankey diagram."""
     try:
-        cache_url = f"{GOOGLE_SHEET_CSV_URL}&_cb={int(time.time())}"
+        cache_url = f"{GOOGLE_SHEET_CSV_URL}&_cb={int(time.time() * 1000)}"
         response = requests.get(cache_url, timeout=10)
         if response.status_code != 200:
             generate_default_sankey()
@@ -78,6 +83,7 @@ def generate_sankey_from_google_sheets():
 
         flow_counts = {}
         all_nodes = set()
+        row_count = 0
 
         for row in reader:
             stages = []
@@ -88,6 +94,9 @@ def generate_sankey_from_google_sheets():
                         continue
                     stages.append(clean_val)
 
+            if stages:
+                row_count += 1
+
             for i in range(len(stages) - 1):
                 src = stages[i]
                 tgt = stages[i + 1]
@@ -97,7 +106,7 @@ def generate_sankey_from_google_sheets():
                     all_nodes.add(src)
                     all_nodes.add(tgt)
 
-        if not flow_counts:
+        if row_count == 0 or not flow_counts:
             generate_default_sankey()
             return
 
@@ -127,5 +136,5 @@ def generate_sankey_from_google_sheets():
         fig.update_layout(title_text="ApplicationTrackr - Multi-Round Application Flow", font_size=12)
         fig.write_html("sankey_diagram.html")
 
-    except Exception:
+    except Exception as e:
         generate_default_sankey()
