@@ -58,8 +58,11 @@ def generate_default_sankey():
 <head>
     <title>ApplicationTrackr - Live Dashboard</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #f8fafc; text-align: center; padding: 60px 20px; }
-        .card { background: #1e293b; border-radius: 16px; padding: 40px; max-width: 550px; margin: 0 auto; box-shadow: 0 10px 30px rgba(0,0,0,0.4); border: 1px solid #334155; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #f8fafc; text-align: center; padding: 20px; }
+        .nav { display: flex; gap: 15px; justify-content: center; margin-bottom: 25px; border-bottom: 1px solid #334155; padding-bottom: 15px; }
+        .nav a { color: #94a3b8; text-decoration: none; font-weight: bold; padding: 8px 16px; border-radius: 8px; transition: 0.2s; }
+        .nav a:hover, .nav a.active { background: #1e293b; color: #38bdf8; }
+        .card { background: #1e293b; border-radius: 16px; padding: 40px; max-width: 550px; margin: 40px auto; box-shadow: 0 10px 30px rgba(0,0,0,0.4); border: 1px solid #334155; }
         h1 { color: #38bdf8; font-size: 28px; margin-top: 15px; margin-bottom: 10px; }
         p { color: #94a3b8; font-size: 15px; line-height: 1.6; }
         .badge { background: #10b981; color: #022c22; font-weight: bold; padding: 6px 16px; border-radius: 20px; font-size: 13px; display: inline-block; }
@@ -68,6 +71,11 @@ def generate_default_sankey():
     </style>
 </head>
 <body>
+    <div class="nav">
+        <a href="/" class="active">📊 Application Flow</a>
+        <a href="/jobs">💼 Discovered Schemes</a>
+        <a href="/status">⚙️ Diagnostics</a>
+    </div>
     <div class="card">
         <span class="badge">Sheet Status: Fresh Start</span>
         <h1>0 Applications Logged</h1>

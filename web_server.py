@@ -7,8 +7,97 @@ from urllib.parse import parse_qs, urlparse
 from config import PORT, SCRAPER_STATUS, HP_STREAM_TAILSCALE_IP
 from notifications import send_notification
 from sheets import update_google_sheet_via_webhook, generate_sankey_from_google_sheets, generate_default_sankey
-from scrapers import run_all_scrapers
+from scrapers import run_all_scrapers, load_discovered_jobs
 from scheduler import trigger_daily_briefing, trigger_weekly_report
+
+def render_jobs_page_html():
+    jobs = load_discovered_jobs()
+    cards_html = ""
+
+    for j in jobs:
+        cards_html += f"""
+        <div class="job-card" data-search="{j['company'].lower()} {j['title'].lower()} {j['location'].lower()}">
+            <div class="job-header">
+                <span class="company">{j['company']}</span>
+                <span class="badge">{j['source']}</span>
+            </div>
+            <div class="job-title">{j['title']}</div>
+            <div class="job-meta">📍 {j['location']} &nbsp;•&nbsp; 🕒 Discovered: {j['date_found']}</div>
+            <div class="job-actions">
+                <a href="{j['link']}" target="_blank" class="btn btn-primary">Apply Direct ↗</a>
+                <button onclick="logJob('{j['company']}', '{j['title']}')" class="btn btn-success">+ Log to Sheet</button>
+            </div>
+        </div>
+        """
+
+    if not cards_html:
+        cards_html = '<div class="empty-msg">No job listings discovered yet. Run a scraper check or wait for the next automatic cycle!</div>'
+
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+    <title>ApplicationTrackr - Discovered Schemes</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 20px; }}
+        .nav {{ display: flex; gap: 15px; justify-content: center; margin-bottom: 25px; border-bottom: 1px solid #334155; padding-bottom: 15px; }}
+        .nav a {{ color: #94a3b8; text-decoration: none; font-weight: bold; padding: 8px 16px; border-radius: 8px; transition: 0.2s; }}
+        .nav a:hover, .nav a.active {{ background: #1e293b; color: #38bdf8; }}
+        .container {{ max-width: 900px; margin: 0 auto; }}
+        .header-box {{ text-align: center; margin-bottom: 25px; }}
+        h1 {{ color: #38bdf8; margin-bottom: 10px; font-size: 26px; }}
+        .search-input {{ width: 100%; box-sizing: border-box; padding: 14px 20px; border-radius: 10px; border: 1px solid #334155; background: #1e293b; color: white; font-size: 16px; margin-bottom: 20px; outline: none; }}
+        .search-input:focus {{ border-color: #38bdf8; }}
+        .job-card {{ background: #1e293b; border-radius: 12px; padding: 20px; margin-bottom: 15px; border: 1px solid #334155; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }}
+        .job-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }}
+        .company {{ color: #f1f5f9; font-weight: bold; font-size: 18px; }}
+        .badge {{ background: #0284c7; color: white; font-size: 12px; padding: 4px 10px; border-radius: 12px; font-weight: bold; }}
+        .job-title {{ color: #93c5fd; font-size: 16px; margin-bottom: 10px; line-height: 1.4; }}
+        .job-meta {{ color: #64748b; font-size: 13px; margin-bottom: 15px; }}
+        .job-actions {{ display: flex; gap: 10px; }}
+        .btn {{ padding: 10px 18px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 14px; border: none; cursor: pointer; transition: 0.2s; }}
+        .btn-primary {{ background: #2563eb; color: white; }}
+        .btn-primary:hover {{ background: #1d4ed8; }}
+        .btn-success {{ background: #10b981; color: white; }}
+        .btn-success:hover {{ background: #059669; }}
+        .empty-msg {{ text-align: center; color: #64748b; padding: 40px; font-size: 16px; }}
+    </style>
+    <script>
+        function filterJobs() {{
+            let q = document.getElementById('search').value.toLowerCase();
+            let cards = document.querySelectorAll('.job-card');
+            cards.forEach(c => {{
+                let txt = c.getAttribute('data-search');
+                c.style.display = txt.includes(q) ? 'block' : 'none';
+            }});
+        }}
+        function logJob(company, role) {{
+            fetch('/api/log?company=' + encodeURIComponent(company) + '&role=' + encodeURIComponent(role))
+                .then(r => r.json())
+                .then(d => alert('✅ Successfully logged ' + company + ' to Google Sheets!'))
+                .catch(e => alert('❌ Error logging job: ' + e));
+        }}
+    </script>
+</head>
+<body>
+    <div class="container">
+        <div class="nav">
+            <a href="/">📊 Application Flow</a>
+            <a href="/jobs" class="active">💼 Discovered Schemes ({len(jobs)})</a>
+            <a href="/status">⚙️ Diagnostics</a>
+        </div>
+        <div class="header-box">
+            <h1>Discovered UK Schemes</h1>
+            <p style="color: #94a3b8;">Real-time UK Maths, Quant & CS Internship Listings</p>
+        </div>
+        <input type="text" id="search" onkeyup="filterJobs()" placeholder="🔍 Search company, role title, or location..." class="search-input">
+        <div id="job-list">
+            {cards_html}
+        </div>
+    </div>
+</body>
+</html>"""
+
 
 class CleanHandler(http.server.BaseHTTPRequestHandler):
     def send_cors_headers(self):
@@ -106,6 +195,14 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             with open("sankey_diagram.html", "rb") as f:
                 self.wfile.write(f.read())
+            return
+
+        elif clean_path == "/jobs":
+            self.send_response(200)
+            self.send_cors_headers()
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(render_jobs_page_html().encode("utf-8"))
             return
 
         elif clean_path == "/status":

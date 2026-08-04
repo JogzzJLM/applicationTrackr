@@ -3,6 +3,7 @@ import os
 NTFY_TOPIC = "jog_applicationtrackr_alerts"
 SEEN_JOBS_FILE = "seen_jobs.json"
 SEEN_EMAILS_FILE = "seen_emails.json"
+DISCOVERED_JOBS_FILE = "discovered_jobs.json"
 PORT = 5000
 HP_STREAM_TAILSCALE_IP = "100.75.135.73"
 

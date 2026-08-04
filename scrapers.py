@@ -1,10 +1,10 @@
 import os
 import json
-import requests
 import time
+import requests
 from bs4 import BeautifulSoup
 from config import (
-    SEEN_JOBS_FILE, SCRAPER_STATUS, EXCLUDE_KEYWORDS, EXCLUDE_LOCATIONS,
+    SEEN_JOBS_FILE, DISCOVERED_JOBS_FILE, SCRAPER_STATUS, EXCLUDE_KEYWORDS, EXCLUDE_LOCATIONS,
     LEVEL_KEYWORDS, ROLE_KEYWORDS, LOCATION_KEYWORDS, SPECIAL_INTL_COMPANIES,
     GREENHOUSE_COMPANIES, LEVER_COMPANIES
 )
@@ -16,30 +16,18 @@ def is_relevant_role(title, location, company):
     comp_lower = company.lower()
     full_text = f"{title_lower} {loc_lower}"
 
-    # 1. Reject non-technical keywords
     if any(ex in title_lower for ex in EXCLUDE_KEYWORDS):
         return False
-
-    # 2. Reject foreign/non-UK locations (e.g., US Government, France, Poland)
     if any(ex_loc in full_text for ex in EXCLUDE_LOCATIONS):
         return False
-
-    # 3. Must match internship/grad level
     if not any(lvl in title_lower for lvl in LEVEL_KEYWORDS):
         return False
-
-    # 4. Must match software/quant domain
     if not any(rk in title_lower for rk in ROLE_KEYWORDS):
         return False
-
-    # 5. Allow special international companies (e.g. BeamNG in Germany)
     if any(sc in comp_lower for sc in SPECIAL_INTL_COMPANIES):
         return True
-
-    # 6. Must be UK / London / Remote / West Midlands
     if any(loc in loc_lower for loc in LOCATION_KEYWORDS) or "remote" in loc_lower or "uk" in loc_lower or loc_lower == "":
         return True
-
     return False
 
 def load_seen_jobs():
@@ -58,8 +46,37 @@ def save_seen_jobs(seen_jobs):
     except Exception:
         pass
 
-def scrape_greenhouse_jobs(seen_jobs):
+def load_discovered_jobs():
+    if os.path.exists(DISCOVERED_JOBS_FILE):
+        try:
+            with open(DISCOVERED_JOBS_FILE, "r") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return []
+
+def save_discovered_jobs(jobs):
+    try:
+        with open(DISCOVERED_JOBS_FILE, "w") as f:
+            json.dump(jobs[:250], f, indent=2)  # Keep latest 250 discovered roles
+    except Exception:
+        pass
+
+def add_discovered_job(discovered_list, job_id, company, title, location, link, source):
+    entry = {
+        "id": job_id,
+        "company": company,
+        "title": title,
+        "location": location if location else "UK / Remote",
+        "link": link,
+        "source": source,
+        "date_found": time.strftime("%Y-%m-%d %H:%M")
+    }
+    discovered_list.insert(0, entry)
+
+def scrape_greenhouse_jobs(seen_jobs, discovered_list):
     new_jobs = []
+    source_name = "Greenhouse API"
     for company in GREENHOUSE_COMPANIES:
         url = f"https://boards-api.greenhouse.io/v1/boards/{company}/jobs"
         try:
@@ -73,13 +90,16 @@ def scrape_greenhouse_jobs(seen_jobs):
 
                     if job_id not in seen_jobs and is_relevant_role(title, location, company):
                         seen_jobs.add(job_id)
-                        new_jobs.append((f"{company.capitalize()} - {title}", location, job_url))
+                        full_title = f"{company.capitalize()} - {title}"
+                        new_jobs.append((full_title, location, job_url))
+                        add_discovered_job(discovered_list, job_id, company.capitalize(), title, location, job_url, source_name)
         except Exception:
             pass
     return new_jobs
 
-def scrape_lever_jobs(seen_jobs):
+def scrape_lever_jobs(seen_jobs, discovered_list):
     new_jobs = []
+    source_name = "Lever API"
     for company in LEVER_COMPANIES:
         url = f"https://api.lever.co/v0/postings/{company}?mode=json"
         try:
@@ -93,12 +113,14 @@ def scrape_lever_jobs(seen_jobs):
 
                     if job_id not in seen_jobs and is_relevant_role(title, location, company):
                         seen_jobs.add(job_id)
-                        new_jobs.append((f"{company.capitalize()} - {title}", location, job_url))
+                        full_title = f"{company.capitalize()} - {title}"
+                        new_jobs.append((full_title, location, job_url))
+                        add_discovered_job(discovered_list, job_id, company.capitalize(), title, location, job_url, source_name)
         except Exception:
             pass
     return new_jobs
 
-def scrape_trackr_website(seen_jobs):
+def scrape_trackr_website(seen_jobs, discovered_list):
     new_jobs = []
     source_name = "Trackr Web"
     url = "https://the-trackr.com"
@@ -126,6 +148,7 @@ def scrape_trackr_website(seen_jobs):
                             if is_relevant_role(full_title, "UK", company):
                                 seen_jobs.add(job_id)
                                 new_jobs.append((full_title, "UK", full_url))
+                                add_discovered_job(discovered_list, job_id, company, role, "UK", full_url, source_name)
 
         SCRAPER_STATUS["source_status"][source_name] = "OK"
     except Exception as e:
@@ -136,12 +159,15 @@ def scrape_trackr_website(seen_jobs):
 def run_all_scrapers():
     print("\n🔍 Running Scraper Engine...")
     seen_jobs = load_seen_jobs()
+    discovered_list = load_discovered_jobs()
     all_new_jobs = []
 
-    all_new_jobs.extend(scrape_greenhouse_jobs(seen_jobs))
-    all_new_jobs.extend(scrape_lever_jobs(seen_jobs))
-    all_new_jobs.extend(scrape_trackr_website(seen_jobs))
+    all_new_jobs.extend(scrape_greenhouse_jobs(seen_jobs, discovered_list))
+    all_new_jobs.extend(scrape_lever_jobs(seen_jobs, discovered_list))
+    all_new_jobs.extend(scrape_trackr_website(seen_jobs, discovered_list))
+
     save_seen_jobs(seen_jobs)
+    save_discovered_jobs(discovered_list)
 
     SCRAPER_STATUS["last_run"] = time.strftime("%Y-%m-%d %H:%M:%S")
     SCRAPER_STATUS["total_seen_jobs"] = len(seen_jobs)
@@ -150,13 +176,12 @@ def run_all_scrapers():
     if all_new_jobs:
         print(f"🚨 FOUND {len(all_new_jobs)} NEW MATCHING ROLES!")
         
-        # Digest mode if more than 5 jobs found at once
         if len(all_new_jobs) > 5:
             summary = "\n".join([f"• {t[0]}" for t in all_new_jobs[:3]])
             send_notification(
-                title=f"🚨 {len(all_new_jobs)} New Roles Discovered!",
-                message=f"Latest roles found:\n{summary}\n...\nTap to view status dashboard.",
-                link=f"http://100.75.135.73:5000/status",
+                title=f"{len(all_new_jobs)} New Roles Discovered!",
+                message=f"Latest roles found:\n{summary}\n...\nTap to view all listings.",
+                link=f"http://100.75.135.73:5000/jobs",
                 tags="sparkles,uk",
                 priority=4,
                 sound="bing"
@@ -165,8 +190,8 @@ def run_all_scrapers():
             for title, location, link in all_new_jobs:
                 send_notification(
                     title=f"New Role: {title}",
-                    message=f"Location: {location}\nTap to open application link!",
-                    link=link,
+                    message=f"Location: {location}\nTap to view details!",
+                    link=f"http://100.75.135.73:5000/jobs",
                     tags="sparkles,uk",
                     priority=3,
                     sound="bing"
