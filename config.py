@@ -4,6 +4,7 @@ NTFY_TOPIC = "jog_applicationtrackr_alerts"
 SEEN_JOBS_FILE = "seen_jobs.json"
 SEEN_EMAILS_FILE = "seen_emails.json"
 DISCOVERED_JOBS_FILE = "discovered_jobs.json"
+FILTER_SETTINGS_FILE = "filter_settings.json"
 PORT = 5000
 HP_STREAM_TAILSCALE_IP = "100.75.135.73"
 
@@ -19,14 +20,6 @@ SCRAPER_STATUS = {
     "last_new_jobs_found": 0,
     "source_status": {}
 }
-
-EXCLUDE_KEYWORDS = ["vice president", "vp", "director", "head of", "principal", "senior manager", "sales development", "account executive", "recruiter", "marketing", "legal"]
-EXCLUDE_LOCATIONS = ["us government", "aus government", "poland", "france", "japan", "canada", "australia", "singapore", "usg", "us defense", "defense tech - us"]
-
-LEVEL_KEYWORDS = ["intern", "internship", "placement", "industrial placement", "sandwich", "spring week", "insight week", "graduate", "grad", "early talent", "early career", "undergrad"]
-ROLE_KEYWORDS = ["software", "developer", "engineer", "engineering", "backend", "fullstack", "full-stack", "systems", "quant", "quantitative", "trader", "trading", "research", "machine learning", "ml", "ai", "data science", "cyber", "security", "cloud", "devops", "technology", "collaboration"]
-LOCATION_KEYWORDS = ["london", "birmingham", "oxford", "aylesbury", "west midlands", "remote", "uk", "united kingdom", "cambridge", "manchester", "edinburgh"]
-SPECIAL_INTL_COMPANIES = ["beamng", "janestreet", "optiver", "citadel", "hudsonrivertrading", "hrt", "twosigma", "imc", "flowtraders", "wayve", "samsara", "quadrature", "millennium"]
 
 GREENHOUSE_COMPANIES = [
     "deliveroo", "cloudflare", "snyk", "monzo", "starlingbank", 

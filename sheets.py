@@ -18,7 +18,6 @@ def update_google_sheet_via_webhook(company, stage, role="Software/Quant Role"):
         print(f"⚠️ Error sending Webhook to Google Sheet: {e}")
 
 def get_applied_companies_set():
-    """Fetches Google Sheet and returns a set of lowercased company names already logged."""
     applied = set()
     try:
         cache_url = f"{GOOGLE_SHEET_CSV_URL}&_cb={int(time.time() * 1000)}"
@@ -90,6 +89,7 @@ def generate_default_sankey():
     <div class="nav">
         <a href="/" class="active">📊 Application Flow</a>
         <a href="/jobs">💼 Discovered Schemes</a>
+        <a href="/settings">⚙️ Live Filter Settings</a>
         <a href="/status">⚙️ Diagnostics</a>
     </div>
     <div class="card">

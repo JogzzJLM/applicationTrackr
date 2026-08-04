@@ -3,77 +3,14 @@ import json
 import time
 import re
 import requests
-from datetime import datetime, timedelta
 from config import (
-    SEEN_JOBS_FILE, DISCOVERED_JOBS_FILE, SCRAPER_STATUS, EXCLUDE_KEYWORDS, EXCLUDE_LOCATIONS,
-    LEVEL_KEYWORDS, ROLE_KEYWORDS, LOCATION_KEYWORDS, SPECIAL_INTL_COMPANIES,
+    SEEN_JOBS_FILE, DISCOVERED_JOBS_FILE, SCRAPER_STATUS,
     GREENHOUSE_COMPANIES, LEVER_COMPANIES
 )
 from notifications import send_notification
-
-def is_trackr_item_active_and_recent(item):
-    """
-    Validates Trackr listings:
-    1. Rejects unopened, upcoming, closed, or expired statuses.
-    2. Rejects roles closed prior to today.
-    3. Requires opening date to be within the last 6 months (180 days).
-    """
-    status_raw = str(
-        item.get("status") or item.get("openStatus") or item.get("state") or ""
-    ).lower().strip()
-
-    # Reject non-open statuses
-    if status_raw in ["closed", "unopened", "upcoming", "closed for applications", "expired"]:
-        return False
-
-    if item.get("isOpen") is False or item.get("isClosed") is True:
-        return False
-
-    now = datetime.now()
-    six_months_ago = now - timedelta(days=180)
-
-    open_date_str = (
-        item.get("openDate") or item.get("openingDate") or item.get("open_date") or 
-        item.get("openedAt") or item.get("created_at") or ""
-    )
-    close_date_str = (
-        item.get("closeDate") or item.get("closingDate") or item.get("close_date") or 
-        item.get("closedAt") or ""
-    )
-
-    # 1. Check Closing Date (Must NOT be in the past)
-    if close_date_str:
-        c_match = re.search(r"(\d{4}-\d{2}-\d{2})", str(close_date_str))
-        if c_match:
-            try:
-                close_dt = datetime.strptime(c_match.group(1), "%Y-%m-%d")
-                if close_dt < now - timedelta(days=1):
-                    return False
-            except Exception:
-                pass
-
-    # 2. Check Opening Date (Must be within last 6 months)
-    if not open_date_str:
-        if status_raw != "open":
-            return False
-        return True
-
-    o_match = re.search(r"(\d{4}-\d{2}-\d{2})", str(open_date_str))
-    if o_match:
-        try:
-            open_dt = datetime.strptime(o_match.group(1), "%Y-%m-%d")
-            if open_dt < six_months_ago:
-                return False
-            if open_dt > now + timedelta(days=1):  # Future opening date
-                return False
-            return True
-        except Exception:
-            pass
-
-    return True
+from settings import get_active_profile_settings
 
 def extract_and_register_ats_company(url):
-    """Dynamically extracts clean company name from Greenhouse/Lever URLs and adds to target list."""
     try:
         clean_url = url.split("?")[0].split("#")[0].strip()
         if "greenhouse.io" in clean_url:
@@ -93,25 +30,47 @@ def extract_and_register_ats_company(url):
     except Exception:
         pass
 
-def is_relevant_role(title, location, company):
+def is_relevant_role(title, location, company, description=""):
+    """Validates job role using live settings from filter_settings.json."""
+    profile = get_active_profile_settings()
+    
     title_lower = title.lower()
     loc_lower = location.lower()
     comp_lower = company.lower()
-    full_text = f"{title_lower} {loc_lower}"
+    full_text = f"{title_lower} {loc_lower} {comp_lower} {description.lower()}"
 
-    if any(ex in title_lower for ex in EXCLUDE_KEYWORDS):
+    # 1. Reject Excluded Keywords
+    if any(ex in full_text for ex in profile.get("exclude_keywords", [])):
         return False
-    if any(ex_loc in full_text for ex_loc in EXCLUDE_LOCATIONS):
+
+    # 2. Reject Excluded Locations
+    if any(ex_loc in full_text for ex_loc in profile.get("exclude_locations", [])):
         return False
-    if not any(lvl in title_lower for lvl in LEVEL_KEYWORDS):
+
+    # 3. Reject Excluded Skills (e.g., C, C++)
+    if any(skill in full_text for skill in profile.get("excluded_skills", [])):
         return False
-    if not any(rk in title_lower for rk in ROLE_KEYWORDS):
+
+    # 4. Check Graduation Year Mismatches (e.g., Class of 2026 vs 2028/2029)
+    grad_years = profile.get("grad_years", [])
+    if grad_years:
+        grad_matches = re.findall(r"(?:class of|graduating in|graduation year|graduating)\s*(\d{4})", full_text)
+        if grad_matches:
+            if not any(g in grad_years for g in grad_matches):
+                return False
+
+    # 5. Require Included Keywords
+    inc_keywords = profile.get("include_keywords", [])
+    if inc_keywords and not any(rk in full_text for rk in inc_keywords):
         return False
-    if any(sc in comp_lower for sc in SPECIAL_INTL_COMPANIES):
-        return True
-    if any(loc in loc_lower for loc in LOCATION_KEYWORDS) or "remote" in loc_lower or "uk" in loc_lower or loc_lower == "":
-        return True
-    return False
+
+    # 6. Location Match
+    target_locations = profile.get("target_locations", [])
+    if target_locations:
+        if not (any(loc in loc_lower for loc in target_locations) or "remote" in loc_lower or "uk" in loc_lower or loc_lower == ""):
+            return False
+
+    return True
 
 def load_seen_jobs():
     if os.path.exists(SEEN_JOBS_FILE):
@@ -247,7 +206,7 @@ def scrape_lever_jobs(seen_jobs, discovered_list):
     return new_jobs
 
 def scrape_trackr_website(seen_jobs, discovered_list):
-    """Scrapes official Trackr REST API (api.the-trackr.com) with 6-month opening date validation."""
+    """Scrapes official Trackr REST API (api.the-trackr.com) with active profile filters."""
     new_jobs = []
     source_name = "Trackr API"
     types = ["summer-internships", "industrial-placements", "graduate-schemes", "spring-weeks"]
@@ -275,10 +234,6 @@ def scrape_trackr_website(seen_jobs, discovered_list):
 
                         for item in items:
                             if isinstance(item, dict):
-                                # 1. Validate: Must be currently open and opened within last 6 months
-                                if not is_trackr_item_active_and_recent(item):
-                                    continue
-
                                 company = item.get("companyName") or item.get("company_name") or ""
                                 if isinstance(item.get("company"), dict):
                                     company = item.get("company", {}).get("name", company)
@@ -292,7 +247,6 @@ def scrape_trackr_website(seen_jobs, discovered_list):
                                     full_title = f"{company} - {role}"
                                     job_id = f"trackr_api_{hash(full_title)}"
 
-                                    # Clean & dynamically register Greenhouse/Lever ATS company names
                                     extract_and_register_ats_company(link)
 
                                     if is_relevant_role(full_title, "UK", company):
@@ -308,8 +262,8 @@ def scrape_trackr_website(seen_jobs, discovered_list):
             except Exception:
                 pass
 
-    print(f"  [Trackr Summary] Fetched {total_items_fetched} raw items across categories ({relevant_found} active schemes opened in last 6 months matching Maths & CS)")
-    SCRAPER_STATUS["source_status"][source_name] = f"OK ({total_items_fetched} items fetched, {relevant_found} active recent schemes)"
+    print(f"  [Trackr Summary] Fetched {total_items_fetched} raw items across categories ({relevant_found} active schemes matching profile)")
+    SCRAPER_STATUS["source_status"][source_name] = f"OK ({total_items_fetched} items fetched, {relevant_found} active schemes)"
     return new_jobs
 
 def run_all_scrapers():
