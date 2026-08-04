@@ -26,7 +26,6 @@ def render_jobs_page_html():
         comp_lower = comp_name.lower().strip()
         is_applied = comp_lower in applied_set
 
-        # Escape single quotes safely for JS onclick handlers outside f-string brackets
         comp_js = comp_name.replace("'", "\\'").replace('"', '&quot;')
         title_js = title_name.replace("'", "\\'").replace('"', '&quot;')
 
@@ -35,7 +34,10 @@ def render_jobs_page_html():
             action_btn = '<button class="btn btn-disabled" disabled>✓ Logged</button>'
         else:
             status_badge = '<span class="badge badge-not-applied">⚡ NOT APPLIED</span>'
-            action_btn = f'<button onclick="logJob(\'{comp_js}\', \'{title_js}\')" class="btn btn-success">+ Log to Sheet</button>'
+            action_btn = f'''
+            <button onclick="autoApply('{comp_js}', '{title_js}', '{j['link']}')" class="btn btn-auto">⚡ Auto-Apply & Log</button>
+            <button onclick="logJob('{comp_js}', '{title_js}')" class="btn btn-success">+ Log Only</button>
+            '''
 
         cards_html += f"""
         <div class="job-card" data-search="{j['company'].lower()} {j['title'].lower()} {j['location'].lower()} {'applied' if is_applied else 'not applied'}">
@@ -87,10 +89,12 @@ def render_jobs_page_html():
         .badge-not-applied {{ background: #1e3a8a; color: #93c5fd; border: 1px solid #1d4ed8; }}
         .job-title {{ color: #93c5fd; font-size: 16px; margin-bottom: 10px; line-height: 1.4; }}
         .job-meta {{ color: #64748b; font-size: 13px; margin-bottom: 15px; }}
-        .job-actions {{ display: flex; gap: 10px; }}
+        .job-actions {{ display: flex; gap: 10px; flex-wrap: wrap; }}
         .btn {{ padding: 10px 18px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 14px; border: none; cursor: pointer; transition: 0.2s; }}
         .btn-primary {{ background: #2563eb; color: white; }}
         .btn-primary:hover {{ background: #1d4ed8; }}
+        .btn-auto {{ background: #8b5cf6; color: white; }}
+        .btn-auto:hover {{ background: #7c3aed; }}
         .btn-success {{ background: #10b981; color: white; }}
         .btn-success:hover {{ background: #059669; }}
         .btn-disabled {{ background: #334155; color: #94a3b8; cursor: not-allowed; }}
@@ -116,6 +120,17 @@ def render_jobs_page_html():
                     location.reload();
                 }})
                 .catch(e => alert('❌ Error logging job: ' + e));
+        }}
+        function autoApply(company, role, link) {{
+            // 1. Open job application link in new tab
+            window.open(link, '_blank');
+            // 2. Automatically log to Google Sheets in background
+            fetch('/api/log?company=' + encodeURIComponent(company) + '&role=' + encodeURIComponent(role))
+                .then(r => r.json())
+                .then(d => {{
+                    console.log('Logged ' + company + ' to Google Sheets');
+                    setTimeout(() => location.reload(), 1000);
+                }});
         }}
         function triggerInlineScan() {{
             let term = document.getElementById('terminal-box');
