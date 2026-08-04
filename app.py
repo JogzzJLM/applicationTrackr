@@ -119,18 +119,15 @@ def start_web_server():
             # 1. SANKEY DIAGRAM DASHBOARD
             if self.path in ["/", "/sankey", "/refresh"]:
                 generate_sankey_from_google_sheets()
-                if os.path.exists("sankey_diagram.html"):
-                    self.send_response(200)
-                    self.send_header("Content-Type", "text/html; charset=utf-8")
-                    self.end_headers()
-                    with open("sankey_diagram.html", "rb") as f:
-                        self.wfile.write(f.read())
-                    return
-                else:
-                    self.send_response(500)
-                    self.end_headers()
-                    self.wfile.write(b"Sankey diagram rendering in progress...")
-                    return
+                if not os.path.exists("sankey_diagram.html"):
+                    generate_default_sankey()
+
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.end_headers()
+                with open("sankey_diagram.html", "rb") as f:
+                    self.wfile.write(f.read())
+                return
 
             # 2. DIAGNOSTICS STATUS
             elif self.path == "/status":
@@ -144,32 +141,32 @@ def start_web_server():
             elif self.path == "/test-briefing":
                 trigger_daily_briefing()
                 self.send_response(200)
-                self.send_header("Content-Type", "text/plain")
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
                 self.end_headers()
-                self.wfile.write(b"✅ Triggered test Daily Morning Briefing! Check ntfy on your phone/Mac.")
+                self.wfile.write("Triggered test Daily Morning Briefing! Check ntfy on your phone/Mac.".encode("utf-8"))
                 return
 
             # 4. TEST ENDPOINT: WEEKLY REPORT
             elif self.path == "/test-weekly":
                 trigger_weekly_report()
                 self.send_response(200)
-                self.send_header("Content-Type", "text/plain")
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
                 self.end_headers()
-                self.wfile.write(b"✅ Triggered test Sunday Weekly Funnel Report! Check ntfy on your phone/Mac.")
+                self.wfile.write("Triggered test Sunday Weekly Funnel Report! Check ntfy on your phone/Mac.".encode("utf-8"))
                 return
 
             # 5. TEST ENDPOINT: SCRAPER RUN
             elif self.path == "/test-scraper":
                 run_all_scrapers()
                 self.send_response(200)
-                self.send_header("Content-Type", "text/plain")
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
                 self.end_headers()
-                self.wfile.write(b"✅ Triggered manual scraper run!")
+                self.wfile.write("Triggered manual scraper run!".encode("utf-8"))
                 return
 
             self.send_response(404)
             self.end_headers()
-            self.wfile.write(b"404 Not Found")
+            self.wfile.write("404 Not Found".encode("utf-8"))
 
     socketserver.TCPServer.allow_reuse_address = True
     with socketserver.TCPServer(("", PORT), CustomHandler) as httpd:
@@ -262,7 +259,7 @@ def trigger_daily_briefing():
     
     send_notification(
         title="Daily Morning Briefing",
-        message=f"Good morning! ☀️\nTotal Logged: {stats['total']}\nActive/Pending Rounds: {stats['active']}\nNew Schemes Found Yesterday: {new_jobs_today}",
+        message=f"Good morning! Total Logged: {stats['total']} | Active/Pending Rounds: {stats['active']} | New Schemes Found Yesterday: {new_jobs_today}",
         link=f"http://{HP_STREAM_TAILSCALE_IP}:{PORT}/sankey",
         tags="sun,briefcase",
         priority=3,
@@ -278,7 +275,7 @@ def trigger_weekly_report():
 
     send_notification(
         title="Sunday Weekly Funnel Report",
-        message=f"Weekly Funnel Summary 📊\nApplied Total: {total}\nActive Rounds/Interviews: {stats['active']}\nOffers: {stats['offers']}\nRejections/Ghosted: {stats['rejections']}\nConversion Rate: {conv_rate}%",
+        message=f"Weekly Funnel Summary: Applied Total: {total} | Active Rounds: {stats['active']} | Offers: {stats['offers']} | Rejections: {stats['rejections']} | Conversion Rate: {conv_rate}%",
         link=f"http://{HP_STREAM_TAILSCALE_IP}:{PORT}/sankey",
         tags="bar_chart,trophy",
         priority=4,
@@ -356,7 +353,7 @@ def check_email_inbox():
                         stage = "Online Assessment" if "assessment" in combined_text or "hackerrank" in combined_text else "Interview"
                         update_google_sheet_via_webhook(company_name, stage)
                         send_notification(
-                            title=f"🚨 {stage} Invite: {company_name}!",
+                            title=f"Assessment Invite: {company_name}",
                             message=f"New interview/assessment email received from {company_name}.\nCheck your inbox!",
                             tags="tada,fire",
                             priority=5,
@@ -479,11 +476,27 @@ def run_all_scrapers():
 # ==========================================
 # MODULE 5: SANKEY FLOW GENERATOR
 # ==========================================
+def generate_default_sankey():
+    fig = go.Figure(data=[go.Sankey(
+        node=dict(
+            pad=15,
+            thickness=20,
+            line=dict(color="black", width=0.5),
+            label=["Applied (0)", "Ghosted (0)", "Direct Rejection (0)", "HR Screening (0)", "Final Round (0)", "Offer (0)"],
+            color=["#3182bd", "#969696", "#de2d26", "#e6550d", "#756bb1", "#31a354"]
+        ),
+        link=dict(source=[0], target=[1], value=[0])
+    )])
+    fig.update_layout(title_text="ApplicationTrackr - Waiting for Google Sheets Data", font_size=12)
+    fig.write_html("sankey_diagram.html")
+
+
 def generate_sankey_from_google_sheets():
     try:
         cache_url = f"{GOOGLE_SHEET_CSV_URL}&_cb={int(time.time())}"
         response = requests.get(cache_url, timeout=10)
         if response.status_code != 200:
+            generate_default_sankey()
             return
 
         csv_data = io.StringIO(response.text)
@@ -511,6 +524,7 @@ def generate_sankey_from_google_sheets():
                     all_nodes.add(tgt)
 
         if not flow_counts:
+            generate_default_sankey()
             return
 
         node_list = list(all_nodes)
@@ -540,11 +554,11 @@ def generate_sankey_from_google_sheets():
         fig.write_html("sankey_diagram.html")
 
     except Exception:
-        pass
+        generate_default_sankey()
 
 
 # ==========================================
-# MODULE 6: DAILY BRIEFING & SUNDAY REPORT SCHEDULER
+# MODULE 6: SCHEDULER LOOP
 # ==========================================
 def scheduler_loop():
     last_daily_date = ""
