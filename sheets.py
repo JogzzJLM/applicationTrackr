@@ -5,6 +5,29 @@ import requests
 import plotly.graph_objects as go
 from config import GOOGLE_SHEET_WEBHOOK_URL, GOOGLE_SHEET_CSV_URL
 
+_SHEET_CSV_CACHE = {"timestamp": 0, "content": ""}
+
+def fetch_google_sheet_csv(force_refresh=False):
+    """Fetches CSV from Google Sheets with 5-second in-memory caching & automatic retry handling."""
+    now = time.time()
+    if not force_refresh and (now - _SHEET_CSV_CACHE["timestamp"]) < 5 and _SHEET_CSV_CACHE["content"]:
+        return _SHEET_CSV_CACHE["content"]
+
+    cache_url = f"{GOOGLE_SHEET_CSV_URL}&_cb={int(now * 1000)}"
+
+    for attempt in range(2):
+        try:
+            resp = requests.get(cache_url, timeout=6)
+            if resp.status_code == 200 and resp.text.strip():
+                _SHEET_CSV_CACHE["timestamp"] = now
+                _SHEET_CSV_CACHE["content"] = resp.text
+                return resp.text
+        except Exception:
+            if attempt == 0:
+                time.sleep(0.5)
+
+    return _SHEET_CSV_CACHE.get("content", "")
+
 def update_google_sheet_via_webhook(company, stage, role="Software/Quant Role"):
     if not GOOGLE_SHEET_WEBHOOK_URL or "YOUR_WEBHOOK_ID" in GOOGLE_SHEET_WEBHOOK_URL:
         return
@@ -14,6 +37,7 @@ def update_google_sheet_via_webhook(company, stage, role="Software/Quant Role"):
         resp = requests.post(GOOGLE_SHEET_WEBHOOK_URL, json=payload, timeout=10)
         if resp.status_code == 200:
             print(f"📊 Auto-updated Google Sheet: {company} -> {stage}")
+            fetch_google_sheet_csv(force_refresh=True)
     except Exception as e:
         print(f"⚠️ Error sending Webhook to Google Sheet: {e}")
 
@@ -21,11 +45,10 @@ def get_applied_jobs_set():
     """Fetches Google Sheet and returns a set of (company.lower(), role.lower()) tuples and set of applied company names."""
     applied_jobs = set()
     applied_companies = set()
-    try:
-        cache_url = f"{GOOGLE_SHEET_CSV_URL}&_cb={int(time.time() * 1000)}"
-        resp = requests.get(cache_url, timeout=10)
-        if resp.status_code == 200:
-            reader = csv.DictReader(io.StringIO(resp.text))
+    csv_text = fetch_google_sheet_csv()
+    if csv_text:
+        try:
+            reader = csv.DictReader(io.StringIO(csv_text))
             for row in reader:
                 comp = row.get("Company", "").strip().lower()
                 role = row.get("Role", "").strip().lower()
@@ -33,8 +56,8 @@ def get_applied_jobs_set():
                     applied_companies.add(comp)
                     if role:
                         applied_jobs.add((comp, role))
-    except Exception:
-        pass
+        except Exception:
+            pass
     return applied_jobs, applied_companies
 
 def get_applied_companies_set():
@@ -42,15 +65,13 @@ def get_applied_companies_set():
     _, applied_companies = get_applied_jobs_set()
     return applied_companies
 
-
 def parse_sheet_stats():
-    try:
-        cache_url = f"{GOOGLE_SHEET_CSV_URL}&_cb={int(time.time() * 1000)}"
-        resp = requests.get(cache_url, timeout=10)
-        if resp.status_code != 200:
-            return {"total": 0, "active": 0, "offers": 0, "rejections": 0}
+    csv_text = fetch_google_sheet_csv()
+    if not csv_text:
+        return {"total": 0, "active": 0, "offers": 0, "rejections": 0}
 
-        reader = csv.DictReader(io.StringIO(resp.text))
+    try:
+        reader = csv.DictReader(io.StringIO(csv_text))
         total = 0
         active = 0
         offers = 0
@@ -80,11 +101,10 @@ def parse_sheet_stats():
 def get_detailed_applications():
     """Fetches Google Sheet CSV and returns a list of detailed application dicts."""
     apps = []
-    try:
-        cache_url = f"{GOOGLE_SHEET_CSV_URL}&_cb={int(time.time() * 1000)}"
-        resp = requests.get(cache_url, timeout=10)
-        if resp.status_code == 200:
-            reader = csv.DictReader(io.StringIO(resp.text))
+    csv_text = fetch_google_sheet_csv()
+    if csv_text:
+        try:
+            reader = csv.DictReader(io.StringIO(csv_text))
             for row in reader:
                 company = row.get("Company", "").strip()
                 role = row.get("Role", "Software/Quant Role").strip()
@@ -118,8 +138,8 @@ def get_detailed_applications():
                     "status": status,
                     "status_type": status_type
                 })
-    except Exception as e:
-        print(f"Error reading detailed applications: {e}")
+        except Exception as e:
+            print(f"Error reading detailed applications: {e}")
     return apps
 
 def generate_default_sankey():
@@ -149,15 +169,14 @@ def generate_default_sankey():
     with open("sankey_diagram.html", "w", encoding="utf-8") as f:
         f.write(html_content)
 
-def generate_sankey_from_google_sheets():
+def generate_sankey_from_google_sheets(force_refresh=False):
     try:
-        cache_url = f"{GOOGLE_SHEET_CSV_URL}&_cb={int(time.time() * 1000)}"
-        response = requests.get(cache_url, timeout=10)
-        if response.status_code != 200:
+        csv_text = fetch_google_sheet_csv(force_refresh)
+        if not csv_text:
             generate_default_sankey()
             return
 
-        csv_data = io.StringIO(response.text)
+        csv_data = io.StringIO(csv_text)
         reader = csv.DictReader(csv_data)
 
         flow_counts = {}
@@ -176,7 +195,7 @@ def generate_sankey_from_google_sheets():
             if stages:
                 row_count += 1
 
-                # Root flow: Applications -> First Stage (e.g. Applications -> Applied)
+                # Root flow: Applications -> First Stage
                 pair0 = ("Applications", stages[0])
                 flow_counts[pair0] = flow_counts.get(pair0, 0) + 1
                 all_nodes.add("Applications")
