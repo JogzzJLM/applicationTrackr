@@ -11,20 +11,21 @@ from config import (
 from notifications import send_notification
 
 def extract_and_register_ats_company(url):
-    """Dynamically extracts company name from Greenhouse/Lever URLs and adds to target list."""
+    """Dynamically extracts clean company name from Greenhouse/Lever URLs and adds to target list."""
     try:
-        if "greenhouse.io" in url:
-            match = re.search(r"greenhouse\.io/([^/]+)", url) or re.search(r"for=([^&]+)", url)
+        clean_url = url.split("?")[0].split("#")[0]
+        if "greenhouse.io" in clean_url:
+            match = re.search(r"greenhouse\.io/([^/]+)", clean_url)
             if match:
                 company = match.group(1).lower()
-                if company not in GREENHOUSE_COMPANIES:
+                if company not in GREENHOUSE_COMPANIES and company not in ["embed", "jobs", "embeds"]:
                     GREENHOUSE_COMPANIES.append(company)
                     print(f"  ✨ Dynamically registered new Greenhouse company: {company}")
-        elif "lever.co" in url:
-            match = re.search(r"lever\.co/([^/]+)", url)
+        elif "lever.co" in clean_url:
+            match = re.search(r"lever\.co/([^/]+)", clean_url)
             if match:
                 company = match.group(1).lower()
-                if company not in LEVER_COMPANIES:
+                if company not in LEVER_COMPANIES and company not in ["jobs"]:
                     LEVER_COMPANIES.append(company)
                     print(f"  ✨ Dynamically registered new Lever company: {company}")
     except Exception:
@@ -176,7 +177,7 @@ def scrape_lever_jobs(seen_jobs, discovered_list):
     return new_jobs
 
 def scrape_trackr_website(seen_jobs, discovered_list):
-    """Scrapes official Trackr REST API (api.the-trackr.com) for live UK Tech schemes."""
+    """Scrapes official Trackr REST API (api.the-trackr.com) with required season parameters."""
     new_jobs = []
     source_name = "Trackr API"
     types = ["summer-internships", "industrial-placements", "graduate-schemes", "spring-weeks"]
@@ -192,9 +193,7 @@ def scrape_trackr_website(seen_jobs, discovered_list):
 
     for t in types:
         for season in seasons:
-            url = f"https://api.the-trackr.com/programmes?region=UK&industry=Tech&type={t}"
-            if season:
-                url += f"&season={season}"
+            url = f"https://api.the-trackr.com/programmes?region=UK&industry=Tech&type={t}&season={season}"
 
             try:
                 resp = requests.get(url, headers=headers, timeout=10)
@@ -219,7 +218,7 @@ def scrape_trackr_website(seen_jobs, discovered_list):
                                     full_title = f"{company} - {role}"
                                     job_id = f"trackr_api_{hash(full_title)}"
 
-                                    # Dynamically register Greenhouse/Lever ATS companies
+                                    # Clean & dynamically register Greenhouse/Lever ATS company names
                                     extract_and_register_ats_company(link)
 
                                     if is_relevant_role(full_title, "UK", company):
@@ -235,7 +234,7 @@ def scrape_trackr_website(seen_jobs, discovered_list):
             except Exception as req_err:
                 pass
 
-    print(f"    ↳ Trackr API: Fetched {total_items_fetched} raw items ({relevant_found} relevant schemes matching Maths & CS)")
+    print(f"  [Trackr Summary] Fetched {total_items_fetched} raw items across categories ({relevant_found} relevant schemes matching Maths & CS)")
     SCRAPER_STATUS["source_status"][source_name] = f"OK ({total_items_fetched} items fetched, {relevant_found} active schemes)"
     return new_jobs
 
