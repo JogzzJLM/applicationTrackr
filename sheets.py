@@ -67,6 +67,52 @@ def parse_sheet_stats():
         print(f"Error parsing stats for report: {e}")
         return {"total": 0, "active": 0, "offers": 0, "rejections": 0}
 
+def get_detailed_applications():
+    """Fetches Google Sheet CSV and returns a list of detailed application dicts."""
+    apps = []
+    try:
+        cache_url = f"{GOOGLE_SHEET_CSV_URL}&_cb={int(time.time() * 1000)}"
+        resp = requests.get(cache_url, timeout=10)
+        if resp.status_code == 200:
+            reader = csv.DictReader(io.StringIO(resp.text))
+            for row in reader:
+                company = row.get("Company", "").strip()
+                role = row.get("Role", "Software/Quant Role").strip()
+                if not company:
+                    continue
+                stages = []
+                for k, v in row.items():
+                    if v and v.strip() and k.strip().lower() not in ["company", "role", "link", "date"]:
+                        stages.append(v.strip())
+
+                latest_stage = stages[-1] if stages else "Applied"
+                latest_lower = latest_stage.lower()
+                if "offer" in latest_lower:
+                    status = "Offer 🎉"
+                    status_type = "offer"
+                elif "reject" in latest_lower or "fail" in latest_lower:
+                    status = "Rejected"
+                    status_type = "rejected"
+                elif "ghost" in latest_lower:
+                    status = "Ghosted"
+                    status_type = "ghosted"
+                else:
+                    status = "Active"
+                    status_type = "active"
+
+                apps.append({
+                    "company": company,
+                    "role": role,
+                    "latest_stage": latest_stage,
+                    "stages": stages,
+                    "status": status,
+                    "status_type": status_type
+                })
+    except Exception as e:
+        print(f"Error reading detailed applications: {e}")
+    return apps
+
+
 def generate_default_sankey():
     """Renders a clean zero-data state when Google Sheet has 0 applications."""
     html_content = """<!DOCTYPE html>

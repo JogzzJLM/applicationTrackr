@@ -7,7 +7,11 @@ from urllib.parse import parse_qs, urlparse
 
 from config import PORT, SCRAPER_STATUS, HP_STREAM_TAILSCALE_IP, load_settings, save_settings
 from notifications import send_notification
-from sheets import update_google_sheet_via_webhook, generate_sankey_from_google_sheets, generate_default_sankey, get_applied_companies_set
+from sheets import (
+    update_google_sheet_via_webhook, generate_sankey_from_google_sheets,
+    generate_default_sankey, get_applied_companies_set, parse_sheet_stats,
+    get_detailed_applications
+)
 from scrapers import run_all_scrapers, load_discovered_jobs
 from scheduler import trigger_daily_briefing, trigger_weekly_report
 
@@ -15,121 +19,95 @@ class ThreadedHTTPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     allow_reuse_address = True
     daemon_threads = True
 
-def render_settings_page_html():
-    s = load_settings()
-    grad_years = ", ".join(s.get("grad_years_allowed", []))
-    ex_keywords = ", ".join(s.get("exclude_keywords", []))
-    ex_locations = ", ".join(s.get("exclude_locations", []))
-    my_skills = ", ".join(s.get("my_skills", []))
-
-    return f"""<!DOCTYPE html>
-<html>
-<head>
-    <title>ApplicationTrackr - Dynamic Settings</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 20px; }}
-        .nav {{ display: flex; gap: 15px; justify-content: center; margin-bottom: 25px; border-bottom: 1px solid #334155; padding-bottom: 15px; }}
-        .nav a {{ color: #94a3b8; text-decoration: none; font-weight: bold; padding: 8px 16px; border-radius: 8px; transition: 0.2s; }}
-        .nav a:hover, .nav a.active {{ background: #1e293b; color: #38bdf8; }}
-        .container {{ max-width: 650px; margin: 0 auto; background: #1e293b; border-radius: 16px; padding: 35px; border: 1px solid #334155; box-shadow: 0 10px 30px rgba(0,0,0,0.3); }}
-        h1 {{ color: #38bdf8; text-align: center; margin-top: 0; margin-bottom: 5px; font-size: 24px; }}
-        p.sub {{ text-align: center; color: #94a3b8; font-size: 14px; margin-bottom: 25px; }}
-        .form-group {{ margin-bottom: 20px; }}
-        label {{ display: block; color: #cbd5e1; font-weight: bold; font-size: 14px; margin-bottom: 8px; }}
-        input[type="text"] {{ width: 100%; box-sizing: border-box; padding: 12px 16px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: white; font-size: 14px; outline: none; }}
-        input[type="text"]:focus {{ border-color: #38bdf8; }}
-        .btn-save {{ width: 100%; background: #10b981; color: white; font-weight: bold; padding: 14px; border-radius: 8px; border: none; font-size: 16px; cursor: pointer; margin-top: 10px; transition: 0.2s; }}
-        .btn-save:hover {{ background: #059669; }}
-    </style>
-    <script>
-        function saveSettings(e) {{
-            e.preventDefault();
-            let body = {{
-                grad_years_allowed: document.getElementById('grad_years').value.split(',').map(s=>s.trim()).filter(Boolean),
-                exclude_keywords: document.getElementById('ex_keywords').value.split(',').map(s=>s.trim()).filter(Boolean),
-                exclude_locations: document.getElementById('ex_locations').value.split(',').map(s=>s.trim()).filter(Boolean),
-                my_skills: document.getElementById('my_skills').value.split(',').map(s=>s.trim()).filter(Boolean)
-            }};
-            fetch('/api/settings', {{
-                method: 'POST',
-                headers: {{'Content-Type': 'application/json'}},
-                body: JSON.stringify(body)
-            }})
-            .then(r=>r.json())
-            .then(d=> alert('💾 Settings saved! Scrapers will use these filters on the next run.'))
-            .catch(err=> alert('❌ Error saving settings: ' + err));
-        }}
-    </script>
-</head>
-<body>
-    <div class="nav">
-        <a href="/">📊 Application Flow</a>
-        <a href="/jobs">💼 Discovered Schemes</a>
-        <a href="/settings" class="active">⚙️ Filter Settings</a>
-        <a href="/status">⚙️ Diagnostics</a>
-    </div>
-    <div class="container">
-        <h1>Dynamic Scraper Filters</h1>
-        <p class="sub">Update filters on the go — No git push required!</p>
-        <form onsubmit="saveSettings(event)">
-            <div class="form-group">
-                <label>Target Graduation Years (Comma-separated)</label>
-                <input type="text" id="grad_years" value="{grad_years}">
-            </div>
-            <div class="form-group">
-                <label>Excluded Grad Years / Terms (Comma-separated)</label>
-                <input type="text" id="ex_keywords" value="{ex_keywords}">
-            </div>
-            <div class="form-group">
-                <label>Excluded Foreign Locations (Comma-separated)</label>
-                <input type="text" id="ex_locations" value="{ex_locations}">
-            </div>
-            <div class="form-group">
-                <label>My Known Skills (Comma-separated)</label>
-                <input type="text" id="my_skills" value="{my_skills}">
-            </div>
-            <button type="submit" class="btn-save">💾 Save Filter Settings</button>
-        </form>
-    </div>
-</body>
-</html>"""
-
-def render_jobs_page_html():
+def render_unified_dashboard_html(active_tab="flow"):
+    stats = parse_sheet_stats()
+    apps = get_detailed_applications()
     all_jobs = load_discovered_jobs()
     applied_set = get_applied_companies_set()
-    cards_html = ""
+    settings = load_settings()
 
+    total = stats.get("total", 0)
+    active = stats.get("active", 0)
+    offers = stats.get("offers", 0)
+    rejections = stats.get("rejections", 0)
+    discovered_count = len(all_jobs)
+    conv_rate = round((offers / total * 100), 1) if total > 0 else 0.0
+
+    last_run = SCRAPER_STATUS.get("last_run", "Never")
+
+    # Active Apps Table Rows
+    apps_table_rows = ""
+    if not apps:
+        apps_table_rows = '<tr><td colspan="5" class="empty-table">No applications logged yet. Log your first application via Safari Bookmarklet or the Discovered Schemes tab!</td></tr>'
+    else:
+        for a in apps:
+            st = a.get("status_type", "active")
+            if st == "offer":
+                badge_cls = "badge-offer"
+            elif st == "rejected":
+                badge_cls = "badge-rejected"
+            elif st == "ghosted":
+                badge_cls = "badge-ghosted"
+            else:
+                badge_cls = "badge-active"
+
+            pipeline_str = " &rarr; ".join(a.get("stages", [])) if a.get("stages") else a.get("latest_stage", "Applied")
+
+            apps_table_rows += f"""
+            <tr>
+                <td style="font-weight:700; color:#f8fafc;">{a['company']}</td>
+                <td style="color:#cbd5e1;">{a['role']}</td>
+                <td><span class="badge {badge_cls}">{a['latest_stage']}</span></td>
+                <td style="color:#94a3b8; font-size:13px;">{pipeline_str}</td>
+                <td><span class="badge {badge_cls}">{a['status']}</span></td>
+            </tr>
+            """
+
+    # Job Cards HTML
+    cards_html = ""
     for j in all_jobs:
-        comp_name = j['company']
-        title_name = j['title']
+        comp_name = j.get('company', 'Unknown')
+        title_name = j.get('title', 'Role')
         comp_lower = comp_name.lower().strip()
         is_applied = comp_lower in applied_set
 
         comp_js = comp_name.replace("'", "\\'").replace('"', '&quot;')
         title_js = title_name.replace("'", "\\'").replace('"', '&quot;')
 
+        title_lower = title_name.lower()
+        cat = "other"
+        if any(k in title_lower for k in ["quant", "trader", "trading", "finance", "financial"]):
+            cat = "quant"
+        elif any(k in title_lower for k in ["software", "developer", "backend", "fullstack", "full-stack", "engineer"]):
+            cat = "software"
+        elif any(k in title_lower for k in ["machine learning", "ml", "ai", "data science"]):
+            cat = "ml"
+        elif any(k in title_lower for k in ["cyber", "security", "cloud", "devops"]):
+            cat = "cyber"
+
         if is_applied:
             status_badge = '<span class="badge badge-applied">✅ APPLIED</span>'
             action_btn = '<button class="btn btn-disabled" disabled>✓ Logged</button>'
+            status_tag = "applied"
         else:
             status_badge = '<span class="badge badge-not-applied">⚡ NOT APPLIED</span>'
             action_btn = f'''
             <button onclick="autoApply('{comp_js}', '{title_js}', '{j['link']}')" class="btn btn-auto">⚡ Auto-Apply & Log</button>
             <button onclick="logJob('{comp_js}', '{title_js}')" class="btn btn-success">+ Log Only</button>
             '''
+            status_tag = "notapplied"
 
         cards_html += f"""
-        <div class="job-card" data-search="{j['company'].lower()} {j['title'].lower()} {j['location'].lower()} {'applied' if is_applied else 'not applied'}">
+        <div class="job-card" data-search="{j['company'].lower()} {j['title'].lower()} {j['location'].lower()} {status_tag} {cat}" data-status="{status_tag}" data-cat="{cat}">
             <div class="job-header">
                 <div>
                     <span class="company">{j['company']}</span> &nbsp;
                     {status_badge}
                 </div>
-                <span class="badge badge-source">🌐 Source: {j['source']}</span>
+                <span class="badge badge-source">🌐 {j['source']}</span>
             </div>
             <div class="job-title">{j['title']}</div>
-            <div class="job-meta">📍 {j['location']} &nbsp;•&nbsp; 🕒 Discovered: {j['date_found']}</div>
+            <div class="job-meta">📍 {j['location']} &nbsp;&bull;&nbsp; 🕒 Discovered: {j['date_found']}</div>
             <div class="job-actions">
                 <a href="{j['link']}" target="_blank" class="btn btn-primary">Apply Direct ↗</a>
                 {action_btn}
@@ -140,50 +118,378 @@ def render_jobs_page_html():
     if not cards_html:
         cards_html = '<div class="empty-msg">No job listings indexed yet. Click "Trigger Re-Scan" above to run scrapers!</div>'
 
-    total_count = len(all_jobs)
+    grad_years = ", ".join(settings.get("grad_years_allowed", []))
+    ex_keywords = ", ".join(settings.get("exclude_keywords", []))
+    ex_locations = ", ".join(settings.get("exclude_locations", []))
+    my_skills = ", ".join(settings.get("my_skills", []))
+
+    status_json_formatted = json.dumps(SCRAPER_STATUS, indent=2)
+
+    flow_display = "block" if active_tab == "flow" else "none"
+    jobs_display = "block" if active_tab == "jobs" else "none"
+    settings_display = "block" if active_tab == "settings" else "none"
+    diag_display = "block" if active_tab == "diagnostics" else "none"
+
+    flow_active = "active" if active_tab == "flow" else ""
+    jobs_active = "active" if active_tab == "jobs" else ""
+    settings_active = "active" if active_tab == "settings" else ""
+    diag_active = "active" if active_tab == "diagnostics" else ""
 
     return f"""<!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>ApplicationTrackr - Discovered Schemes</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ApplicationTrackr - Unified Command Center</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
-        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 20px; }}
-        .nav {{ display: flex; gap: 15px; justify-content: center; margin-bottom: 25px; border-bottom: 1px solid #334155; padding-bottom: 15px; }}
-        .nav a {{ color: #94a3b8; text-decoration: none; font-weight: bold; padding: 8px 16px; border-radius: 8px; transition: 0.2s; }}
-        .nav a:hover, .nav a.active {{ background: #1e293b; color: #38bdf8; }}
-        .container {{ max-width: 900px; margin: 0 auto; }}
-        .header-box {{ text-align: center; margin-bottom: 25px; }}
-        h1 {{ color: #38bdf8; margin-bottom: 5px; font-size: 26px; }}
-        .subtitle {{ color: #94a3b8; font-size: 14px; margin-bottom: 12px; }}
-        .rescan-btn {{ display: inline-block; background: #0284c7; color: white; text-decoration: none; padding: 10px 20px; border-radius: 8px; font-size: 14px; font-weight: bold; border: none; cursor: pointer; }}
-        .rescan-btn:hover {{ background: #0369a1; }}
-        .search-input {{ width: 100%; box-sizing: border-box; padding: 14px 20px; border-radius: 10px; border: 1px solid #334155; background: #1e293b; color: white; font-size: 16px; margin-bottom: 20px; outline: none; }}
-        .search-input:focus {{ border-color: #38bdf8; }}
-        .job-card {{ background: #1e293b; border-radius: 12px; padding: 20px; margin-bottom: 15px; border: 1px solid #334155; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }}
+        :root {{
+            --bg: #090d16;
+            --card-bg: rgba(19, 28, 46, 0.75);
+            --card-border: rgba(255, 255, 255, 0.08);
+            --primary: #38bdf8;
+            --primary-glow: rgba(56, 189, 248, 0.15);
+            --accent: #818cf8;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --font: 'Plus Jakarta Sans', sans-serif;
+            --mono: 'JetBrains Mono', monospace;
+        }}
+
+        * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+
+        body {{
+            font-family: var(--font);
+            background: var(--bg);
+            color: var(--text-main);
+            min-height: 100vh;
+            padding: 24px 20px;
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(56, 189, 248, 0.08) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(129, 140, 248, 0.08) 0px, transparent 50%);
+            background-attachment: fixed;
+        }}
+
+        .container {{ max-width: 1280px; margin: 0 auto; }}
+
+        /* Top Header & System Bar */
+        .header-bar {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--card-bg);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--card-border);
+            padding: 20px 28px;
+            border-radius: 20px;
+            margin-bottom: 24px;
+            box-shadow: 0 12px 32px rgba(0,0,0,0.3);
+            flex-wrap: wrap;
+            gap: 16px;
+        }}
+
+        .brand-title {{
+            font-size: 24px;
+            font-weight: 800;
+            background: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }}
+
+        .brand-subtitle {{
+            color: var(--text-muted);
+            font-size: 13px;
+            margin-top: 4px;
+            font-weight: 500;
+        }}
+
+        .server-status-pill {{
+            background: rgba(16, 185, 129, 0.12);
+            color: #6ee7b7;
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            padding: 6px 14px;
+            border-radius: 30px;
+            font-size: 12px;
+            font-weight: 700;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }}
+
+        .status-dot {{
+            width: 8px;
+            height: 8px;
+            background: var(--success);
+            border-radius: 50%;
+            box-shadow: 0 0 10px var(--success);
+            animation: pulse 2s infinite;
+        }}
+
+        @keyframes pulse {{
+            0% {{ transform: scale(0.95); opacity: 0.8; }}
+            50% {{ transform: scale(1.15); opacity: 1; }}
+            100% {{ transform: scale(0.95); opacity: 0.8; }}
+        }}
+
+        .header-actions {{ display: flex; gap: 12px; align-items: center; }}
+
+        .btn-header {{
+            background: var(--primary-glow);
+            color: var(--primary);
+            border: 1px solid rgba(56, 189, 248, 0.3);
+            padding: 10px 18px;
+            border-radius: 12px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.25s ease;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }}
+
+        .btn-header:hover {{
+            background: var(--primary);
+            color: #090d16;
+            box-shadow: 0 0 20px rgba(56, 189, 248, 0.4);
+            transform: translateY(-2px);
+        }}
+
+        /* KPI Metrics Cards Grid */
+        .metrics-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }}
+
+        .metric-card {{
+            background: var(--card-bg);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            padding: 20px;
+            transition: all 0.25s ease;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+        }}
+
+        .metric-card:hover {{
+            border-color: rgba(56, 189, 248, 0.4);
+            transform: translateY(-3px);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+        }}
+
+        .metric-label {{ color: var(--text-muted); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }}
+        .metric-value {{ font-size: 28px; font-weight: 800; color: var(--text-main); font-family: var(--mono); }}
+        .metric-value.offers {{ color: var(--success); }}
+        .metric-value.active {{ color: var(--primary); }}
+        .metric-value.rejections {{ color: var(--danger); }}
+        .metric-value.rate {{ color: var(--accent); }}
+
+        /* Navigation Tabs */
+        .nav-tabs {{
+            display: flex;
+            gap: 10px;
+            background: var(--card-bg);
+            padding: 8px;
+            border-radius: 16px;
+            border: 1px solid var(--card-border);
+            margin-bottom: 24px;
+            overflow-x: auto;
+        }}
+
+        .nav-tab {{
+            padding: 12px 22px;
+            color: var(--text-muted);
+            font-weight: 700;
+            font-size: 14px;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+            user-select: none;
+        }}
+
+        .nav-tab:hover {{ color: var(--text-main); background: rgba(255, 255, 255, 0.04); }}
+        .nav-tab.active {{ background: var(--primary); color: #090d16; font-weight: 800; box-shadow: 0 4px 16px rgba(56, 189, 248, 0.3); }}
+
+        /* Tab Content Cards */
+        .content-card {{
+            background: var(--card-bg);
+            backdrop-filter: blur(16px);
+            border: 1px solid var(--card-border);
+            border-radius: 20px;
+            padding: 28px;
+            margin-bottom: 24px;
+            box-shadow: 0 12px 32px rgba(0,0,0,0.3);
+        }}
+
+        .card-header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--card-border);
+        }}
+
+        .card-title {{ font-size: 18px; font-weight: 700; color: var(--primary); display: flex; align-items: center; gap: 10px; }}
+
+        /* Active Apps Table */
+        .table-responsive {{ overflow-x: auto; margin-top: 15px; }}
+        .app-table {{ width: 100%; border-collapse: collapse; text-align: left; font-size: 14px; }}
+        .app-table th {{ background: rgba(15, 23, 42, 0.6); padding: 14px 18px; color: var(--text-muted); font-weight: 700; font-size: 12px; text-transform: uppercase; border-bottom: 1px solid var(--card-border); }}
+        .app-table td {{ padding: 16px 18px; border-bottom: 1px solid var(--card-border); vertical-align: middle; }}
+        .app-table tr:hover {{ background: rgba(255, 255, 255, 0.02); }}
+        .empty-table {{ text-align: center; color: var(--text-muted); padding: 30px; }}
+
+        /* Badges */
+        .badge {{ font-size: 11px; padding: 5px 12px; border-radius: 20px; font-weight: 700; display: inline-block; text-transform: uppercase; }}
+        .badge-active {{ background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); }}
+        .badge-offer {{ background: rgba(16, 185, 129, 0.15); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.3); }}
+        .badge-rejected {{ background: rgba(239, 68, 68, 0.15); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.3); }}
+        .badge-ghosted {{ background: rgba(148, 163, 184, 0.15); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.3); }}
+        .badge-applied {{ background: rgba(6, 78, 59, 0.8); color: #6ee7b7; border: 1px solid #047857; }}
+        .badge-not-applied {{ background: rgba(30, 58, 138, 0.8); color: #93c5fd; border: 1px solid #1d4ed8; }}
+        .badge-source {{ background: rgba(51, 65, 85, 0.6); color: #cbd5e1; }}
+
+        /* Discovered Schemes Search & Filter Pills */
+        .search-box {{
+            width: 100%;
+            padding: 14px 20px;
+            background: rgba(15, 23, 42, 0.7);
+            border: 1px solid var(--card-border);
+            border-radius: 14px;
+            color: var(--text-main);
+            font-size: 15px;
+            font-family: var(--font);
+            outline: none;
+            margin-bottom: 20px;
+            transition: all 0.25s ease;
+        }}
+        .search-box:focus {{ border-color: var(--primary); box-shadow: 0 0 16px var(--primary-glow); }}
+
+        .filter-pills {{ display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 24px; }}
+        .pill {{
+            padding: 8px 16px;
+            background: rgba(30, 41, 59, 0.6);
+            color: var(--text-muted);
+            border: 1px solid var(--card-border);
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }}
+        .pill:hover, .pill.active {{ background: var(--primary); color: #090d16; border-color: var(--primary); font-weight: 800; }}
+
+        /* Job Cards */
+        .job-card {{
+            background: rgba(15, 23, 42, 0.6);
+            border-radius: 14px;
+            padding: 20px;
+            margin-bottom: 16px;
+            border: 1px solid var(--card-border);
+            transition: all 0.2s ease;
+        }}
+        .job-card:hover {{ border-color: rgba(56, 189, 248, 0.4); transform: translateY(-2px); }}
         .job-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 10px; }}
-        .company {{ color: #f1f5f9; font-weight: bold; font-size: 18px; }}
-        .badge {{ font-size: 11px; padding: 4px 10px; border-radius: 12px; font-weight: bold; display: inline-block; }}
-        .badge-source {{ background: #334155; color: #cbd5e1; }}
-        .badge-applied {{ background: #064e3b; color: #6ee7b7; border: 1px solid #047857; }}
-        .badge-not-applied {{ background: #1e3a8a; color: #93c5fd; border: 1px solid #1d4ed8; }}
-        .job-title {{ color: #93c5fd; font-size: 16px; margin-bottom: 10px; line-height: 1.4; }}
-        .job-meta {{ color: #64748b; font-size: 13px; margin-bottom: 15px; }}
+        .company {{ color: #f1f5f9; font-weight: 800; font-size: 18px; }}
+        .job-title {{ color: #93c5fd; font-size: 15px; margin-bottom: 10px; font-weight: 600; line-height: 1.4; }}
+        .job-meta {{ color: #64748b; font-size: 13px; margin-bottom: 16px; }}
         .job-actions {{ display: flex; gap: 10px; flex-wrap: wrap; }}
-        .btn {{ padding: 10px 18px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 14px; border: none; cursor: pointer; transition: 0.2s; }}
+
+        /* Buttons */
+        .btn {{
+            padding: 10px 18px;
+            border-radius: 10px;
+            text-decoration: none;
+            font-weight: 700;
+            font-size: 13px;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }}
         .btn-primary {{ background: #2563eb; color: white; }}
-        .btn-primary:hover {{ background: #1d4ed8; }}
-        .btn-auto {{ background: #8b5cf6; color: white; }}
-        .btn-auto:hover {{ background: #7c3aed; }}
+        .btn-primary:hover {{ background: #1d4ed8; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4); }}
+        .btn-auto {{ background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); color: white; }}
+        .btn-auto:hover {{ opacity: 0.9; box-shadow: 0 4px 12px rgba(139, 92, 246, 0.4); }}
         .btn-success {{ background: #10b981; color: white; }}
-        .btn-success:hover {{ background: #059669; }}
+        .btn-success:hover {{ background: #059669; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4); }}
         .btn-disabled {{ background: #334155; color: #94a3b8; cursor: not-allowed; }}
-        .terminal-box {{ background: #020617; border: 1px solid #38bdf8; border-radius: 12px; padding: 20px; margin-bottom: 25px; text-align: left; font-family: monospace; box-shadow: 0 0 20px rgba(56,189,248,0.2); }}
-        .terminal-header {{ color: #38bdf8; font-weight: bold; font-size: 14px; margin-bottom: 10px; display: flex; justify-content: space-between; }}
-        .terminal-logs {{ color: #a5f3fc; font-size: 13px; margin: 0; white-space: pre-wrap; word-break: break-all; max-height: 180px; overflow-y: auto; }}
-        .empty-msg {{ text-align: center; color: #64748b; padding: 40px; font-size: 16px; }}
+
+        /* Terminal Console */
+        .terminal-box {{
+            background: #020617;
+            border: 1px solid var(--primary);
+            border-radius: 14px;
+            padding: 20px;
+            margin-bottom: 24px;
+            font-family: var(--mono);
+            box-shadow: 0 0 24px rgba(56, 189, 248, 0.15);
+        }}
+        .terminal-header {{ color: var(--primary); font-weight: 700; font-size: 13px; margin-bottom: 12px; display: flex; justify-content: space-between; }}
+        .terminal-logs {{ color: #a5f3fc; font-size: 13px; white-space: pre-wrap; word-break: break-all; max-height: 200px; overflow-y: auto; }}
+
+        /* Form Controls */
+        .form-group {{ margin-bottom: 22px; }}
+        .form-group label {{ display: block; color: var(--text-main); font-weight: 700; font-size: 14px; margin-bottom: 8px; }}
+        .form-input {{
+            width: 100%;
+            padding: 12px 18px;
+            border-radius: 10px;
+            border: 1px solid var(--card-border);
+            background: rgba(15, 23, 42, 0.7);
+            color: var(--text-main);
+            font-size: 14px;
+            font-family: var(--font);
+            outline: none;
+            transition: all 0.25s ease;
+        }}
+        .form-input:focus {{ border-color: var(--primary); box-shadow: 0 0 16px var(--primary-glow); }}
+        .btn-save {{ width: 100%; background: var(--success); color: white; font-weight: 800; padding: 14px; border-radius: 12px; border: none; font-size: 15px; cursor: pointer; transition: all 0.2s ease; }}
+        .btn-save:hover {{ background: #059669; box-shadow: 0 4px 16px rgba(16, 185, 129, 0.4); }}
+
+        /* Diagnostics Code Block */
+        .code-block {{
+            background: #020617;
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 18px;
+            color: #38bdf8;
+            font-family: var(--mono);
+            font-size: 13px;
+            overflow-x: auto;
+        }}
+
+        .empty-msg {{ text-align: center; color: var(--text-muted); padding: 40px; font-size: 15px; }}
     </style>
     <script>
+        function switchTab(tabId) {{
+            document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
+            document.querySelectorAll('.nav-tab').forEach(el => el.classList.remove('active'));
+            
+            document.getElementById('tab-' + tabId).style.display = 'block';
+            document.getElementById('nav-' + tabId).classList.add('active');
+
+            let urlMap = {{ 'flow': '/', 'jobs': '/jobs', 'settings': '/settings', 'diagnostics': '/status' }};
+            if (urlMap[tabId]) {{
+                history.pushState(null, '', urlMap[tabId]);
+            }}
+        }}
+
         function filterJobs() {{
             let q = document.getElementById('search').value.toLowerCase();
             let cards = document.querySelectorAll('.job-card');
@@ -192,6 +498,24 @@ def render_jobs_page_html():
                 c.style.display = txt.includes(q) ? 'block' : 'none';
             }});
         }}
+
+        function filterPill(category, btn) {{
+            document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+            btn.classList.add('active');
+            let cards = document.querySelectorAll('.job-card');
+            cards.forEach(c => {{
+                if (category === 'all') {{
+                    c.style.display = 'block';
+                }} else if (category === 'applied') {{
+                    c.style.display = c.getAttribute('data-status') === 'applied' ? 'block' : 'none';
+                }} else if (category === 'notapplied') {{
+                    c.style.display = c.getAttribute('data-status') === 'notapplied' ? 'block' : 'none';
+                }} else {{
+                    c.style.display = c.getAttribute('data-cat') === category ? 'block' : 'none';
+                }}
+            }});
+        }}
+
         function logJob(company, role) {{
             fetch('/api/log?company=' + encodeURIComponent(company) + '&role=' + encodeURIComponent(role))
                 .then(r => r.json())
@@ -201,6 +525,7 @@ def render_jobs_page_html():
                 }})
                 .catch(e => alert('❌ Error logging job: ' + e));
         }}
+
         function autoApply(company, role, link) {{
             window.open(link, '_blank');
             fetch('/api/log?company=' + encodeURIComponent(company) + '&role=' + encodeURIComponent(role))
@@ -209,13 +534,15 @@ def render_jobs_page_html():
                     setTimeout(() => location.reload(), 1000);
                 }});
         }}
+
         function triggerInlineScan() {{
+            switchTab('jobs');
             let term = document.getElementById('terminal-box');
             let log = document.getElementById('terminal-logs');
             let tag = document.getElementById('scan-tag');
             term.style.display = 'block';
             tag.innerText = 'Running...';
-            log.innerText = '⚡ Initiating background multi-source scraper run...\\nScanning Greenhouse API, Lever API, and Trackr API...\\nPlease wait...';
+            log.innerText = '⚡ Initiating background multi-source scraper run...\\nScanning Greenhouse API, Lever API, and Trackr REST API...\\nPlease wait...';
             
             fetch('/api/trigger-scan')
                 .then(r => r.json())
@@ -224,7 +551,7 @@ def render_jobs_page_html():
                         fetch('/status')
                             .then(sr => sr.json())
                             .then(s => {{
-                                log.innerText = "⚡ Scraper Status: Run in progress...\\nLast Run: " + s.last_run + "\\nActive Schemes Indexed: " + s.total_discovered_jobs;
+                                log.innerText = "⚡ Scraper Status: Run in progress...\\nLast Run: " + s.last_run + "\\nTotal Discovered Schemes: " + (s.total_seen_jobs || {discovered_count});
                             }});
                     }}, 2000);
                     
@@ -239,33 +566,204 @@ def render_jobs_page_html():
                     log.innerText += '\\n❌ Error triggering scan: ' + e;
                 }});
         }}
+
+        function refreshSankey() {{
+            let iframe = document.getElementById('sankey-iframe');
+            if (iframe) {{
+                iframe.src = '/sankey-embed?_cb=' + Date.now();
+                alert('🔄 Refreshed Sankey Diagram from Google Sheets!');
+            }}
+        }}
+
+        function saveSettings(e) {{
+            e.preventDefault();
+            let body = {{
+                grad_years_allowed: document.getElementById('grad_years').value.split(',').map(s=>s.trim()).filter(Boolean),
+                exclude_keywords: document.getElementById('ex_keywords').value.split(',').map(s=>s.trim()).filter(Boolean),
+                exclude_locations: document.getElementById('ex_locations').value.split(',').map(s=>s.trim()).filter(Boolean),
+                my_skills: document.getElementById('my_skills').value.split(',').map(s=>s.trim()).filter(Boolean)
+            }};
+            fetch('/api/settings', {{
+                method: 'POST',
+                headers: {{'Content-Type': 'application/json'}},
+                body: JSON.stringify(body)
+            }})
+            .then(r=>r.json())
+            .then(d=> alert('💾 Settings saved successfully! Scrapers will use these updated filters.'))
+            .catch(err=> alert('❌ Error saving settings: ' + err));
+        }}
+
+        function triggerTestEndpoint(endpoint, label) {{
+            fetch(endpoint)
+                .then(r => r.text())
+                .then(msg => alert('✅ ' + label + ': ' + msg))
+                .catch(e => alert('❌ Error triggering ' + label + ': ' + e));
+        }}
     </script>
 </head>
 <body>
     <div class="container">
-        <div class="nav">
-            <a href="/">📊 Application Flow</a>
-            <a href="/jobs" class="active">💼 Discovered Schemes ({total_count})</a>
-            <a href="/settings">⚙️ Filter Settings</a>
-            <a href="/status">⚙️ Diagnostics</a>
-        </div>
-        <div class="header-box">
-            <h1>Discovered UK Schemes ({total_count})</h1>
-            <div class="subtitle">Real-time UK Maths, Quant & CS Internship Directory</div>
-            <button onclick="triggerInlineScan()" class="rescan-btn">🔄 Trigger Inline Re-Scan</button>
-        </div>
-
-        <div id="terminal-box" class="terminal-box" style="display:none;">
-            <div class="terminal-header">
-                <span>⚡ Active Scraper Terminal Console</span>
-                <span id="scan-tag" style="color:#10b981;">Running...</span>
+        <!-- Top Header & System Bar -->
+        <div class="header-bar">
+            <div>
+                <div class="brand-title">⚡ ApplicationTrackr <span style="font-size:12px; padding:4px 10px; border-radius:12px; background:rgba(56,189,248,0.15); color:#38bdf8; border:1px solid rgba(56,189,248,0.3); font-weight:700;">COMMAND CENTER</span></div>
+                <div class="brand-subtitle">Headless HP Stream Server &bull; 24/7 UK Maths, Quant & CS Career Engine</div>
             </div>
-            <pre id="terminal-logs" class="terminal-logs">Initializing...</pre>
+            <div class="header-actions">
+                <span class="server-status-pill">
+                    <span class="status-dot"></span> HP-STREAM ONLINE ({HP_STREAM_TAILSCALE_IP}:5000)
+                </span>
+                <button onclick="triggerInlineScan()" class="btn-header">⚡ Rescan Now</button>
+                <button onclick="refreshSankey()" class="btn-header">🔄 Sync Sheet</button>
+            </div>
         </div>
 
-        <input type="text" id="search" onkeyup="filterJobs()" placeholder="🔍 Search company, role, location, or 'applied' / 'not applied'..." class="search-input">
-        <div id="job-list">
-            {cards_html}
+        <!-- Top KPI Metrics Cards -->
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-label">Total Applications</div>
+                <div class="metric-value">{total}</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Active / Pending Rounds</div>
+                <div class="metric-value active">{active}</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Offers Secured</div>
+                <div class="metric-value offers">{offers}</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Rejections / Ghosted</div>
+                <div class="metric-value rejections">{rejections}</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Funnel Conversion Rate</div>
+                <div class="metric-value rate">{conv_rate}%</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Discovered Schemes</div>
+                <div class="metric-value">{discovered_count}</div>
+            </div>
+        </div>
+
+        <!-- Navigation Tabs -->
+        <div class="nav-tabs">
+            <div id="nav-flow" class="nav-tab {flow_active}" onclick="switchTab('flow')">📊 Application Flow & Sankey</div>
+            <div id="nav-jobs" class="nav-tab {jobs_active}" onclick="switchTab('jobs')">💼 Discovered Schemes ({discovered_count})</div>
+            <div id="nav-settings" class="nav-tab {settings_active}" onclick="switchTab('settings')">⚙️ Filter Settings</div>
+            <div id="nav-diagnostics" class="nav-tab {diag_active}" onclick="switchTab('diagnostics')">🛠 System Diagnostics</div>
+        </div>
+
+        <!-- Tab 1: Application Flow & Sankey -->
+        <div id="tab-flow" class="tab-content" style="display:{flow_display};">
+            <div class="content-card">
+                <div class="card-header">
+                    <div class="card-title">📊 Multi-Stage Application Sankey Diagram</div>
+                    <button onclick="refreshSankey()" class="btn btn-header">🔄 Refresh Plot</button>
+                </div>
+                <iframe id="sankey-iframe" src="/sankey-embed" width="100%" height="580" style="border:none; border-radius:12px; background:#0f172a;"></iframe>
+            </div>
+
+            <div class="content-card">
+                <div class="card-header">
+                    <div class="card-title">⚡ Active Applications Tracker</div>
+                </div>
+                <div class="table-responsive">
+                    <table class="app-table">
+                        <thead>
+                            <tr>
+                                <th>Company</th>
+                                <th>Target Role</th>
+                                <th>Latest Stage</th>
+                                <th>Pipeline Stage Flow</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {apps_table_rows}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab 2: Discovered Schemes Directory -->
+        <div id="tab-jobs" class="tab-content" style="display:{jobs_display};">
+            <div class="content-card">
+                <div class="card-header">
+                    <div class="card-title">💼 Discovered UK Schemes Directory ({discovered_count})</div>
+                    <button onclick="triggerInlineScan()" class="btn btn-primary">⚡ Trigger Scraper Rescan</button>
+                </div>
+
+                <div id="terminal-box" class="terminal-box" style="display:none;">
+                    <div class="terminal-header">
+                        <span>⚡ Live Scraper Terminal Console</span>
+                        <span id="scan-tag" style="color:#10b981;">Running...</span>
+                    </div>
+                    <pre id="terminal-logs" class="terminal-logs">Initializing...</pre>
+                </div>
+
+                <input type="text" id="search" onkeyup="filterJobs()" placeholder="🔍 Search by company, role, location, or status ('applied', 'quant', 'software')..." class="search-box">
+
+                <div class="filter-pills">
+                    <button class="pill active" onclick="filterPill('all', this)">All Schemes ({discovered_count})</button>
+                    <button class="pill" onclick="filterPill('notapplied', this)">⚡ Not Applied</button>
+                    <button class="pill" onclick="filterPill('applied', this)">✅ Applied</button>
+                    <button class="pill" onclick="filterPill('software', this)">💻 Software / Dev</button>
+                    <button class="pill" onclick="filterPill('quant', this)">📈 Quant / Trading</button>
+                    <button class="pill" onclick="filterPill('ml', this)">🧠 ML / AI</button>
+                    <button class="pill" onclick="filterPill('cyber', this)">🔒 Cyber / Cloud</button>
+                </div>
+
+                <div id="job-list">
+                    {cards_html}
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab 3: Filter Settings -->
+        <div id="tab-settings" class="tab-content" style="display:{settings_display};">
+            <div class="content-card" style="max-width:700px; margin:0 auto;">
+                <div class="card-header">
+                    <div class="card-title">⚙️ Dynamic Scraper Filter Settings</div>
+                </div>
+                <p style="color:var(--text-muted); font-size:14px; margin-bottom:24px;">Updates filter rules immediately — No git push required!</p>
+                <form onsubmit="saveSettings(event)">
+                    <div class="form-group">
+                        <label>Target Graduation Years (Comma-separated)</label>
+                        <input type="text" id="grad_years" value="{grad_years}" class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label>Excluded Terms / Seniority Keywords (Comma-separated)</label>
+                        <input type="text" id="ex_keywords" value="{ex_keywords}" class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label>Excluded Foreign Locations (Comma-separated)</label>
+                        <input type="text" id="ex_locations" value="{ex_locations}" class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label>My Known Skills Matrix (Comma-separated)</label>
+                        <input type="text" id="my_skills" value="{my_skills}" class="form-input">
+                    </div>
+                    <button type="submit" class="btn-save">💾 Save Filter Settings</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Tab 4: Diagnostics & System Control -->
+        <div id="tab-diagnostics" class="tab-content" style="display:{diag_display};">
+            <div class="content-card">
+                <div class="card-header">
+                    <div class="card-title">🛠 System Diagnostics & Triggers</div>
+                    <div style="display:flex; gap:10px;">
+                        <button onclick="triggerTestEndpoint('/test-briefing', 'Daily Briefing')" class="btn btn-primary">🔔 Test Briefing</button>
+                        <button onclick="triggerTestEndpoint('/test-weekly', 'Weekly Report')" class="btn btn-auto">📈 Test Weekly</button>
+                        <button onclick="triggerTestEndpoint('/test-scraper', 'Manual Scraper')" class="btn btn-success">⚡ Test Scraper</button>
+                    </div>
+                </div>
+                <p style="color:var(--text-muted); font-size:14px; margin-bottom:16px;">Live Scraper & System Status Output (`/status` JSON):</p>
+                <pre class="code-block">{status_json_formatted}</pre>
+            </div>
         </div>
     </div>
 </body>
@@ -388,7 +886,7 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({"status": "started", "message": "Scraper run initiated"}).encode("utf-8"))
             return
 
-        elif clean_path in ["/", "/sankey", "/refresh"]:
+        elif clean_path == "/sankey-embed":
             generate_sankey_from_google_sheets()
             if not os.path.exists("sankey_diagram.html"):
                 generate_default_sankey()
@@ -401,12 +899,20 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
                 self.wfile.write(f.read())
             return
 
+        elif clean_path in ["/", "/sankey", "/refresh"]:
+            self.send_response(200)
+            self.send_cors_headers()
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(render_unified_dashboard_html(active_tab="flow").encode("utf-8"))
+            return
+
         elif clean_path == "/jobs":
             self.send_response(200)
             self.send_cors_headers()
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
-            self.wfile.write(render_jobs_page_html().encode("utf-8"))
+            self.wfile.write(render_unified_dashboard_html(active_tab="jobs").encode("utf-8"))
             return
 
         elif clean_path == "/settings":
@@ -414,16 +920,25 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             self.send_cors_headers()
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
-            self.wfile.write(render_settings_page_html().encode("utf-8"))
+            self.wfile.write(render_unified_dashboard_html(active_tab="settings").encode("utf-8"))
             return
 
         elif clean_path == "/status":
-            self.send_response(200)
-            self.send_cors_headers()
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(json.dumps(SCRAPER_STATUS, indent=2).encode("utf-8"))
-            return
+            accept_header = self.headers.get("Accept", "")
+            if "text/html" in accept_header:
+                self.send_response(200)
+                self.send_cors_headers()
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(render_unified_dashboard_html(active_tab="diagnostics").encode("utf-8"))
+                return
+            else:
+                self.send_response(200)
+                self.send_cors_headers()
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps(SCRAPER_STATUS, indent=2).encode("utf-8"))
+                return
 
         elif clean_path == "/test-briefing":
             trigger_daily_briefing()
