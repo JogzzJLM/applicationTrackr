@@ -145,16 +145,23 @@ from config import (
     SMARTRECRUITERS_COMPANIES, load_settings, normalize_company, normalize_role
 )
 
-def add_discovered_job(discovered_list, job_id, company, title, location, link, source):
+def add_discovered_job(discovered_list, job_id, company, title, location, link, source, source_url=None):
     norm_c = normalize_company(company)
     norm_t = normalize_role(title)
 
+    if not source_url:
+        source_url = link
+
     for item in discovered_list:
         if item.get("id") == job_id:
+            item["source_url"] = source_url
+            item["source"] = source
             return
         item_c = normalize_company(item.get("company"))
         item_t = normalize_role(item.get("title"))
         if norm_c and norm_t and item_c == norm_c and item_t == norm_t:
+            item["source_url"] = source_url
+            item["source"] = source
             return
 
     entry = {
@@ -164,6 +171,7 @@ def add_discovered_job(discovered_list, job_id, company, title, location, link, 
         "location": location if location else "UK / Remote",
         "link": link,
         "source": source,
+        "source_url": source_url,
         "date_found": time.strftime("%Y-%m-%d %H:%M")
     }
     discovered_list.insert(0, entry)
@@ -182,6 +190,7 @@ def scrape_greenhouse_jobs(seen_jobs, discovered_list):
         if not company or company in ["embed", "jobs", "embeds"]:
             continue
         url = f"https://boards-api.greenhouse.io/v1/boards/{company}/jobs"
+        board_url = f"https://boards.greenhouse.io/{company}"
         try:
             resp = requests.get(url, timeout=6)
             if resp.status_code == 200:
@@ -198,7 +207,7 @@ def scrape_greenhouse_jobs(seen_jobs, discovered_list):
                     if is_relevant_role(title, location, company):
                         company_relevant += 1
                         relevant_found += 1
-                        add_discovered_job(discovered_list, job_id, company.capitalize(), title, location, job_url, source_name)
+                        add_discovered_job(discovered_list, job_id, company.capitalize(), title, location, job_url, f"Greenhouse ({company})", board_url)
 
                         if job_id not in seen_jobs:
                             seen_jobs.add(job_id)
@@ -225,6 +234,7 @@ def scrape_lever_jobs(seen_jobs, discovered_list):
         if not company or company in ["jobs"]:
             continue
         url = f"https://api.lever.co/v0/postings/{company}?mode=json"
+        board_url = f"https://jobs.lever.co/{company}"
         try:
             resp = requests.get(url, timeout=6)
             if resp.status_code == 200:
@@ -241,7 +251,7 @@ def scrape_lever_jobs(seen_jobs, discovered_list):
                     if is_relevant_role(title, location, company):
                         company_relevant += 1
                         relevant_found += 1
-                        add_discovered_job(discovered_list, job_id, company.capitalize(), title, location, job_url, source_name)
+                        add_discovered_job(discovered_list, job_id, company.capitalize(), title, location, job_url, f"Lever ({company})", board_url)
 
                         if job_id not in seen_jobs:
                             seen_jobs.add(job_id)
@@ -265,6 +275,7 @@ def scrape_ashby_jobs(seen_jobs, discovered_list):
     print(f"  [Ashby API] Scanning {len(clean_companies)} target companies...")
     for company in clean_companies:
         url = f"https://api.ashbyhq.com/posting-api/job-board/{company}"
+        board_url = f"https://jobs.ashbyhq.com/{company}"
         try:
             resp = requests.get(url, timeout=6)
             if resp.status_code == 200:
@@ -281,7 +292,7 @@ def scrape_ashby_jobs(seen_jobs, discovered_list):
                     if is_relevant_role(title, location, company):
                         company_relevant += 1
                         relevant_found += 1
-                        add_discovered_job(discovered_list, job_id, company.capitalize(), title, location, job_url, source_name)
+                        add_discovered_job(discovered_list, job_id, company.capitalize(), title, location, job_url, f"Ashby ({company})", board_url)
 
                         if job_id not in seen_jobs:
                             seen_jobs.add(job_id)
@@ -305,6 +316,7 @@ def scrape_smartrecruiters_jobs(seen_jobs, discovered_list):
     print(f"  [SmartRecruiters API] Scanning {len(clean_companies)} target companies...")
     for company in clean_companies:
         url = f"https://api.smartrecruiters.com/v1/companies/{company}/postings"
+        board_url = f"https://jobs.smartrecruiters.com/{company}"
         try:
             resp = requests.get(url, timeout=6)
             if resp.status_code == 200:
@@ -322,7 +334,7 @@ def scrape_smartrecruiters_jobs(seen_jobs, discovered_list):
                     if is_relevant_role(title, location, company):
                         company_relevant += 1
                         relevant_found += 1
-                        add_discovered_job(discovered_list, job_id, company.capitalize(), title, location, job_url, source_name)
+                        add_discovered_job(discovered_list, job_id, company.capitalize(), title, location, job_url, f"SmartRecruiters ({company})", board_url)
 
                         if job_id not in seen_jobs:
                             seen_jobs.add(job_id)
@@ -335,6 +347,7 @@ def scrape_smartrecruiters_jobs(seen_jobs, discovered_list):
 
     SCRAPER_STATUS["source_status"][source_name] = f"OK ({companies_scanned}/{len(clean_companies)} companies online, {relevant_found} active schemes)"
     return new_jobs
+
 
 LAST_TRACKR_RUN = 0
 
@@ -407,9 +420,12 @@ def scrape_trackr_website(seen_jobs, discovered_list, force=False):
 
                                     if is_relevant_role(full_title, "UK", company):
                                         relevant_found += 1
-                                        add_discovered_job(discovered_list, job_id, company, role, "UK", link, source_name)
+                                        trackr_source_name = f"Trackr UK Tech ({season})"
+                                        trackr_source_url = "https://app.the-trackr.com"
+                                        add_discovered_job(discovered_list, job_id, company, role, "UK", link, trackr_source_name, trackr_source_url)
 
                                         if job_id not in seen_jobs:
+
                                             seen_jobs.add(job_id)
                                             new_jobs.append((full_title, "UK", link))
 

@@ -138,17 +138,26 @@ def render_unified_dashboard_html(active_tab="flow"):
             status_tag = "notapplied"
             not_applied_count += 1
 
+        source_name = j.get('source', 'Discovered API')
+        source_url = j.get('source_url') or j.get('link') or '#'
+        display_url = source_url.replace("https://", "").replace("http://", "").replace("www.", "").rstrip("/")
+        if len(display_url) > 42:
+            display_url = display_url[:39] + "..."
+
         cards_html += f"""
-        <div class="job-card" data-search="{j['company'].lower()} {j['title'].lower()} {j['location'].lower()} {status_tag} {cat}" data-status="{status_tag}" data-cat="{cat}">
+        <div class="job-card" data-search="{j['company'].lower()} {j['title'].lower()} {j['location'].lower()} {status_tag} {cat} {source_name.lower()}" data-status="{status_tag}" data-cat="{cat}">
             <div class="job-header">
                 <div>
                     <span class="company">{j['company']}</span> &nbsp;
                     {status_badge}
                 </div>
-                <span class="badge badge-source">🌐 {j['source']}</span>
+                <span class="badge badge-source">🌐 {source_name}</span>
             </div>
             <div class="job-title">{j['title']}</div>
             <div class="job-meta">📍 {j['location']} &nbsp;&bull;&nbsp; 🕒 Discovered: {j['date_found']}</div>
+            <div class="job-source-info">
+                🔍 <b>Scraped Webpage:</b> <a href="{source_url}" target="_blank" class="source-link">{display_url} ↗</a>
+            </div>
             <div class="job-actions">
                 <a href="{j['link']}" target="_blank" class="btn btn-primary">Apply Direct ↗</a>
                 {action_btn}
@@ -158,6 +167,7 @@ def render_unified_dashboard_html(active_tab="flow"):
 
     if not cards_html:
         cards_html = '<div class="empty-msg">No job listings indexed yet. Click "Trigger Re-Scan" above to run scrapers!</div>'
+
 
     grad_years = ", ".join(settings.get("grad_years_allowed", []))
     ex_keywords = ", ".join(settings.get("exclude_keywords", []))
@@ -447,8 +457,12 @@ def render_unified_dashboard_html(active_tab="flow"):
         .job-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 10px; }}
         .company {{ color: #f1f5f9; font-weight: 800; font-size: 18px; }}
         .job-title {{ color: #93c5fd; font-size: 15px; margin-bottom: 10px; font-weight: 600; line-height: 1.4; }}
-        .job-meta {{ color: #64748b; font-size: 13px; margin-bottom: 16px; }}
+        .job-meta {{ color: #64748b; font-size: 13px; margin-bottom: 8px; }}
+        .job-source-info {{ font-size: 12px; color: #94a3b8; margin-bottom: 16px; background: rgba(15, 23, 42, 0.75); padding: 6px 12px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.06); display: inline-block; }}
+        .source-link {{ color: #38bdf8; text-decoration: none; font-weight: 600; }}
+        .source-link:hover {{ text-decoration: underline; color: #7dd3fc; }}
         .job-actions {{ display: flex; gap: 10px; flex-wrap: wrap; }}
+
 
         /* Buttons */
         .btn {{
