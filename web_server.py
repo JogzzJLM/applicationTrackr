@@ -233,9 +233,12 @@ def render_unified_dashboard_html(active_tab="flow"):
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="ApplicationTrackr">
     <title>ApplicationTrackr - Unified Command Center</title>
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -574,7 +577,206 @@ def render_unified_dashboard_html(active_tab="flow"):
         }}
 
         .empty-msg {{ text-align: center; color: var(--text-muted); padding: 40px; font-size: 15px; }}
+
+        /* iOS Safari & Mobile Layout Responsiveness */
+        @media (max-width: 768px) {{
+            body {{
+                padding: max(12px, env(safe-area-inset-top)) 10px max(24px, env(safe-area-inset-bottom)) 10px;
+                -webkit-tap-highlight-color: transparent;
+            }}
+
+            .header-bar {{
+                padding: 16px;
+                border-radius: 16px;
+                flex-direction: column;
+                align-items: stretch;
+                gap: 12px;
+            }}
+
+            .brand-title {{
+                font-size: 20px;
+            }}
+
+            .brand-subtitle {{
+                font-size: 12px;
+            }}
+
+            .header-actions {{
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 8px;
+                width: 100%;
+            }}
+
+            .btn-header {{
+                justify-content: center;
+                min-height: 44px;
+                padding: 10px 12px;
+                font-size: 13px;
+                border-radius: 10px;
+            }}
+
+            .metrics-grid {{
+                grid-template-columns: repeat(2, 1fr);
+                gap: 10px;
+                margin-bottom: 16px;
+            }}
+
+            .metric-card {{
+                padding: 14px 12px;
+                border-radius: 14px;
+            }}
+
+            .metric-label {{
+                font-size: 10px;
+                margin-bottom: 4px;
+            }}
+
+            .metric-value {{
+                font-size: 22px;
+            }}
+
+            .nav-tabs {{
+                padding: 6px;
+                border-radius: 14px;
+                gap: 6px;
+                margin-bottom: 16px;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                scrollbar-width: none;
+            }}
+
+            .nav-tabs::-webkit-scrollbar {{
+                display: none;
+            }}
+
+            .nav-tab {{
+                padding: 10px 14px;
+                font-size: 13px;
+                min-height: 44px;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+            }}
+
+            .content-card {{
+                padding: 16px 14px;
+                border-radius: 16px;
+                margin-bottom: 16px;
+            }}
+
+            .card-header {{
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
+                margin-bottom: 14px;
+                padding-bottom: 12px;
+            }}
+
+            .card-title {{
+                font-size: 16px;
+            }}
+
+            .search-box {{
+                font-size: 16px; /* Prevents iOS Safari auto-zoom on focus */
+                padding: 12px 14px;
+                border-radius: 12px;
+                margin-bottom: 14px;
+            }}
+
+            .form-input {{
+                font-size: 16px; /* Prevents iOS Safari auto-zoom on focus */
+                padding: 12px 14px;
+            }}
+
+            .filter-pills {{
+                display: flex;
+                overflow-x: auto;
+                gap: 6px;
+                white-space: nowrap;
+                -webkit-overflow-scrolling: touch;
+                scrollbar-width: none;
+                padding-bottom: 6px;
+                margin-bottom: 16px;
+            }}
+
+            .filter-pills::-webkit-scrollbar {{
+                display: none;
+            }}
+
+            .pill {{
+                padding: 8px 14px;
+                font-size: 12px;
+                min-height: 38px;
+                display: inline-flex;
+                align-items: center;
+            }}
+
+            .job-card {{
+                padding: 16px 14px;
+                border-radius: 14px;
+                margin-bottom: 12px;
+            }}
+
+            .job-header {{
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 6px;
+            }}
+
+            .company {{
+                font-size: 17px;
+            }}
+
+            .job-title {{
+                font-size: 14px;
+                margin-bottom: 8px;
+            }}
+
+            .job-meta {{
+                font-size: 12px;
+                margin-bottom: 8px;
+            }}
+
+            .job-source-info {{
+                font-size: 11px;
+                padding: 6px 10px;
+                margin-bottom: 12px;
+                width: 100%;
+                word-break: break-all;
+            }}
+
+            .job-actions {{
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 8px;
+                width: 100%;
+            }}
+
+            .btn {{
+                min-height: 44px;
+                justify-content: center;
+                padding: 10px 8px;
+                font-size: 12px;
+                width: 100%;
+            }}
+
+            .btn-primary {{
+                grid-column: span 2;
+            }}
+
+            .app-table th, .app-table td {{
+                padding: 10px 12px;
+                font-size: 12px;
+                white-space: nowrap;
+            }}
+
+            #sankey-iframe {{
+                height: 420px !important;
+            }}
+        }}
     </style>
+
     <script>
         function switchTab(tabId) {{
             document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
