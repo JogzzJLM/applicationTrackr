@@ -336,9 +336,21 @@ def scrape_smartrecruiters_jobs(seen_jobs, discovered_list):
     SCRAPER_STATUS["source_status"][source_name] = f"OK ({companies_scanned}/{len(clean_companies)} companies online, {relevant_found} active schemes)"
     return new_jobs
 
-def scrape_trackr_website(seen_jobs, discovered_list):
+LAST_TRACKR_RUN = 0
+
+def scrape_trackr_website(seen_jobs, discovered_list, force=False):
+    global LAST_TRACKR_RUN
     new_jobs = []
     source_name = "Trackr API"
+    now = time.time()
+
+    # Throttling Window: Only query Trackr live once every 2 hours (7200s) to keep daily calls under 200/day limit
+    if not force and LAST_TRACKR_RUN > 0 and (now - LAST_TRACKR_RUN) < 7200:
+        mins_remaining = int((7200 - (now - LAST_TRACKR_RUN)) / 60)
+        print(f"  [Trackr API] Using cached schemes (Next live query in {mins_remaining} mins to protect 200/day rate limit).")
+        SCRAPER_STATUS["source_status"][source_name] = f"OK (Rate-Limit Protected - Cached {len(discovered_list)} schemes)"
+        return new_jobs
+
     relevant_found = 0
     total_items_fetched = 0
 
@@ -350,60 +362,66 @@ def scrape_trackr_website(seen_jobs, discovered_list):
         "Origin": "https://app.the-trackr.com"
     }
 
-    # Consolidated endpoints (2 calls max per run to respect Trackr 200/day IP rate limit)
-    endpoints = [
-        "https://api.the-trackr.com/programmes?region=UK&industry=Tech&season=2027",
-        "https://api.the-trackr.com/programmes?region=UK&industry=Tech&season=2026"
-    ]
+    types = ["summer-internships", "industrial-placements", "graduate-schemes", "spring-weeks"]
+    seasons = ["2027", "2026"]
 
     rate_limited = False
+    LAST_TRACKR_RUN = now
 
-    for url in endpoints:
-        time.sleep(1.0)
-        try:
-            resp = requests.get(url, headers=headers, timeout=8)
-            if resp.status_code == 429:
-                rate_limited = True
-                print("  [Trackr API] ⚠️ Rate Limited (HTTP 429: 200-request daily limit reached). Retaining cached schemes.")
-                break
-            elif resp.status_code == 200:
-                try:
-                    data = resp.json()
-                    items = data if isinstance(data, list) else data.get("programmes", data.get("data", []))
-                    total_items_fetched += len(items)
+    for season in seasons:
+        for t in types:
+            url = f"https://api.the-trackr.com/programmes?region=UK&industry=Tech&season={season}&type={t}"
+            time.sleep(0.5)
 
-                    for item in items:
-                        if isinstance(item, dict):
-                            if not is_trackr_item_active_and_recent(item):
-                                continue
+            try:
+                resp = requests.get(url, headers=headers, timeout=8)
+                if resp.status_code == 429:
+                    rate_limited = True
+                    print("  [Trackr API] ⚠️ Rate Limited (HTTP 429: 200-request daily limit reached). Retaining cached schemes.")
+                    break
+                elif resp.status_code == 200:
+                    try:
+                        data = resp.json()
+                        items = data if isinstance(data, list) else data.get("programmes", data.get("data", []))
+                        total_items_fetched += len(items)
 
-                            company = item.get("companyName") or item.get("company_name") or ""
-                            if isinstance(item.get("company"), dict):
-                                company = item.get("company", {}).get("name", company)
-                            elif isinstance(item.get("company"), str) and not company:
-                                company = item.get("company")
+                        for item in items:
+                            if isinstance(item, dict):
+                                if not is_trackr_item_active_and_recent(item):
+                                    continue
 
-                            role = item.get("name") or item.get("programmeName") or item.get("title") or item.get("programme") or item.get("role") or ""
-                            link = item.get("link") or item.get("url") or item.get("applyUrl") or item.get("apply_url") or "https://app.the-trackr.com"
+                                company = item.get("companyName") or item.get("company_name") or ""
+                                if isinstance(item.get("company"), dict):
+                                    company = item.get("company", {}).get("name", company)
+                                elif isinstance(item.get("company"), str) and not company:
+                                    company = item.get("company")
 
-                            if company and role:
-                                full_title = f"{company} - {role}"
-                                job_id = f"trackr_api_{hash(full_title)}"
+                                role = item.get("name") or item.get("programmeName") or item.get("title") or item.get("programme") or item.get("role") or ""
+                                link = item.get("link") or item.get("url") or item.get("applyUrl") or item.get("apply_url") or "https://app.the-trackr.com"
 
-                                extract_and_register_ats_company(link)
+                                if company and role:
+                                    full_title = f"{company} - {role}"
+                                    job_id = f"trackr_api_{hash(full_title)}"
 
-                                if is_relevant_role(full_title, "UK", company):
-                                    relevant_found += 1
-                                    add_discovered_job(discovered_list, job_id, company, role, "UK", link, source_name)
+                                    extract_and_register_ats_company(link)
 
-                                    if job_id not in seen_jobs:
-                                        seen_jobs.add(job_id)
-                                        new_jobs.append((full_title, "UK", link))
+                                    if is_relevant_role(full_title, "UK", company):
+                                        relevant_found += 1
+                                        add_discovered_job(discovered_list, job_id, company, role, "UK", link, source_name)
 
-                except Exception:
-                    pass
-        except Exception as e:
-            print(f"  [Trackr API] Connection error: {e}")
+                                        if job_id not in seen_jobs:
+                                            seen_jobs.add(job_id)
+                                            new_jobs.append((full_title, "UK", link))
+
+                    except Exception:
+                        pass
+                else:
+                    print(f"  [Trackr API] {season}/{t} HTTP {resp.status_code}")
+            except Exception as e:
+                print(f"  [Trackr API] Connection error: {e}")
+
+        if rate_limited:
+            break
 
     if rate_limited:
         SCRAPER_STATUS["source_status"][source_name] = f"⚠️ Rate Limited (HTTP 429 - Retaining {len(discovered_list)} cached schemes)"
@@ -412,6 +430,7 @@ def scrape_trackr_website(seen_jobs, discovered_list):
         SCRAPER_STATUS["source_status"][source_name] = f"OK ({total_items_fetched} items fetched, {relevant_found} active recent schemes)"
 
     return new_jobs
+
 
 def run_all_scrapers():
     print("\n🔍 Running Active UK Scraper Engine...")
