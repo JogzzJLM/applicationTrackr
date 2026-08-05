@@ -7,9 +7,39 @@ NTFY_TOPIC = "jog_applicationtrackr_alerts"
 SEEN_JOBS_FILE = "seen_jobs.json"
 SEEN_EMAILS_FILE = "seen_emails.json"
 DISCOVERED_JOBS_FILE = "discovered_jobs.json"
+HIDDEN_JOBS_FILE = "hidden_jobs.json"
 SETTINGS_FILE = "settings.json"
 PORT = 5000
 HP_STREAM_TAILSCALE_IP = "100.75.135.73"
+
+def load_hidden_jobs():
+    if os.path.exists(HIDDEN_JOBS_FILE):
+        try:
+            with open(HIDDEN_JOBS_FILE, "r") as f:
+                return set(json.load(f))
+        except Exception:
+            pass
+    return set()
+
+def save_hidden_jobs(hidden_set):
+    try:
+        with open(HIDDEN_JOBS_FILE, "w") as f:
+            json.dump(list(hidden_set), f, indent=2)
+    except Exception as e:
+        print(f"⚠️ Error saving hidden_jobs.json: {e}")
+
+def add_hidden_job(job_id):
+    hj = load_hidden_jobs()
+    hj.add(str(job_id))
+    save_hidden_jobs(hj)
+
+def remove_hidden_job(job_id):
+    hj = load_hidden_jobs()
+    job_id_str = str(job_id)
+    if job_id_str in hj:
+        hj.remove(job_id_str)
+        save_hidden_jobs(hj)
+
 
 def normalize_company(name):
     if not name:
@@ -55,8 +85,10 @@ DEFAULT_SETTINGS = {
     "role_keywords": ["software", "developer", "engineer", "engineering", "backend", "fullstack", "full-stack", "systems", "quant", "quantitative", "trader", "trading", "research", "machine learning", "ml", "ai", "data science", "cyber", "security", "cloud", "devops", "technology", "collaboration"],
     "level_keywords": ["intern", "internship", "placement", "industrial placement", "sandwich", "spring week", "insight week", "graduate", "grad", "early talent", "early career", "undergrad"],
     "location_keywords": ["london", "birmingham", "oxford", "aylesbury", "west midlands", "remote", "uk", "united kingdom", "cambridge", "manchester", "edinburgh"],
-    "special_intl_companies": ["beamng", "janestreet", "optiver", "citadel", "hudsonrivertrading", "hrt", "twosigma", "imc", "flowtraders", "wayve", "samsara", "quadrature", "millennium"]
+    "special_intl_companies": ["beamng", "janestreet", "optiver", "citadel", "hudsonrivertrading", "hrt", "twosigma", "imc", "flowtraders", "wayve", "samsara", "quadrature", "millennium"],
+    "hidden_companies": []
 }
+
 
 def load_settings():
     if os.path.exists(SETTINGS_FILE):

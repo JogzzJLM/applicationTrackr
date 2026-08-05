@@ -5,7 +5,11 @@ import http.server
 import socketserver
 from urllib.parse import parse_qs, urlparse
 
-from config import PORT, SCRAPER_STATUS, HP_STREAM_TAILSCALE_IP, load_settings, save_settings, normalize_company, normalize_role
+from config import (
+    PORT, SCRAPER_STATUS, HP_STREAM_TAILSCALE_IP, load_settings, save_settings,
+    normalize_company, normalize_role, load_hidden_jobs, add_hidden_job, remove_hidden_job
+)
+
 from notifications import send_notification
 from sheets import (
     update_google_sheet_via_webhook, generate_sankey_from_google_sheets,
@@ -82,6 +86,11 @@ def render_unified_dashboard_html(active_tab="flow"):
             </tr>
             """
 
+    hidden_jobs = load_hidden_jobs()
+    raw_hidden_companies = settings.get("hidden_companies", [])
+    hidden_companies_set = set(normalize_company(c) for c in raw_hidden_companies)
+    hidden_companies_str = ", ".join(raw_hidden_companies)
+
     # Dynamic Category Counters
     applied_count = 0
     not_applied_count = 0
@@ -89,14 +98,19 @@ def render_unified_dashboard_html(active_tab="flow"):
     sw_count = 0
     ml_count = 0
     cyber_count = 0
+    hidden_count = 0
+    visible_count = 0
 
     # Job Cards HTML
     cards_html = ""
     for j in all_jobs:
+        job_id = str(j.get('id', ''))
         comp_name = j.get('company', 'Unknown')
         title_name = j.get('title', 'Role')
         comp_norm = normalize_company(comp_name)
         title_norm = normalize_role(title_name)
+
+        is_job_hidden = (job_id in hidden_jobs) or (comp_norm in hidden_companies_set)
 
         is_applied = (comp_norm, title_norm) in applied_jobs
         if not is_applied:
@@ -113,23 +127,38 @@ def render_unified_dashboard_html(active_tab="flow"):
         cat = "other"
         if any(k in title_lower for k in ["quant", "trader", "trading", "finance", "financial"]):
             cat = "quant"
-            quant_count += 1
+            if not is_job_hidden: quant_count += 1
         elif any(k in title_lower for k in ["software", "developer", "backend", "fullstack", "full-stack", "engineer"]):
             cat = "software"
-            sw_count += 1
+            if not is_job_hidden: sw_count += 1
         elif any(k in title_lower for k in ["machine learning", "ml", "ai", "data science"]):
             cat = "ml"
-            ml_count += 1
+            if not is_job_hidden: ml_count += 1
         elif any(k in title_lower for k in ["cyber", "security", "cloud", "devops"]):
             cat = "cyber"
-            cyber_count += 1
+            if not is_job_hidden: cyber_count += 1
 
-        if is_applied:
+        if is_job_hidden:
+            status_tag = "hidden"
+            hidden_count += 1
+            status_badge = '<span class="badge badge-hidden" style="background:rgba(239, 68, 68, 0.15); color:#fca5a5; border:1px solid rgba(239, 68, 68, 0.3);">👁️‍🗨️ HIDDEN</span>'
+            if comp_norm in hidden_companies_set:
+                hide_btns = f'<button onclick="unhideCompany(\'{comp_js}\', this)" class="btn btn-unhide">🟢 Unhide Company ({comp_name})</button>'
+            else:
+                hide_btns = f'<button onclick="unhideJob(\'{job_id}\', this)" class="btn btn-unhide">🟢 Unhide Job</button>'
+        elif is_applied:
+            visible_count += 1
             status_badge = '<span class="badge badge-applied">✅ APPLIED</span>'
             action_btn = '<button class="btn btn-disabled" disabled>✓ Logged</button>'
             status_tag = "applied"
             applied_count += 1
+            hide_btns = f'''
+            {action_btn}
+            <button onclick="hideJob('{job_id}', this)" class="btn btn-hide" title="Hide this specific job card">👁️‍🗨️ Hide Job</button>
+            <button onclick="hideCompany('{comp_js}', this)" class="btn btn-hide-company" title="Hide ALL current & future listings from {comp_name}">🏢 Hide Company</button>
+            '''
         else:
+            visible_count += 1
             status_badge = '<span class="badge badge-not-applied">⚡ NOT APPLIED</span>'
             action_btn = f'''
             <button onclick="autoApply('{comp_js}', '{title_js}', '{j['link']}')" class="btn btn-auto">⚡ Auto-Apply & Log</button>
@@ -137,6 +166,11 @@ def render_unified_dashboard_html(active_tab="flow"):
             '''
             status_tag = "notapplied"
             not_applied_count += 1
+            hide_btns = f'''
+            {action_btn}
+            <button onclick="hideJob('{job_id}', this)" class="btn btn-hide" title="Hide this specific job card">👁️‍🗨️ Hide Job</button>
+            <button onclick="hideCompany('{comp_js}', this)" class="btn btn-hide-company" title="Hide ALL current & future listings from {comp_name}">🏢 Hide Company</button>
+            '''
 
         source_name = j.get('source', 'Discovered API')
         source_url = j.get('source_url') or j.get('link') or '#'
@@ -145,7 +179,7 @@ def render_unified_dashboard_html(active_tab="flow"):
             display_url = display_url[:39] + "..."
 
         cards_html += f"""
-        <div class="job-card" data-search="{j['company'].lower()} {j['title'].lower()} {j['location'].lower()} {status_tag} {cat} {source_name.lower()}" data-status="{status_tag}" data-cat="{cat}">
+        <div class="job-card" data-id="{job_id}" data-company="{comp_name.lower()}" data-search="{j['company'].lower()} {j['title'].lower()} {j['location'].lower()} {status_tag} {cat} {source_name.lower()}" data-status="{status_tag}" data-cat="{cat}" style="display: {'none' if is_job_hidden else 'block'};">
             <div class="job-header">
                 <div>
                     <span class="company">{j['company']}</span> &nbsp;
@@ -160,10 +194,11 @@ def render_unified_dashboard_html(active_tab="flow"):
             </div>
             <div class="job-actions">
                 <a href="{j['link']}" target="_blank" class="btn btn-primary">Apply Direct ↗</a>
-                {action_btn}
+                {hide_btns}
             </div>
         </div>
         """
+
 
     if not cards_html:
         cards_html = '<div class="empty-msg">No job listings indexed yet. Click "Trigger Re-Scan" above to run scrapers!</div>'
@@ -485,6 +520,12 @@ def render_unified_dashboard_html(active_tab="flow"):
         .btn-success {{ background: #10b981; color: white; }}
         .btn-success:hover {{ background: #059669; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4); }}
         .btn-disabled {{ background: #334155; color: #94a3b8; cursor: not-allowed; }}
+        .btn-hide {{ background: rgba(239, 68, 68, 0.15); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.3); }}
+        .btn-hide:hover {{ background: rgba(239, 68, 68, 0.3); box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4); }}
+        .btn-hide-company {{ background: rgba(245, 158, 11, 0.15); color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.3); }}
+        .btn-hide-company:hover {{ background: rgba(245, 158, 11, 0.3); box-shadow: 0 4px 12px rgba(245, 158, 11, 0.4); }}
+        .btn-unhide {{ background: #10b981; color: white; }}
+        .btn-unhide:hover {{ background: #059669; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4); }}
 
         /* Terminal Console */
         .terminal-box {{
@@ -560,16 +601,86 @@ def render_unified_dashboard_html(active_tab="flow"):
             btn.classList.add('active');
             let cards = document.querySelectorAll('.job-card');
             cards.forEach(c => {{
-                if (category === 'all') {{
+                let st = c.getAttribute('data-status');
+                let cat = c.getAttribute('data-cat');
+                if (category === 'hidden') {{
+                    c.style.display = (st === 'hidden') ? 'block' : 'none';
+                }} else if (st === 'hidden') {{
+                    c.style.display = 'none';
+                }} else if (category === 'all') {{
                     c.style.display = 'block';
                 }} else if (category === 'applied') {{
-                    c.style.display = c.getAttribute('data-status') === 'applied' ? 'block' : 'none';
+                    c.style.display = (st === 'applied') ? 'block' : 'none';
                 }} else if (category === 'notapplied') {{
-                    c.style.display = c.getAttribute('data-status') === 'notapplied' ? 'block' : 'none';
+                    c.style.display = (st === 'notapplied') ? 'block' : 'none';
                 }} else {{
-                    c.style.display = c.getAttribute('data-cat') === category ? 'block' : 'none';
+                    c.style.display = (cat === category) ? 'block' : 'none';
                 }}
             }});
+        }}
+
+        function hideJob(jobId, btn) {{
+            fetch('/api/hide-job?id=' + encodeURIComponent(jobId))
+                .then(r => r.json())
+                .then(d => {{
+                    let card = btn.closest('.job-card');
+                    if (card) {{
+                        card.setAttribute('data-status', 'hidden');
+                        let currentTab = document.querySelector('.pill.active');
+                        if (currentTab && !currentTab.innerText.includes('Hidden')) {{
+                            card.style.display = 'none';
+                        }}
+                    }}
+                    alert('👁️‍🗨️ Job listing hidden!');
+                }});
+        }}
+
+        function unhideJob(jobId, btn) {{
+            fetch('/api/unhide-job?id=' + encodeURIComponent(jobId))
+                .then(r => r.json())
+                .then(d => {{
+                    let card = btn.closest('.job-card');
+                    if (card) {{
+                        card.setAttribute('data-status', 'notapplied');
+                        card.style.display = 'none';
+                    }}
+                    alert('🟢 Job listing restored!');
+                }});
+        }}
+
+        function hideCompany(company, btn) {{
+            if (!confirm('Hide ALL current & future job listings from ' + company + '?')) return;
+            fetch('/api/hide-company?company=' + encodeURIComponent(company))
+                .then(r => r.json())
+                .then(d => {{
+                    let cards = document.querySelectorAll('.job-card');
+                    let count = 0;
+                    cards.forEach(c => {{
+                        let comp = c.getAttribute('data-company');
+                        if (comp === company.toLowerCase()) {{
+                            c.setAttribute('data-status', 'hidden');
+                            c.style.display = 'none';
+                            count++;
+                        }}
+                    }});
+                    alert('🏢 Hidden ' + count + ' listings from ' + company + '!');
+                }});
+        }}
+
+        function unhideCompany(company, btn) {{
+            fetch('/api/unhide-company?company=' + encodeURIComponent(company))
+                .then(r => r.json())
+                .then(d => {{
+                    let cards = document.querySelectorAll('.job-card');
+                    cards.forEach(c => {{
+                        let comp = c.getAttribute('data-company');
+                        if (comp === company.toLowerCase()) {{
+                            c.setAttribute('data-status', 'notapplied');
+                            c.style.display = 'none';
+                        }}
+                    }});
+                    alert('🟢 Restored listings for ' + company + '!');
+                }});
         }}
 
         function logJob(company, role) {{
@@ -763,13 +874,13 @@ def render_unified_dashboard_html(active_tab="flow"):
 
                 <div class="filter-pills">
                     <button class="pill active" onclick="filterPill('all', this)">All Schemes ({discovered_count})</button>
-
                     <button class="pill" onclick="filterPill('notapplied', this)">⚡ Not Applied ({not_applied_count})</button>
                     <button class="pill" onclick="filterPill('applied', this)">✅ Applied ({applied_count})</button>
                     <button class="pill" onclick="filterPill('software', this)">💻 Software / Dev ({sw_count})</button>
                     <button class="pill" onclick="filterPill('quant', this)">📈 Quant / Trading ({quant_count})</button>
                     <button class="pill" onclick="filterPill('ml', this)">🧠 ML / AI ({ml_count})</button>
                     <button class="pill" onclick="filterPill('cyber', this)">🔒 Cyber / Cloud ({cyber_count})</button>
+                    <button class="pill" onclick="filterPill('hidden', this)">👁️‍🗨️ Hidden ({hidden_count})</button>
                 </div>
 
                 <div id="job-list">
@@ -802,10 +913,15 @@ def render_unified_dashboard_html(active_tab="flow"):
                         <label>My Known Skills Matrix (Comma-separated)</label>
                         <input type="text" id="my_skills" value="{my_skills}" class="form-input">
                     </div>
+                    <div class="form-group">
+                        <label>Hidden Companies (Comma-separated - Hide all current & future schemes)</label>
+                        <input type="text" id="hidden_companies" value="{hidden_companies_str}" class="form-input" placeholder="e.g. Meta, Amazon, Barclays">
+                    </div>
                     <button type="submit" class="btn-save">💾 Save Filter Settings</button>
                 </form>
             </div>
         </div>
+
 
         <!-- Tab 4: Diagnostics & System Control -->
         <div id="tab-diagnostics" class="tab-content" style="display:{diag_display};">
@@ -941,6 +1057,65 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({"status": "success", "message": f"Logged {company}"}).encode("utf-8"))
             return
+
+        elif clean_path == "/api/hide-job":
+            query_params = parse_qs(parsed_url.query)
+            job_id = query_params.get("id", [""])[0]
+            if job_id:
+                add_hidden_job(job_id)
+            self.send_response(200)
+            self.send_cors_headers()
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "success", "hidden": job_id}).encode("utf-8"))
+            return
+
+        elif clean_path == "/api/unhide-job":
+            query_params = parse_qs(parsed_url.query)
+            job_id = query_params.get("id", [""])[0]
+            if job_id:
+                remove_hidden_job(job_id)
+            self.send_response(200)
+            self.send_cors_headers()
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "success", "unhidden": job_id}).encode("utf-8"))
+            return
+
+        elif clean_path == "/api/hide-company":
+            query_params = parse_qs(parsed_url.query)
+            company = query_params.get("company", [""])[0]
+            if company:
+                current_s = load_settings()
+                hc = current_s.get("hidden_companies", [])
+                norm_c = normalize_company(company)
+                if norm_c and norm_c not in [normalize_company(x) for x in hc]:
+                    hc.append(company)
+                    current_s["hidden_companies"] = hc
+                    save_settings(current_s)
+            self.send_response(200)
+            self.send_cors_headers()
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "success", "hidden_company": company}).encode("utf-8"))
+            return
+
+        elif clean_path == "/api/unhide-company":
+            query_params = parse_qs(parsed_url.query)
+            company = query_params.get("company", [""])[0]
+            if company:
+                current_s = load_settings()
+                hc = current_s.get("hidden_companies", [])
+                norm_c = normalize_company(company)
+                current_s["hidden_companies"] = [x for x in hc if normalize_company(x) != norm_c]
+                save_settings(current_s)
+            self.send_response(200)
+            self.send_cors_headers()
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "success", "unhidden_company": company}).encode("utf-8"))
+            return
+
 
         elif clean_path == "/api/trigger-scan":
             threading.Thread(target=run_all_scrapers, daemon=True).start()
