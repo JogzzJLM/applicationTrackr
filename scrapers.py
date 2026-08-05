@@ -139,6 +139,11 @@ def save_discovered_jobs(discovered_jobs):
     except Exception as e:
         print(f"⚠️ Error saving discovered_jobs: {e}")
 
+import concurrent.futures
+import threading
+
+_JOB_LOCK = threading.Lock()
+
 from config import (
     SEEN_JOBS_FILE, DISCOVERED_JOBS_FILE, SCRAPER_STATUS,
     GREENHOUSE_COMPANIES, LEVER_COMPANIES, ASHBY_COMPANIES,
@@ -152,29 +157,30 @@ def add_discovered_job(discovered_list, job_id, company, title, location, link, 
     if not source_url:
         source_url = link
 
-    for item in discovered_list:
-        if item.get("id") == job_id:
-            item["source_url"] = source_url
-            item["source"] = source
-            return
-        item_c = normalize_company(item.get("company"))
-        item_t = normalize_role(item.get("title"))
-        if norm_c and norm_t and item_c == norm_c and item_t == norm_t:
-            item["source_url"] = source_url
-            item["source"] = source
-            return
+    with _JOB_LOCK:
+        for item in discovered_list:
+            if item.get("id") == job_id:
+                item["source_url"] = source_url
+                item["source"] = source
+                return
+            item_c = normalize_company(item.get("company"))
+            item_t = normalize_role(item.get("title"))
+            if norm_c and norm_t and item_c == norm_c and item_t == norm_t:
+                item["source_url"] = source_url
+                item["source"] = source
+                return
 
-    entry = {
-        "id": job_id,
-        "company": company,
-        "title": title,
-        "location": location if location else "UK / Remote",
-        "link": link,
-        "source": source,
-        "source_url": source_url,
-        "date_found": time.strftime("%Y-%m-%d %H:%M")
-    }
-    discovered_list.insert(0, entry)
+        entry = {
+            "id": job_id,
+            "company": company,
+            "title": title,
+            "location": location if location else "UK / Remote",
+            "link": link,
+            "source": source,
+            "source_url": source_url,
+            "date_found": time.strftime("%Y-%m-%d %H:%M")
+        }
+        discovered_list.insert(0, entry)
 
 
 def scrape_greenhouse_jobs(seen_jobs, discovered_list):
@@ -184,17 +190,20 @@ def scrape_greenhouse_jobs(seen_jobs, discovered_list):
     relevant_found = 0
 
     clean_companies = list(set([c.split('?')[0].split('#')[0].strip() for c in GREENHOUSE_COMPANIES if c.strip()]))
+    print(f"  [Greenhouse API] Scanning {len(clean_companies)} target companies concurrently...")
 
-    print(f"  [Greenhouse API] Scanning {len(clean_companies)} target companies...")
-    for company in clean_companies:
+    def fetch_company(company):
+        nonlocal companies_scanned, relevant_found
         if not company or company in ["embed", "jobs", "embeds"]:
-            continue
+            return []
         url = f"https://boards-api.greenhouse.io/v1/boards/{company}/jobs"
         board_url = f"https://boards.greenhouse.io/{company}"
+        local_new = []
         try:
             resp = requests.get(url, timeout=6)
             if resp.status_code == 200:
-                companies_scanned += 1
+                with _JOB_LOCK:
+                    companies_scanned += 1
                 fetched = resp.json().get("jobs", [])
                 company_relevant = 0
 
@@ -206,17 +215,24 @@ def scrape_greenhouse_jobs(seen_jobs, discovered_list):
 
                     if is_relevant_role(title, location, company):
                         company_relevant += 1
-                        relevant_found += 1
                         add_discovered_job(discovered_list, job_id, company.capitalize(), title, location, job_url, f"Greenhouse ({company})", board_url)
 
-                        if job_id not in seen_jobs:
-                            seen_jobs.add(job_id)
-                            new_jobs.append((f"{company.capitalize()} - {title}", location, job_url))
+                        with _JOB_LOCK:
+                            relevant_found += 1
+                            if job_id not in seen_jobs:
+                                seen_jobs.add(job_id)
+                                local_new.append((f"{company.capitalize()} - {title}", location, job_url))
 
                 if company_relevant > 0:
                     print(f"    ↳ {company.capitalize()}: {len(fetched)} jobs fetched ({company_relevant} relevant)")
         except Exception:
             pass
+        return local_new
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+        results = executor.map(fetch_company, clean_companies)
+        for res in results:
+            new_jobs.extend(res)
 
     SCRAPER_STATUS["source_status"][source_name] = f"OK ({companies_scanned}/{len(clean_companies)} companies online, {relevant_found} active schemes)"
     return new_jobs
@@ -228,17 +244,20 @@ def scrape_lever_jobs(seen_jobs, discovered_list):
     relevant_found = 0
 
     clean_companies = list(set([c.split('?')[0].split('#')[0].strip() for c in LEVER_COMPANIES if c.strip()]))
+    print(f"  [Lever API] Scanning {len(clean_companies)} target companies concurrently...")
 
-    print(f"  [Lever API] Scanning {len(clean_companies)} target companies...")
-    for company in clean_companies:
+    def fetch_company(company):
+        nonlocal companies_scanned, relevant_found
         if not company or company in ["jobs"]:
-            continue
+            return []
         url = f"https://api.lever.co/v0/postings/{company}?mode=json"
         board_url = f"https://jobs.lever.co/{company}"
+        local_new = []
         try:
             resp = requests.get(url, timeout=6)
             if resp.status_code == 200:
-                companies_scanned += 1
+                with _JOB_LOCK:
+                    companies_scanned += 1
                 fetched = resp.json()
                 company_relevant = 0
 
@@ -250,17 +269,24 @@ def scrape_lever_jobs(seen_jobs, discovered_list):
 
                     if is_relevant_role(title, location, company):
                         company_relevant += 1
-                        relevant_found += 1
                         add_discovered_job(discovered_list, job_id, company.capitalize(), title, location, job_url, f"Lever ({company})", board_url)
 
-                        if job_id not in seen_jobs:
-                            seen_jobs.add(job_id)
-                            new_jobs.append((f"{company.capitalize()} - {title}", location, job_url))
+                        with _JOB_LOCK:
+                            relevant_found += 1
+                            if job_id not in seen_jobs:
+                                seen_jobs.add(job_id)
+                                local_new.append((f"{company.capitalize()} - {title}", location, job_url))
 
                 if company_relevant > 0:
                     print(f"    ↳ {company.capitalize()}: {len(fetched)} jobs fetched ({company_relevant} relevant)")
         except Exception:
             pass
+        return local_new
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+        results = executor.map(fetch_company, clean_companies)
+        for res in results:
+            new_jobs.extend(res)
 
     SCRAPER_STATUS["source_status"][source_name] = f"OK ({companies_scanned}/{len(clean_companies)} companies online, {relevant_found} active schemes)"
     return new_jobs
@@ -272,14 +298,18 @@ def scrape_ashby_jobs(seen_jobs, discovered_list):
     relevant_found = 0
 
     clean_companies = list(set([c.strip() for c in ASHBY_COMPANIES if c.strip()]))
-    print(f"  [Ashby API] Scanning {len(clean_companies)} target companies...")
-    for company in clean_companies:
+    print(f"  [Ashby API] Scanning {len(clean_companies)} target companies concurrently...")
+
+    def fetch_company(company):
+        nonlocal companies_scanned, relevant_found
+        local_new = []
         url = f"https://api.ashbyhq.com/posting-api/job-board/{company}"
         board_url = f"https://jobs.ashbyhq.com/{company}"
         try:
             resp = requests.get(url, timeout=6)
             if resp.status_code == 200:
-                companies_scanned += 1
+                with _JOB_LOCK:
+                    companies_scanned += 1
                 fetched = resp.json().get("jobs", [])
                 company_relevant = 0
 
@@ -291,17 +321,24 @@ def scrape_ashby_jobs(seen_jobs, discovered_list):
 
                     if is_relevant_role(title, location, company):
                         company_relevant += 1
-                        relevant_found += 1
                         add_discovered_job(discovered_list, job_id, company.capitalize(), title, location, job_url, f"Ashby ({company})", board_url)
 
-                        if job_id not in seen_jobs:
-                            seen_jobs.add(job_id)
-                            new_jobs.append((f"{company.capitalize()} - {title}", location, job_url))
+                        with _JOB_LOCK:
+                            relevant_found += 1
+                            if job_id not in seen_jobs:
+                                seen_jobs.add(job_id)
+                                local_new.append((f"{company.capitalize()} - {title}", location, job_url))
 
                 if company_relevant > 0:
                     print(f"    ↳ {company.capitalize()}: {len(fetched)} jobs fetched ({company_relevant} relevant)")
         except Exception:
             pass
+        return local_new
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+        results = executor.map(fetch_company, clean_companies)
+        for res in results:
+            new_jobs.extend(res)
 
     SCRAPER_STATUS["source_status"][source_name] = f"OK ({companies_scanned}/{len(clean_companies)} companies online, {relevant_found} active schemes)"
     return new_jobs
@@ -313,14 +350,18 @@ def scrape_smartrecruiters_jobs(seen_jobs, discovered_list):
     relevant_found = 0
 
     clean_companies = list(set([c.strip() for c in SMARTRECRUITERS_COMPANIES if c.strip()]))
-    print(f"  [SmartRecruiters API] Scanning {len(clean_companies)} target companies...")
-    for company in clean_companies:
+    print(f"  [SmartRecruiters API] Scanning {len(clean_companies)} target companies concurrently...")
+
+    def fetch_company(company):
+        nonlocal companies_scanned, relevant_found
+        local_new = []
         url = f"https://api.smartrecruiters.com/v1/companies/{company}/postings"
         board_url = f"https://jobs.smartrecruiters.com/{company}"
         try:
             resp = requests.get(url, timeout=6)
             if resp.status_code == 200:
-                companies_scanned += 1
+                with _JOB_LOCK:
+                    companies_scanned += 1
                 fetched = resp.json().get("content", [])
                 company_relevant = 0
 
@@ -333,20 +374,28 @@ def scrape_smartrecruiters_jobs(seen_jobs, discovered_list):
 
                     if is_relevant_role(title, location, company):
                         company_relevant += 1
-                        relevant_found += 1
                         add_discovered_job(discovered_list, job_id, company.capitalize(), title, location, job_url, f"SmartRecruiters ({company})", board_url)
 
-                        if job_id not in seen_jobs:
-                            seen_jobs.add(job_id)
-                            new_jobs.append((f"{company.capitalize()} - {title}", location, job_url))
+                        with _JOB_LOCK:
+                            relevant_found += 1
+                            if job_id not in seen_jobs:
+                                seen_jobs.add(job_id)
+                                local_new.append((f"{company.capitalize()} - {title}", location, job_url))
 
                 if company_relevant > 0:
                     print(f"    ↳ {company.capitalize()}: {len(fetched)} jobs fetched ({company_relevant} relevant)")
         except Exception:
             pass
+        return local_new
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+        results = executor.map(fetch_company, clean_companies)
+        for res in results:
+            new_jobs.extend(res)
 
     SCRAPER_STATUS["source_status"][source_name] = f"OK ({companies_scanned}/{len(clean_companies)} companies online, {relevant_found} active schemes)"
     return new_jobs
+
 
 
 LAST_TRACKR_RUN = 0
@@ -449,17 +498,27 @@ def scrape_trackr_website(seen_jobs, discovered_list, force=False):
 
 
 def run_all_scrapers():
-    print("\n🔍 Running Active UK Scraper Engine...")
+    start_time = time.time()
+    print("\n🔍 Running Parallel Multi-Threaded UK Scraper Engine...")
     seen_jobs = load_seen_jobs()
     discovered_list = load_discovered_jobs()
     all_new_jobs = []
 
-    all_new_jobs.extend(scrape_greenhouse_jobs(seen_jobs, discovered_list))
-    all_new_jobs.extend(scrape_lever_jobs(seen_jobs, discovered_list))
-    all_new_jobs.extend(scrape_ashby_jobs(seen_jobs, discovered_list))
-    all_new_jobs.extend(scrape_smartrecruiters_jobs(seen_jobs, discovered_list))
-    all_new_jobs.extend(scrape_trackr_website(seen_jobs, discovered_list))
+    # Execute all 5 ATS & Trackr scrapers in parallel using worker threads
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        f_gh = executor.submit(scrape_greenhouse_jobs, seen_jobs, discovered_list)
+        f_lever = executor.submit(scrape_lever_jobs, seen_jobs, discovered_list)
+        f_ashby = executor.submit(scrape_ashby_jobs, seen_jobs, discovered_list)
+        f_sr = executor.submit(scrape_smartrecruiters_jobs, seen_jobs, discovered_list)
+        f_trackr = executor.submit(scrape_trackr_website, seen_jobs, discovered_list)
 
+        all_new_jobs.extend(f_gh.result())
+        all_new_jobs.extend(f_lever.result())
+        all_new_jobs.extend(f_ashby.result())
+        all_new_jobs.extend(f_sr.result())
+        all_new_jobs.extend(f_trackr.result())
+
+    elapsed = round(time.time() - start_time, 2)
     save_seen_jobs(seen_jobs)
     save_discovered_jobs(discovered_list)
 
@@ -468,7 +527,8 @@ def run_all_scrapers():
     SCRAPER_STATUS["total_discovered_jobs"] = len(discovered_list)
     SCRAPER_STATUS["last_new_jobs_found"] = len(all_new_jobs)
 
-    print(f"📊 Scraper Run Complete: {len(discovered_list)} total active schemes indexed ({len(all_new_jobs)} new alerts sent).")
+    print(f"📊 Parallel Scraper Run Complete in {elapsed}s: {len(discovered_list)} total active schemes indexed ({len(all_new_jobs)} new alerts sent).")
+
 
     if all_new_jobs:
         if len(all_new_jobs) > 5:
