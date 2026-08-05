@@ -4,6 +4,7 @@ import re
 import imaplib
 import email
 from email.header import decode_header
+import time
 from config import GMAIL_USER, GMAIL_APP_PASS, SEEN_EMAILS_FILE
 from notifications import send_notification
 from sheets import update_google_sheet_via_webhook
@@ -31,10 +32,22 @@ def check_email_inbox():
     print("📧 Checking Gmail Inbox for application updates...")
     seen_emails = load_seen_emails()
 
+    mail = None
+    for attempt in range(2):
+        try:
+            mail = imaplib.IMAP4_SSL("imap.gmail.com", timeout=10)
+            mail.login(GMAIL_USER, GMAIL_APP_PASS)
+            mail.select("inbox")
+            break
+        except Exception as e:
+            if attempt == 0:
+                time.sleep(2)
+            else:
+                print(f"⚠️ Email Listener Notice: IMAP connection offline/retry skipped ({e})")
+                return
+
     try:
-        mail = imaplib.IMAP4_SSL("imap.gmail.com")
-        mail.login(GMAIL_USER, GMAIL_APP_PASS)
-        mail.select("inbox")
+
 
         status, messages = mail.search(None, '(UNSEEN)')
         if status != "OK":
