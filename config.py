@@ -1,6 +1,6 @@
 import os
 import json
-
+import time
 import re
 
 NTFY_TOPIC = "jog_applicationtrackr_alerts"
@@ -10,6 +10,24 @@ DISCOVERED_JOBS_FILE = "discovered_jobs.json"
 SETTINGS_FILE = "settings.json"
 PORT = 5000
 HP_STREAM_TAILSCALE_IP = "100.75.135.73"
+
+SCRAPER_LOGS = []
+
+def add_scraper_log(msg):
+    timestamp = time.strftime("%H:%M:%S")
+    log_line = f"[{timestamp}] {msg}"
+    print(log_line)
+    SCRAPER_LOGS.append(log_line)
+    if len(SCRAPER_LOGS) > 300:
+        SCRAPER_LOGS.pop(0)
+
+def get_scraper_logs():
+    return list(SCRAPER_LOGS)
+
+def clear_scraper_logs():
+    global SCRAPER_LOGS
+    SCRAPER_LOGS = []
+
 
 def normalize_company(name):
     if not name:

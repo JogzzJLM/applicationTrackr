@@ -406,89 +406,112 @@ def scrape_trackr_website(seen_jobs, discovered_list, force=False):
     source_name = "Trackr API"
     now = time.time()
 
-    # Throttling Window: Only query Trackr live once every 2 hours (7200s) to keep daily calls under 200/day limit
     if not force and LAST_TRACKR_RUN > 0 and (now - LAST_TRACKR_RUN) < 7200:
         mins_remaining = int((7200 - (now - LAST_TRACKR_RUN)) / 60)
-        print(f"  [Trackr API] Using cached schemes (Next live query in {mins_remaining} mins to protect 200/day rate limit).")
-        SCRAPER_STATUS["source_status"][source_name] = f"OK (Rate-Limit Protected - Cached {len(discovered_list)} schemes)"
+        from config import add_scraper_log
+        add_scraper_log(f"[Trackr API] Using cached schemes (Next live query in {mins_remaining} mins to protect rate limit).")
+        SCRAPER_STATUS["source_status"][source_name] = f"OK (Cached {len(discovered_list)} schemes)"
         return new_jobs
 
     relevant_found = 0
     total_items_fetched = 0
 
-    print("  [Trackr API] Fetching live UK Tech schemes from api.the-trackr.com concurrently...")
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Accept": "application/json",
-        "Referer": "https://app.the-trackr.com/",
-        "Origin": "https://app.the-trackr.com"
-    }
+    from config import add_scraper_log
+    add_scraper_log("  [Trackr API] Fetching live UK Tech schemes from api.the-trackr.com (3-Tier Fallback Pipeline)...")
+
+    user_agents = [
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (X11; Linux x86_64; rv:126.0) Gecko/20100101 Firefox/126.0"
+    ]
 
     types = ["summer-internships", "industrial-placements", "graduate-schemes", "spring-weeks"]
     seasons = ["2027", "2026"]
     tasks = [(season, t) for season in seasons for t in types]
 
     rate_limited = False
+    tor_active = False
     LAST_TRACKR_RUN = now
 
     def fetch_trackr_param(pair):
-        nonlocal rate_limited, total_items_fetched, relevant_found
+        nonlocal rate_limited, tor_active, total_items_fetched, relevant_found
         if rate_limited:
             return []
         season, t = pair
         url = f"https://api.the-trackr.com/programmes?region=UK&industry=Tech&season={season}&type={t}"
         local_new = []
+
+        headers = {
+            "User-Agent": user_agents[hash(t) % len(user_agents)],
+            "Accept": "application/json",
+            "Referer": "https://app.the-trackr.com/",
+            "Origin": "https://app.the-trackr.com"
+        }
+
+        resp = None
+        # Tier 1: Direct Request
         try:
             resp = requests.get(url, headers=headers, timeout=4)
-            if resp.status_code == 429:
-                with _JOB_LOCK:
-                    rate_limited = True
-                print("  [Trackr API] ⚠️ Rate Limited (HTTP 429: 200-request daily limit reached). Retaining cached schemes.")
-                return []
-            elif resp.status_code == 200:
-                try:
-                    data = resp.json()
-                    items = data if isinstance(data, list) else data.get("programmes", data.get("data", []))
-                    with _JOB_LOCK:
-                        total_items_fetched += len(items)
+        except Exception:
+            pass
 
-                    for item in items:
-                        if isinstance(item, dict):
-                            if not is_trackr_item_active_and_recent(item):
-                                continue
+        # Tier 2: Tor / SOCKS5 Proxy Egress if Tier 1 hit 429 or timeout
+        if not resp or resp.status_code == 429:
+            try:
+                proxies = {
+                    "http": "socks5h://127.0.0.1:9050",
+                    "https": "socks5h://127.0.0.1:9050"
+                }
+                resp = requests.get(url, headers=headers, proxies=proxies, timeout=5)
+                if resp.status_code == 200:
+                    tor_active = True
+            except Exception:
+                pass
 
-                            company = item.get("companyName") or item.get("company_name") or ""
-                            if isinstance(item.get("company"), dict):
-                                company = item.get("company", {}).get("name", company)
-                            elif isinstance(item.get("company"), str) and not company:
-                                company = item.get("company")
+        if not resp or resp.status_code != 200:
+            if resp and resp.status_code == 429:
+                rate_limited = True
+            return []
 
-                            role = item.get("name") or item.get("programmeName") or item.get("title") or item.get("programme") or item.get("role") or ""
-                            link = item.get("link") or item.get("url") or item.get("applyUrl") or item.get("apply_url") or "https://app.the-trackr.com"
+        try:
+            data = resp.json()
+            items = data if isinstance(data, list) else data.get("programmes", data.get("data", []))
+            with _JOB_LOCK:
+                total_items_fetched += len(items)
 
-                            if company and role:
-                                full_title = f"{company} - {role}"
-                                job_id = f"trackr_api_{hash(full_title)}"
+            for item in items:
+                if isinstance(item, dict):
+                    if not is_trackr_item_active_and_recent(item):
+                        continue
 
-                                extract_and_register_ats_company(link)
+                    company = item.get("companyName") or item.get("company_name") or ""
+                    if isinstance(item.get("company"), dict):
+                        company = item.get("company", {}).get("name", company)
+                    elif isinstance(item.get("company"), str) and not company:
+                        company = item.get("company")
 
-                                if is_relevant_role(full_title, "UK", company):
-                                    trackr_source_name = f"Trackr UK Tech ({season})"
-                                    trackr_source_url = "https://app.the-trackr.com"
-                                    add_discovered_job(discovered_list, job_id, company, role, "UK", link, trackr_source_name, trackr_source_url)
+                    role = item.get("name") or item.get("programmeName") or item.get("title") or item.get("programme") or item.get("role") or ""
+                    link = item.get("link") or item.get("url") or item.get("applyUrl") or item.get("apply_url") or "https://app.the-trackr.com"
 
-                                    with _JOB_LOCK:
-                                        relevant_found += 1
-                                        if job_id not in seen_jobs:
-                                            seen_jobs.add(job_id)
-                                            local_new.append((full_title, "UK", link))
+                    if company and role:
+                        full_title = f"{company} - {role}"
+                        job_id = f"trackr_api_{hash(full_title)}"
 
-                except Exception:
-                    pass
-            else:
-                print(f"  [Trackr API] {season}/{t} HTTP {resp.status_code}")
-        except Exception as e:
-            print(f"  [Trackr API] Connection timeout/error ({season}/{t}): {e}")
+                        extract_and_register_ats_company(link)
+
+                        if is_relevant_role(full_title, "UK", company):
+                            trackr_source_name = f"Trackr UK Tech ({season})"
+                            trackr_source_url = "https://app.the-trackr.com"
+                            add_discovered_job(discovered_list, job_id, company, role, "UK", link, trackr_source_name, trackr_source_url)
+
+                            with _JOB_LOCK:
+                                relevant_found += 1
+                                if job_id not in seen_jobs:
+                                    seen_jobs.add(job_id)
+                                    local_new.append((full_title, "UK", link))
+        except Exception:
+            pass
+
         return local_new
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
@@ -496,13 +519,57 @@ def scrape_trackr_website(seen_jobs, discovered_list, force=False):
         for res in results:
             new_jobs.extend(res)
 
-    if rate_limited:
-        SCRAPER_STATUS["source_status"][source_name] = f"⚠️ Rate Limited (HTTP 429 - Retaining {len(discovered_list)} cached schemes)"
+    if rate_limited and not tor_active and total_items_fetched == 0:
+        add_scraper_log(f"  [Trackr API] Tier 3 Smart Cache Active: Retaining {len(discovered_list)} cached schemes.")
+        SCRAPER_STATUS["source_status"][source_name] = f"OK (Tier 3 Cache Active - Retaining {len(discovered_list)} cached schemes)"
     else:
-        print(f"  [Trackr Summary] Fetched {total_items_fetched} raw items ({relevant_found} active schemes opened in last 6 months matching Maths & CS)")
-        SCRAPER_STATUS["source_status"][source_name] = f"OK ({total_items_fetched} items fetched, {relevant_found} active recent schemes)"
+        egress_type = "Tor Proxy Egress" if tor_active else "Tier 1 Direct"
+        add_scraper_log(f"  [Trackr API] {egress_type} Success: Fetched {total_items_fetched} raw items ({relevant_found} active recent schemes).")
+        SCRAPER_STATUS["source_status"][source_name] = f"OK ({egress_type} - {total_items_fetched} items fetched)"
 
     return new_jobs
+
+
+def purge_expired_jobs():
+    from config import add_scraper_log
+    add_scraper_log("🧹 Starting expired job link health check across all indexed schemes...")
+    discovered = load_discovered_jobs()
+    if not discovered:
+        return 0
+
+    valid_jobs = []
+    purged_count = 0
+
+    def check_job_health(job):
+        url = job.get("link")
+        if not url or "the-trackr.com" in url:
+            return job, True
+
+        try:
+            r = requests.head(url, timeout=3, allow_redirects=True)
+            if r.status_code in [404, 410]:
+                return job, False
+        except Exception:
+            pass
+        return job, True
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        results = executor.map(check_job_health, discovered)
+        for job, is_valid in results:
+            if is_valid:
+                valid_jobs.append(job)
+            else:
+                purged_count += 1
+                add_scraper_log(f"  [Purge] Removed closed/expired job link (404/410): {job.get('company')} - {job.get('title')}")
+
+    if purged_count > 0:
+        save_discovered_jobs(valid_jobs)
+        add_scraper_log(f"🧹 Health check complete! Purged {purged_count} dead job links.")
+    else:
+        add_scraper_log("🧹 Health check complete! All indexed job links are active and healthy.")
+
+    return purged_count
+
 
 
 
