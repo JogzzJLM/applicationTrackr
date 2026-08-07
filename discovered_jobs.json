@@ -1,5 +1,55 @@
 [
   {
+    "id": "gh_verkada_5162206007",
+    "company": "Verkada",
+    "title": "Technical Support Engineer - Industrial Placement 2027 (12-months)",
+    "location": "London",
+    "link": "https://job-boards.greenhouse.io/verkada/jobs/5162206007",
+    "source": "Greenhouse (verkada)",
+    "source_url": "https://boards.greenhouse.io/verkada",
+    "date_found": "2026-08-07 20:46"
+  },
+  {
+    "id": "gh_mwinternshipprogram_8598324002",
+    "company": "Mwinternshipprogram",
+    "title": "Technology Intern - London - 2027",
+    "location": "London",
+    "link": "https://job-boards.greenhouse.io/mwinternshipprogram/jobs/8598324002",
+    "source": "Greenhouse (mwinternshipprogram)",
+    "source_url": "https://boards.greenhouse.io/mwinternshipprogram",
+    "date_found": "2026-08-07 20:46"
+  },
+  {
+    "id": "ashby_elevenlabs_a3097257-a07a-4a7e-b9fe-b8555c1a0fa7",
+    "company": "Elevenlabs",
+    "title": "Engineering - Internal AI Transformation",
+    "location": "UK / Remote",
+    "link": "https://jobs.ashbyhq.com/elevenlabs/a3097257-a07a-4a7e-b9fe-b8555c1a0fa7",
+    "source": "Ashby (elevenlabs)",
+    "source_url": "https://jobs.ashbyhq.com/elevenlabs",
+    "date_found": "2026-08-07 20:46"
+  },
+  {
+    "id": "ashby_quora_452afc2e-0c79-41f8-8201-1aab7df775db",
+    "company": "Quora",
+    "title": "Software Engineer, Machine Learning Platform, New Grad - Quora (Remote)",
+    "location": "UK / Remote",
+    "link": "https://jobs.ashbyhq.com/quora/452afc2e-0c79-41f8-8201-1aab7df775db",
+    "source": "Ashby (quora)",
+    "source_url": "https://jobs.ashbyhq.com/quora",
+    "date_found": "2026-08-07 20:46"
+  },
+  {
+    "id": "trackr_api_-8653623397556451264",
+    "company": "Marshall Wace",
+    "title": "Technology Intern - Summer 2027",
+    "location": "UK",
+    "link": "https://job-boards.greenhouse.io/mwinternshipprogram/jobs/8598324002?utm_source=Trackr&utm_medium=tracker&utm_campaign=UK_Tech_2027&gh_src=Trackr",
+    "source": "Trackr UK Tech (2027)",
+    "source_url": "https://app.the-trackr.com",
+    "date_found": "2026-08-07 20:46"
+  },
+  {
     "id": "lever_palantir_9265acce-12cd-4179-8c50-55d15963532b",
     "company": "Palantir",
     "title": "Software Engineer, New Grad - Infrastructure",

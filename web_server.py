@@ -248,90 +248,101 @@ def render_unified_dashboard_html(active_tab="flow"):
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
         :root {{
-            --bg: #090d16;
-            --card-bg: rgba(19, 28, 46, 0.75);
-            --card-border: rgba(255, 255, 255, 0.08);
-            --primary: #38bdf8;
-            --primary-glow: rgba(56, 189, 248, 0.15);
-            --accent: #818cf8;
-            --success: #10b981;
-            --warning: #f59e0b;
-            --danger: #ef4444;
-            --text-main: #f8fafc;
-            --text-muted: #94a3b8;
-            --font: 'Plus Jakarta Sans', sans-serif;
-            --mono: 'JetBrains Mono', monospace;
+            --ios-bg: #f2f2f7;
+            --ios-card: rgba(255, 255, 255, 0.85);
+            --ios-card-solid: #ffffff;
+            --ios-border: rgba(0, 0, 0, 0.08);
+            --ios-blue: #007aff;
+            --ios-blue-glow: rgba(0, 122, 255, 0.22);
+            --ios-green: #34c759;
+            --ios-green-glow: rgba(52, 199, 89, 0.22);
+            --ios-orange: #ff9500;
+            --ios-red: #ff3b30;
+            --ios-indigo: #5856d6;
+            --ios-text-primary: #1c1c1e;
+            --ios-text-secondary: #6c6c70;
+            --ios-text-tertiary: #8e8e93;
+            --font-apple: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "SF Pro", "Helvetica Neue", sans-serif;
+            --font-mono: "SF Mono", SFMono-Regular, ui-monospace, Menlo, monospace;
         }}
 
-        * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+        * {{ box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }}
+
+        html, body {{
+            background-color: var(--ios-bg);
+            color: var(--ios-text-primary);
+            font-family: var(--font-apple);
+            min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }}
 
         body {{
-            font-family: var(--font);
-            background: var(--bg);
-            color: var(--text-main);
-            min-height: 100vh;
-            padding: 24px 20px;
+            padding-top: max(16px, env(safe-area-inset-top));
+            padding-bottom: max(32px, env(safe-area-inset-bottom));
+            padding-left: max(16px, env(safe-area-inset-left));
+            padding-right: max(16px, env(safe-area-inset-right));
             background-image: 
-                radial-gradient(at 0% 0%, rgba(56, 189, 248, 0.08) 0px, transparent 50%),
-                radial-gradient(at 100% 100%, rgba(129, 140, 248, 0.08) 0px, transparent 50%);
+                radial-gradient(ellipse at 10% 15%, rgba(0, 122, 255, 0.08) 0%, transparent 45%),
+                radial-gradient(ellipse at 90% 20%, rgba(52, 199, 89, 0.06) 0%, transparent 45%);
             background-attachment: fixed;
         }}
 
-        .container {{ max-width: 1280px; margin: 0 auto; }}
+        .container {{ max-width: 1180px; margin: 0 auto; }}
 
-        /* Top Header & System Bar */
+        /* Apple Light Navigation Header */
         .header-bar {{
             display: flex;
             justify-content: space-between;
             align-items: center;
-            background: var(--card-bg);
-            backdrop-filter: blur(16px);
-            border: 1px solid var(--card-border);
-            padding: 20px 28px;
+            background: var(--ios-card);
+            backdrop-filter: blur(30px) saturate(180%);
+            -webkit-backdrop-filter: blur(30px) saturate(180%);
+            border: 0.5px solid var(--ios-border);
+            padding: 18px 24px;
             border-radius: 20px;
-            margin-bottom: 24px;
-            box-shadow: 0 12px 32px rgba(0,0,0,0.3);
+            margin-bottom: 20px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04), inset 0 1px 1px rgba(255, 255, 255, 0.9);
             flex-wrap: wrap;
-            gap: 16px;
+            gap: 14px;
         }}
 
         .brand-title {{
-            font-size: 24px;
+            font-size: 22px;
             font-weight: 800;
-            background: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.02em;
+            color: var(--ios-text-primary);
             display: flex;
-            align-items: center;
-            gap: 10px;
-        }}
-
-        .brand-subtitle {{
-            color: var(--text-muted);
-            font-size: 13px;
-            margin-top: 4px;
-            font-weight: 500;
-        }}
-
-        .server-status-pill {{
-            background: rgba(16, 185, 129, 0.12);
-            color: #6ee7b7;
-            border: 1px solid rgba(16, 185, 129, 0.3);
-            padding: 6px 14px;
-            border-radius: 30px;
-            font-size: 12px;
-            font-weight: 700;
-            display: inline-flex;
             align-items: center;
             gap: 8px;
         }}
 
+        .brand-subtitle {{
+            color: var(--ios-text-secondary);
+            font-size: 13px;
+            margin-top: 2px;
+            font-weight: 500;
+        }}
+
+        .server-status-pill {{
+            background: rgba(52, 199, 89, 0.12);
+            color: #278a3c;
+            border: 0.5px solid rgba(52, 199, 89, 0.3);
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 700;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }}
+
         .status-dot {{
-            width: 8px;
-            height: 8px;
-            background: var(--success);
+            width: 7px;
+            height: 7px;
+            background: var(--ios-green);
             border-radius: 50%;
-            box-shadow: 0 0 10px var(--success);
+            box-shadow: 0 0 8px var(--ios-green);
             animation: pulse 2s infinite;
         }}
 
@@ -341,246 +352,285 @@ def render_unified_dashboard_html(active_tab="flow"):
             100% {{ transform: scale(0.95); opacity: 0.8; }}
         }}
 
-        .header-actions {{ display: flex; gap: 12px; align-items: center; }}
+        .header-actions {{ display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }}
 
-        .btn-header {{
-            background: var(--primary-glow);
-            color: var(--primary);
-            border: 1px solid rgba(56, 189, 248, 0.3);
-            padding: 10px 18px;
+        /* Unified Apple Buttons */
+        .ios-btn {{
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 8px 15px;
             border-radius: 12px;
             font-size: 13px;
-            font-weight: 700;
+            font-weight: 600;
+            letter-spacing: -0.01em;
+            text-decoration: none;
             cursor: pointer;
-            transition: all 0.25s ease;
+            border: none;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+            transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.15s ease, background-color 0.15s ease;
+            line-height: 1.3;
+        }}
+
+        .ios-btn:active {{
+            transform: scale(0.96);
+            opacity: 0.88;
+        }}
+
+        .ios-btn-primary {{
+            background: var(--ios-blue);
+            color: #ffffff;
+            box-shadow: 0 3px 10px rgba(0, 122, 255, 0.28);
+        }}
+
+        .ios-btn-primary:hover {{
+            background: #0066d6;
+            box-shadow: 0 4px 14px rgba(0, 122, 255, 0.38);
+        }}
+
+        .ios-btn-success {{
+            background: var(--ios-green);
+            color: #ffffff;
+            box-shadow: 0 3px 10px rgba(52, 199, 89, 0.28);
+        }}
+
+        .ios-btn-success:hover {{
+            background: #2cb04d;
+            box-shadow: 0 4px 14px rgba(52, 199, 89, 0.38);
+        }}
+
+        .ios-btn-secondary {{
+            background: rgba(120, 120, 128, 0.12);
+            color: var(--ios-text-primary);
+            border: 0.5px solid rgba(0, 0, 0, 0.08);
+        }}
+
+        .ios-btn-secondary:hover {{
+            background: rgba(120, 120, 128, 0.18);
+        }}
+
+        .ios-btn-danger {{
+            background: rgba(255, 59, 48, 0.12);
+            color: var(--ios-red);
+            border: 0.5px solid rgba(255, 59, 48, 0.2);
+        }}
+
+        .ios-btn-danger:hover {{
+            background: rgba(255, 59, 48, 0.18);
+        }}
+
+        .btn-header {{
+            background: rgba(0, 122, 255, 0.1);
+            color: var(--ios-blue);
+            border: 0.5px solid rgba(0, 122, 255, 0.25);
+            padding: 8px 14px;
+            border-radius: 12px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
             text-decoration: none;
             display: inline-flex;
             align-items: center;
-            gap: 8px;
+            gap: 6px;
+            transition: all 0.15s ease;
         }}
 
         .btn-header:hover {{
-            background: var(--primary);
-            color: #090d16;
-            box-shadow: 0 0 20px rgba(56, 189, 248, 0.4);
-            transform: translateY(-2px);
+            background: var(--ios-blue);
+            color: #ffffff;
         }}
 
-        /* KPI Metrics Cards Grid */
+        /* Apple Light Metrics Grid */
         .metrics-grid {{
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-            gap: 16px;
-            margin-bottom: 24px;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+            margin-bottom: 20px;
         }}
 
         .metric-card {{
-            background: var(--card-bg);
-            backdrop-filter: blur(16px);
-            border: 1px solid var(--card-border);
-            border-radius: 16px;
-            padding: 20px;
-            transition: all 0.25s ease;
-            box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+            background: var(--ios-card);
+            backdrop-filter: blur(25px) saturate(180%);
+            -webkit-backdrop-filter: blur(25px) saturate(180%);
+            border: 0.5px solid var(--ios-border);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.03), inset 0 1px 1px rgba(255, 255, 255, 0.8);
+            padding: 16px;
+            border-radius: 18px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
         }}
 
-        .metric-card:hover {{
-            border-color: rgba(56, 189, 248, 0.4);
-            transform: translateY(-3px);
-            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+        .metric-label {{
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--ios-text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.02em;
         }}
 
-        .metric-label {{ color: var(--text-muted); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }}
-        .metric-value {{ font-size: 28px; font-weight: 800; color: var(--text-main); font-family: var(--mono); }}
-        .metric-value.offers {{ color: var(--success); }}
-        .metric-value.active {{ color: var(--primary); }}
-        .metric-value.rejections {{ color: var(--danger); }}
-        .metric-value.rate {{ color: var(--accent); }}
+        .metric-value {{
+            font-size: 26px;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            margin-top: 6px;
+            color: var(--ios-text-primary);
+        }}
 
-        /* Navigation Tabs */
+        .metric-value.active {{ color: var(--ios-blue); }}
+        .metric-value.offers {{ color: var(--ios-green); }}
+        .metric-value.rejections {{ color: var(--ios-red); }}
+
+        /* Navigation Tabs Segmented Control */
         .nav-tabs {{
             display: flex;
-            gap: 10px;
-            background: var(--card-bg);
-            padding: 8px;
+            gap: 6px;
+            background: rgba(118, 118, 128, 0.12);
+            padding: 5px;
             border-radius: 16px;
-            border: 1px solid var(--card-border);
-            margin-bottom: 24px;
+            margin-bottom: 20px;
             overflow-x: auto;
+            border: 0.5px solid var(--ios-border);
         }}
 
         .nav-tab {{
-            padding: 12px 22px;
-            color: var(--text-muted);
-            font-weight: 700;
-            font-size: 14px;
+            flex: 1;
+            text-align: center;
+            padding: 10px 16px;
+            color: var(--ios-text-secondary);
+            font-weight: 600;
+            font-size: 13px;
             border-radius: 12px;
             cursor: pointer;
-            transition: all 0.2s ease;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
             white-space: nowrap;
             user-select: none;
         }}
 
-        .nav-tab:hover {{ color: var(--text-main); background: rgba(255, 255, 255, 0.04); }}
-        .nav-tab.active {{ background: var(--primary); color: #090d16; font-weight: 800; box-shadow: 0 4px 16px rgba(56, 189, 248, 0.3); }}
+        .nav-tab:hover {{ color: var(--ios-text-primary); }}
+        .nav-tab.active {{ background: #ffffff; color: var(--ios-blue); font-weight: 700; box-shadow: 0 3px 10px rgba(0, 0, 0, 0.08); }}
 
-        /* Tab Content Cards */
+        /* Content Cards */
         .content-card {{
-            background: var(--card-bg);
-            backdrop-filter: blur(16px);
-            border: 1px solid var(--card-border);
+            background: var(--ios-card);
+            backdrop-filter: blur(30px) saturate(180%);
+            -webkit-backdrop-filter: blur(30px) saturate(180%);
+            border: 0.5px solid var(--ios-border);
             border-radius: 20px;
-            padding: 28px;
-            margin-bottom: 24px;
-            box-shadow: 0 12px 32px rgba(0,0,0,0.3);
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.04), inset 0 1px 1px rgba(255, 255, 255, 0.9);
         }}
 
         .card-header {{
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 20px;
-            padding-bottom: 16px;
-            border-bottom: 1px solid var(--card-border);
+            margin-bottom: 16px;
+            padding-bottom: 14px;
+            border-bottom: 0.5px solid var(--ios-border);
         }}
 
-        .card-title {{ font-size: 18px; font-weight: 700; color: var(--primary); display: flex; align-items: center; gap: 10px; }}
+        .card-title {{ font-size: 18px; font-weight: 700; color: var(--ios-text-primary); display: flex; align-items: center; gap: 8px; }}
 
         /* Active Apps Table */
-        .table-responsive {{ overflow-x: auto; margin-top: 15px; }}
+        .table-responsive {{ overflow-x: auto; margin-top: 10px; }}
         .app-table {{ width: 100%; border-collapse: collapse; text-align: left; font-size: 14px; }}
-        .app-table th {{ background: rgba(15, 23, 42, 0.6); padding: 14px 18px; color: var(--text-muted); font-weight: 700; font-size: 12px; text-transform: uppercase; border-bottom: 1px solid var(--card-border); }}
-        .app-table td {{ padding: 16px 18px; border-bottom: 1px solid var(--card-border); vertical-align: middle; }}
-        .app-table tr:hover {{ background: rgba(255, 255, 255, 0.02); }}
-        .empty-table {{ text-align: center; color: var(--text-muted); padding: 30px; }}
+        .app-table th {{ background: rgba(118, 118, 128, 0.08); padding: 12px 16px; color: var(--ios-text-secondary); font-weight: 700; font-size: 11px; text-transform: uppercase; border-bottom: 0.5px solid var(--ios-border); }}
+        .app-table td {{ padding: 14px 16px; border-bottom: 0.5px solid rgba(0, 0, 0, 0.06); vertical-align: middle; }}
+        .empty-table {{ text-align: center; color: var(--ios-text-secondary); padding: 30px; }}
 
         /* Badges */
-        .badge {{ font-size: 11px; padding: 5px 12px; border-radius: 20px; font-weight: 700; display: inline-block; text-transform: uppercase; }}
-        .badge-active {{ background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); }}
-        .badge-offer {{ background: rgba(16, 185, 129, 0.15); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.3); }}
-        .badge-rejected {{ background: rgba(239, 68, 68, 0.15); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.3); }}
-        .badge-ghosted {{ background: rgba(148, 163, 184, 0.15); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.3); }}
-        .badge-applied {{ background: rgba(6, 78, 59, 0.8); color: #6ee7b7; border: 1px solid #047857; }}
-        .badge-not-applied {{ background: rgba(30, 58, 138, 0.8); color: #93c5fd; border: 1px solid #1d4ed8; }}
-        .badge-source {{ background: rgba(51, 65, 85, 0.6); color: #cbd5e1; }}
+        .badge {{ font-size: 11px; padding: 4px 10px; border-radius: 14px; font-weight: 700; display: inline-block; text-transform: uppercase; }}
+        .badge-active {{ background: rgba(0, 122, 255, 0.12); color: var(--ios-blue); border: 0.5px solid rgba(0, 122, 255, 0.25); }}
+        .badge-offer {{ background: rgba(52, 199, 89, 0.15); color: #278a3c; border: 0.5px solid rgba(52, 199, 89, 0.3); }}
+        .badge-rejected {{ background: rgba(255, 59, 48, 0.12); color: var(--ios-red); border: 0.5px solid rgba(255, 59, 48, 0.25); }}
+        .badge-ghosted {{ background: rgba(142, 142, 147, 0.15); color: #636366; border: 0.5px solid rgba(142, 142, 147, 0.25); }}
+        .badge-applied {{ background: rgba(52, 199, 89, 0.15); color: #278a3c; border: 0.5px solid rgba(52, 199, 89, 0.3); }}
+        .badge-not-applied {{ background: rgba(0, 122, 255, 0.12); color: var(--ios-blue); border: 0.5px solid rgba(0, 122, 255, 0.25); }}
+        .badge-source {{ background: rgba(142, 142, 147, 0.12); color: #636366; border: 0.5px solid rgba(142, 142, 147, 0.2); }}
 
-        /* Discovered Schemes Search & Filter Pills */
+        /* Search & Filter Pills */
         .search-box {{
             width: 100%;
-            padding: 14px 20px;
-            background: rgba(15, 23, 42, 0.7);
-            border: 1px solid var(--card-border);
+            padding: 12px 18px;
+            background: #ffffff;
+            border: 0.5px solid var(--ios-border);
             border-radius: 14px;
-            color: var(--text-main);
-            font-size: 15px;
-            font-family: var(--font);
+            color: var(--ios-text-primary);
+            font-size: 16px;
+            font-family: var(--font-apple);
             outline: none;
-            margin-bottom: 20px;
-            transition: all 0.25s ease;
+            margin-bottom: 16px;
+            box-shadow: inset 0 1px 2px rgba(0,0,0,0.04);
+            transition: border-color 0.2s ease;
         }}
-        .search-box:focus {{ border-color: var(--primary); box-shadow: 0 0 16px var(--primary-glow); }}
+        .search-box:focus {{ border-color: var(--ios-blue); }}
 
-        .filter-pills {{ display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 24px; }}
+        .filter-pills {{ display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 20px; }}
         .pill {{
-            padding: 8px 16px;
-            background: rgba(30, 41, 59, 0.6);
-            color: var(--text-muted);
-            border: 1px solid var(--card-border);
-            border-radius: 20px;
+            padding: 7px 14px;
+            background: rgba(118, 118, 128, 0.1);
+            color: var(--ios-text-secondary);
+            border: 0.5px solid var(--ios-border);
+            border-radius: 12px;
             font-size: 12px;
-            font-weight: 700;
+            font-weight: 600;
             cursor: pointer;
             transition: all 0.2s ease;
         }}
-        .pill:hover, .pill.active {{ background: var(--primary); color: #090d16; border-color: var(--primary); font-weight: 800; }}
+        .pill:hover, .pill.active {{ background: var(--ios-blue); color: #ffffff; border-color: var(--ios-blue); font-weight: 700; box-shadow: 0 2px 8px rgba(0, 122, 255, 0.25); }}
 
         /* Job Cards */
         .job-card {{
-            background: rgba(15, 23, 42, 0.6);
-            border-radius: 14px;
-            padding: 20px;
-            margin-bottom: 16px;
-            border: 1px solid var(--card-border);
-            transition: all 0.2s ease;
+            background: #ffffff;
+            border-radius: 16px;
+            padding: 18px;
+            margin-bottom: 14px;
+            border: 0.5px solid var(--ios-border);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
         }}
-        .job-card:hover {{ border-color: rgba(56, 189, 248, 0.4); transform: translateY(-2px); }}
-        .job-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 10px; }}
-        .company {{ color: #f1f5f9; font-weight: 800; font-size: 18px; }}
-        .job-title {{ color: #93c5fd; font-size: 15px; margin-bottom: 10px; font-weight: 600; line-height: 1.4; }}
-        .job-meta {{ color: #64748b; font-size: 13px; margin-bottom: 8px; }}
-        .job-source-info {{ font-size: 12px; color: #94a3b8; margin-bottom: 16px; background: rgba(15, 23, 42, 0.75); padding: 6px 12px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.06); display: inline-block; }}
-        .source-link {{ color: #38bdf8; text-decoration: none; font-weight: 600; }}
-        .source-link:hover {{ text-decoration: underline; color: #7dd3fc; }}
-        .job-actions {{ display: flex; gap: 10px; flex-wrap: wrap; }}
-
-
-        /* Buttons */
-        .btn {{
-            padding: 10px 18px;
-            border-radius: 10px;
-            text-decoration: none;
-            font-weight: 700;
-            font-size: 13px;
-            border: none;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-        }}
-        .btn-primary {{ background: #2563eb; color: white; }}
-        .btn-primary:hover {{ background: #1d4ed8; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4); }}
-        .btn-auto {{ background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); color: white; }}
-        .btn-auto:hover {{ opacity: 0.9; box-shadow: 0 4px 12px rgba(139, 92, 246, 0.4); }}
-        .btn-success {{ background: #10b981; color: white; }}
-        .btn-success:hover {{ background: #059669; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4); }}
-        .btn-disabled {{ background: #334155; color: #94a3b8; cursor: not-allowed; }}
-
-        /* Terminal Console */
-        .terminal-box {{
-            background: #020617;
-            border: 1px solid var(--primary);
-            border-radius: 14px;
-            padding: 20px;
-            margin-bottom: 24px;
-            font-family: var(--mono);
-            box-shadow: 0 0 24px rgba(56, 189, 248, 0.15);
-        }}
-        .terminal-header {{ color: var(--primary); font-weight: 700; font-size: 13px; margin-bottom: 12px; display: flex; justify-content: space-between; }}
-        .terminal-logs {{ color: #a5f3fc; font-size: 13px; white-space: pre-wrap; word-break: break-all; max-height: 200px; overflow-y: auto; }}
+        .job-card:hover {{ box-shadow: 0 6px 20px rgba(0, 0, 0, 0.06); transform: translateY(-1px); }}
+        .job-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; flex-wrap: wrap; gap: 8px; }}
+        .company {{ color: var(--ios-text-primary); font-weight: 800; font-size: 17px; }}
+        .job-title {{ color: var(--ios-text-primary); font-size: 15px; margin-bottom: 8px; font-weight: 600; line-height: 1.4; }}
+        .job-meta {{ color: var(--ios-text-secondary); font-size: 13px; margin-bottom: 8px; }}
+        .job-source-info {{ font-size: 12px; color: var(--ios-text-secondary); margin-bottom: 14px; background: rgba(118, 118, 128, 0.08); padding: 6px 12px; border-radius: 8px; border: 0.5px solid var(--ios-border); display: inline-block; }}
+        .source-link {{ color: var(--ios-blue); text-decoration: none; font-weight: 600; }}
+        .source-link:hover {{ text-decoration: underline; }}
+        .job-actions {{ display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }}
 
         /* Form Controls */
-        .form-group {{ margin-bottom: 22px; }}
-        .form-group label {{ display: block; color: var(--text-main); font-weight: 700; font-size: 14px; margin-bottom: 8px; }}
+        .form-group {{ margin-bottom: 20px; }}
+        .form-group label {{ display: block; color: var(--ios-text-primary); font-weight: 600; font-size: 13px; margin-bottom: 6px; }}
         .form-input {{
             width: 100%;
-            padding: 12px 18px;
-            border-radius: 10px;
-            border: 1px solid var(--card-border);
-            background: rgba(15, 23, 42, 0.7);
-            color: var(--text-main);
-            font-size: 14px;
-            font-family: var(--font);
-            outline: none;
-            transition: all 0.25s ease;
-        }}
-        .form-input:focus {{ border-color: var(--primary); box-shadow: 0 0 16px var(--primary-glow); }}
-        .btn-save {{ width: 100%; background: var(--success); color: white; font-weight: 800; padding: 14px; border-radius: 12px; border: none; font-size: 15px; cursor: pointer; transition: all 0.2s ease; }}
-        .btn-save:hover {{ background: #059669; box-shadow: 0 4px 16px rgba(16, 185, 129, 0.4); }}
-
-        /* Diagnostics Code Block */
-        .code-block {{
-            background: #020617;
-            border: 1px solid var(--card-border);
+            padding: 12px 16px;
             border-radius: 12px;
-            padding: 18px;
-            color: #38bdf8;
-            font-family: var(--mono);
-            font-size: 13px;
+            border: 0.5px solid var(--ios-border);
+            background: #ffffff;
+            color: var(--ios-text-primary);
+            font-size: 16px;
+            font-family: var(--font-apple);
+            outline: none;
+        }}
+        .form-input:focus {{ border-color: var(--ios-blue); }}
+        .btn-save {{ width: 100%; background: var(--ios-green); color: white; font-weight: 700; padding: 12px; border-radius: 12px; border: none; font-size: 15px; cursor: pointer; box-shadow: 0 3px 12px rgba(52, 199, 89, 0.3); }}
+
+        /* Code Block */
+        .code-block {{
+            background: #1c1c1e;
+            border: 0.5px solid var(--ios-border);
+            border-radius: 12px;
+            padding: 16px;
+            color: #34c759;
+            font-family: var(--font-mono);
+            font-size: 12px;
             overflow-x: auto;
         }}
 
-        .empty-msg {{ text-align: center; color: var(--text-muted); padding: 40px; font-size: 15px; }}
+        .empty-msg {{ text-align: center; color: var(--ios-text-secondary); padding: 40px; font-size: 15px; }}
 
         /* iOS Safari & Mobile Layout Responsiveness */
         @media (max-width: 768px) {{
