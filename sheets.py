@@ -150,22 +150,21 @@ def generate_default_sankey():
     html_content = """<!DOCTYPE html>
 <html>
 <head>
-    <title>ApplicationTrackr - Live Flow</title>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+    <title>Trackr - Live Flow</title>
     <style>
-        body { font-family: 'Plus Jakarta Sans', system-ui, sans-serif; background: #090d16; color: #f8fafc; text-align: center; padding: 40px 20px; margin: 0; }
-        .card { background: rgba(19, 28, 46, 0.75); backdrop-filter: blur(16px); border-radius: 20px; padding: 40px; max-width: 500px; margin: 40px auto; border: 1px solid rgba(255, 255, 255, 0.08); box-shadow: 0 10px 30px rgba(0,0,0,0.4); }
-        h1 { color: #38bdf8; font-size: 22px; margin-top: 15px; margin-bottom: 10px; font-weight: 800; }
-        p { color: #94a3b8; font-size: 14px; line-height: 1.6; }
-        .badge { background: rgba(16, 185, 129, 0.15); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.3); font-weight: 700; padding: 6px 16px; border-radius: 20px; font-size: 12px; display: inline-block; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", sans-serif; background: transparent; color: #1c1c1e; text-align: center; padding: 40px 20px; margin: 0; }
+        .card { background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(20px); border-radius: 20px; padding: 36px; max-width: 500px; margin: 30px auto; border: 0.5px solid rgba(0, 0, 0, 0.08); box-shadow: 0 4px 20px rgba(0,0,0,0.04); }
+        h1 { color: #007aff; font-size: 22px; margin-top: 15px; margin-bottom: 10px; font-weight: 700; letter-spacing: -0.01em; }
+        p { color: #6c6c70; font-size: 14px; line-height: 1.6; }
+        .badge { background: rgba(0, 122, 255, 0.12); color: #007aff; border: 0.5px solid rgba(0, 122, 255, 0.25); font-weight: 700; padding: 6px 16px; border-radius: 20px; font-size: 12px; display: inline-block; }
     </style>
 </head>
 <body>
     <div class="card">
-        <span class="badge">Sheet Status: Fresh Start</span>
-        <h1>0 Applications Logged</h1>
-        <p>Your Google Sheet is currently clean and empty.</p>
-        <p>Log your first job application using the <b>Safari Smart Auto-Apply Bookmarklet</b> or from the <b>Discovered Schemes</b> tab to see your live Sankey flow!</p>
+        <span class="badge">Sheet Status: Connected & Fresh</span>
+        <h1>0 Applications Logged Yet</h1>
+        <p>Your Google Sheet is connected and ready.</p>
+        <p>Log your first application or click <b>⚡ Apply & Log ↗</b> on any target scheme to populate your live interactive Sankey flow!</p>
     </div>
 </body>
 </html>"""
@@ -226,27 +225,41 @@ def generate_sankey_from_google_sheets(force_refresh=False):
         targets = [node_indices[tgt] for (src, tgt) in flow_counts.keys()]
         values = list(flow_counts.values())
 
+        # Apple System Color Palette (Light Theme Integrated)
         colors = []
         for name in node_list:
             lower = name.lower()
             if name == "Applications":
-                colors.append("#818cf8")
-            elif "offer" in lower:
-                colors.append("#10b981")
+                colors.append("#007aff")  # Apple System Blue
+            elif "offer" in lower or "accepted" in lower:
+                colors.append("#34c759")  # Apple System Green
             elif "reject" in lower or "fail" in lower:
-                colors.append("#ef4444")
+                colors.append("#ff3b30")  # Apple System Red
             elif "ghost" in lower:
-                colors.append("#64748b")
+                colors.append("#8e8e93")  # Apple System Gray
             elif "assessment" in lower or "interview" in lower or "oa" in lower:
-                colors.append("#f59e0b")
+                colors.append("#ff9500")  # Apple System Orange
             else:
-                colors.append("#38bdf8")
+                colors.append("#5856d6")  # Apple System Indigo
+
+        link_colors = []
+        for src, tgt in flow_counts.keys():
+            tgt_lower = tgt.lower()
+            if "offer" in tgt_lower or "accepted" in tgt_lower:
+                link_colors.append("rgba(52, 199, 89, 0.35)")
+            elif "reject" in tgt_lower or "fail" in tgt_lower:
+                link_colors.append("rgba(255, 59, 48, 0.25)")
+            elif "interview" in tgt_lower or "assessment" in tgt_lower or "oa" in tgt_lower:
+                link_colors.append("rgba(255, 149, 0, 0.3)")
+            else:
+                link_colors.append("rgba(0, 122, 255, 0.25)")
 
         fig = go.Figure(data=[go.Sankey(
+            arrangement="snap",
             node=dict(
-                pad=24,
-                thickness=20,
-                line=dict(color="rgba(255, 255, 255, 0.2)", width=1),
+                pad=26,
+                thickness=22,
+                line=dict(color="rgba(0, 0, 0, 0.08)", width=1),
                 label=node_list,
                 color=colors
             ),
@@ -254,20 +267,19 @@ def generate_sankey_from_google_sheets(force_refresh=False):
                 source=sources,
                 target=targets,
                 value=values,
-                color="rgba(56, 189, 248, 0.25)"
+                color=link_colors
             )
         )])
 
         fig.update_layout(
-            title_text="<b>Application Trackr - Visual Application Pipeline</b>",
             font_size=13,
-            font_color="#f8fafc",
-            font_family="Plus Jakarta Sans, sans-serif",
+            font_color="#1c1c1e",
+            font_family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', sans-serif",
             autosize=True,
-            height=540,
-            paper_bgcolor="#090d16",
-            plot_bgcolor="#090d16",
-            margin=dict(l=20, r=20, t=50, b=20)
+            height=500,
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            margin=dict(l=10, r=10, t=20, b=20)
         )
         fig.write_html("sankey_diagram.html")
 

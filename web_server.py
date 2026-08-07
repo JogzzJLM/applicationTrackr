@@ -1045,7 +1045,8 @@ def render_unified_dashboard_html(active_tab="flow"):
                     <div class="card-title">📊 Multi-Stage Application Sankey Diagram</div>
                     <button onclick="refreshSankey()" class="btn btn-header">🔄 Refresh Plot</button>
                 </div>
-                <iframe id="sankey-iframe" src="/sankey-embed" width="100%" height="580" style="border:none; border-radius:12px; background:#0f172a;"></iframe>
+                <iframe id="sankey-iframe" src="/sankey-embed" width="100%" height="520" style="border:none; border-radius:16px; background:transparent;"></iframe>
+
             </div>
 
             <div class="content-card">
