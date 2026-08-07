@@ -407,14 +407,9 @@ def scrape_trackr_website(seen_jobs, discovered_list, force=False):
     source_name = "Trackr API"
     now = time.time()
 
-    if not force and LAST_TRACKR_RUN > 0 and (now - LAST_TRACKR_RUN) < 7200:
-        mins_remaining = int((7200 - (now - LAST_TRACKR_RUN)) / 60)
-        add_scraper_log(f"  [Trackr API] Using cached schemes (Next live query in {mins_remaining} mins to protect 200/day rate limit).")
-        SCRAPER_STATUS["source_status"][source_name] = f"OK (Rate-Limit Protected - Cached {len(discovered_list)} schemes)"
-        return new_jobs
-
     relevant_found = 0
     total_items_fetched = 0
+
 
     add_scraper_log("  [Trackr API] Fetching live UK Tech schemes from api.the-trackr.com (Tier 1 Direct Egress)...")
     headers = {
