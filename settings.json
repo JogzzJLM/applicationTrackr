@@ -1,0 +1,89 @@
+{
+  "grad_years_allowed": [
+    "2027",
+    "2028"
+  ],
+  "exclude_keywords": [
+    "Senior",
+    "Lead",
+    "Manager"
+  ],
+  "exclude_locations": [
+    "Germany",
+    "US"
+  ],
+  "my_skills": [
+    "Python",
+    "C++",
+    "PyTorch"
+  ],
+  "role_keywords": [
+    "software",
+    "developer",
+    "engineer",
+    "engineering",
+    "backend",
+    "fullstack",
+    "full-stack",
+    "systems",
+    "quant",
+    "quantitative",
+    "trader",
+    "trading",
+    "research",
+    "machine learning",
+    "ml",
+    "ai",
+    "data science",
+    "cyber",
+    "security",
+    "cloud",
+    "devops",
+    "technology",
+    "collaboration"
+  ],
+  "level_keywords": [
+    "intern",
+    "internship",
+    "placement",
+    "industrial placement",
+    "sandwich",
+    "spring week",
+    "insight week",
+    "graduate",
+    "grad",
+    "early talent",
+    "early career",
+    "undergrad"
+  ],
+  "location_keywords": [
+    "london",
+    "birmingham",
+    "oxford",
+    "aylesbury",
+    "west midlands",
+    "remote",
+    "uk",
+    "united kingdom",
+    "cambridge",
+    "manchester",
+    "edinburgh"
+  ],
+  "special_intl_companies": [
+    "beamng",
+    "janestreet",
+    "optiver",
+    "citadel",
+    "hudsonrivertrading",
+    "hrt",
+    "twosigma",
+    "imc",
+    "flowtraders",
+    "wayve",
+    "samsara",
+    "quadrature",
+    "millennium"
+  ],
+  "auto_hide_applied_company_jobs": false,
+  "auto_hide_company_jobs": true
+}

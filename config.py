@@ -15,9 +15,9 @@ SCRAPER_LOGS = []
 
 def add_scraper_log(msg):
     timestamp = time.strftime("%H:%M:%S")
-    log_line = f"[{timestamp}] {msg}"
-    print(log_line)
-    SCRAPER_LOGS.append(log_line)
+    formatted = f"[{timestamp}] {msg}"
+    print(formatted)
+    SCRAPER_LOGS.append(formatted)
     if len(SCRAPER_LOGS) > 300:
         SCRAPER_LOGS.pop(0)
 

@@ -7,8 +7,9 @@ from datetime import datetime, timedelta
 from config import (
     SEEN_JOBS_FILE, DISCOVERED_JOBS_FILE, SCRAPER_STATUS,
     GREENHOUSE_COMPANIES, LEVER_COMPANIES, ASHBY_COMPANIES,
-    SMARTRECRUITERS_COMPANIES, load_settings
+    SMARTRECRUITERS_COMPANIES, load_settings, add_scraper_log
 )
+
 from notifications import send_notification
 
 def is_trackr_item_active_and_recent(item):
@@ -408,174 +409,156 @@ def scrape_trackr_website(seen_jobs, discovered_list, force=False):
 
     if not force and LAST_TRACKR_RUN > 0 and (now - LAST_TRACKR_RUN) < 7200:
         mins_remaining = int((7200 - (now - LAST_TRACKR_RUN)) / 60)
-        from config import add_scraper_log
-        add_scraper_log(f"[Trackr API] Using cached schemes (Next live query in {mins_remaining} mins to protect rate limit).")
-        SCRAPER_STATUS["source_status"][source_name] = f"OK (Cached {len(discovered_list)} schemes)"
+        add_scraper_log(f"  [Trackr API] Using cached schemes (Next live query in {mins_remaining} mins to protect 200/day rate limit).")
+        SCRAPER_STATUS["source_status"][source_name] = f"OK (Rate-Limit Protected - Cached {len(discovered_list)} schemes)"
         return new_jobs
 
     relevant_found = 0
     total_items_fetched = 0
 
-    from config import add_scraper_log
-    add_scraper_log("  [Trackr API] Fetching live UK Tech schemes from api.the-trackr.com (3-Tier Fallback Pipeline)...")
-
-    user_agents = [
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (X11; Linux x86_64; rv:126.0) Gecko/20100101 Firefox/126.0"
-    ]
+    add_scraper_log("  [Trackr API] Fetching live UK Tech schemes from api.the-trackr.com (Tier 1 Direct Egress)...")
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "application/json",
+        "Referer": "https://app.the-trackr.com/",
+        "Origin": "https://app.the-trackr.com"
+    }
 
     types = ["summer-internships", "industrial-placements", "graduate-schemes", "spring-weeks"]
     seasons = ["2027", "2026"]
     tasks = [(season, t) for season in seasons for t in types]
 
     rate_limited = False
-    tor_active = False
+    use_tor = False
     LAST_TRACKR_RUN = now
 
-    def fetch_trackr_param(pair):
-        nonlocal rate_limited, tor_active, total_items_fetched, relevant_found
-        if rate_limited:
+    def fetch_trackr_param(pair, proxies=None):
+        nonlocal rate_limited, total_items_fetched, relevant_found
+        if rate_limited and not proxies:
             return []
         season, t = pair
         url = f"https://api.the-trackr.com/programmes?region=UK&industry=Tech&season={season}&type={t}"
         local_new = []
-
-        headers = {
-            "User-Agent": user_agents[hash(t) % len(user_agents)],
-            "Accept": "application/json",
-            "Referer": "https://app.the-trackr.com/",
-            "Origin": "https://app.the-trackr.com"
-        }
-
-        resp = None
-        # Tier 1: Direct Request
         try:
-            resp = requests.get(url, headers=headers, timeout=4)
-        except Exception:
-            pass
+            resp = requests.get(url, headers=headers, proxies=proxies, timeout=6)
+            if resp.status_code == 429:
+                with _JOB_LOCK:
+                    rate_limited = True
+                return []
+            elif resp.status_code == 200:
+                try:
+                    data = resp.json()
+                    items = data if isinstance(data, list) else data.get("programmes", data.get("data", []))
+                    with _JOB_LOCK:
+                        total_items_fetched += len(items)
 
-        # Tier 2: Tor / SOCKS5 Proxy Egress if Tier 1 hit 429 or timeout
-        if not resp or resp.status_code == 429:
-            try:
-                proxies = {
-                    "http": "socks5h://127.0.0.1:9050",
-                    "https": "socks5h://127.0.0.1:9050"
-                }
-                resp = requests.get(url, headers=headers, proxies=proxies, timeout=5)
-                if resp.status_code == 200:
-                    tor_active = True
-            except Exception:
-                pass
+                    for item in items:
+                        if isinstance(item, dict):
+                            if not is_trackr_item_active_and_recent(item):
+                                continue
 
-        if not resp or resp.status_code != 200:
-            if resp and resp.status_code == 429:
-                rate_limited = True
-            return []
+                            company = item.get("companyName") or item.get("company_name") or ""
+                            if isinstance(item.get("company"), dict):
+                                company = item.get("company", {}).get("name", company)
+                            elif isinstance(item.get("company"), str) and not company:
+                                company = item.get("company")
 
-        try:
-            data = resp.json()
-            items = data if isinstance(data, list) else data.get("programmes", data.get("data", []))
-            with _JOB_LOCK:
-                total_items_fetched += len(items)
+                            role = item.get("name") or item.get("programmeName") or item.get("title") or item.get("programme") or item.get("role") or ""
+                            link = item.get("link") or item.get("url") or item.get("applyUrl") or item.get("apply_url") or "https://app.the-trackr.com"
 
-            for item in items:
-                if isinstance(item, dict):
-                    if not is_trackr_item_active_and_recent(item):
-                        continue
+                            if company and role:
+                                full_title = f"{company} - {role}"
+                                job_id = f"trackr_api_{hash(full_title)}"
 
-                    company = item.get("companyName") or item.get("company_name") or ""
-                    if isinstance(item.get("company"), dict):
-                        company = item.get("company", {}).get("name", company)
-                    elif isinstance(item.get("company"), str) and not company:
-                        company = item.get("company")
+                                extract_and_register_ats_company(link)
 
-                    role = item.get("name") or item.get("programmeName") or item.get("title") or item.get("programme") or item.get("role") or ""
-                    link = item.get("link") or item.get("url") or item.get("applyUrl") or item.get("apply_url") or "https://app.the-trackr.com"
+                                if is_relevant_role(full_title, "UK", company):
+                                    trackr_source_name = f"Trackr UK Tech ({season})"
+                                    trackr_source_url = "https://app.the-trackr.com"
+                                    add_discovered_job(discovered_list, job_id, company, role, "UK", link, trackr_source_name, trackr_source_url)
 
-                    if company and role:
-                        full_title = f"{company} - {role}"
-                        job_id = f"trackr_api_{hash(full_title)}"
+                                    with _JOB_LOCK:
+                                        relevant_found += 1
+                                        if job_id not in seen_jobs:
+                                            seen_jobs.add(job_id)
+                                            local_new.append((full_title, "UK", link))
 
-                        extract_and_register_ats_company(link)
-
-                        if is_relevant_role(full_title, "UK", company):
-                            trackr_source_name = f"Trackr UK Tech ({season})"
-                            trackr_source_url = "https://app.the-trackr.com"
-                            add_discovered_job(discovered_list, job_id, company, role, "UK", link, trackr_source_name, trackr_source_url)
-
-                            with _JOB_LOCK:
-                                relevant_found += 1
-                                if job_id not in seen_jobs:
-                                    seen_jobs.add(job_id)
-                                    local_new.append((full_title, "UK", link))
-        except Exception:
-            pass
-
+                except Exception:
+                    pass
+            else:
+                add_scraper_log(f"  [Trackr API] {season}/{t} HTTP {resp.status_code}")
+        except Exception as e:
+            add_scraper_log(f"  [Trackr API] Connection timeout/error ({season}/{t}): {e}")
         return local_new
 
+    # Tier 1 Execution
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-        results = executor.map(fetch_trackr_param, tasks)
+        results = executor.map(lambda p: fetch_trackr_param(p, proxies=None), tasks)
         for res in results:
             new_jobs.extend(res)
 
-    if rate_limited and not tor_active and total_items_fetched == 0:
-        add_scraper_log(f"  [Trackr API] Tier 3 Smart Cache Active: Retaining {len(discovered_list)} cached schemes.")
-        SCRAPER_STATUS["source_status"][source_name] = f"OK (Tier 3 Cache Active - Retaining {len(discovered_list)} cached schemes)"
+    # Tier 2 Egress Fallback (Tor SOCKS5 Proxy if Tier 1 hit 429)
+    if rate_limited:
+        add_scraper_log("  [Trackr API Tier 2] ⚠️ Tier 1 hit HTTP 429 rate limit. Engaging Tor SOCKS5 Egress (socks5h://127.0.0.1:9050)...")
+        tor_proxies = {
+            "http": "socks5h://127.0.0.1:9050",
+            "https": "socks5h://127.0.0.1:9050"
+        }
+        rate_limited = False
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+            results = executor.map(lambda p: fetch_trackr_param(p, proxies=tor_proxies), tasks)
+            for res in results:
+                new_jobs.extend(res)
+
+    if rate_limited:
+        add_scraper_log("  [Trackr API Tier 3] ⚠️ Retaining smart cache (discovered_list) and relying on Direct ATS Auto-Discovery.")
+        SCRAPER_STATUS["source_status"][source_name] = f"⚠️ Rate Limited (HTTP 429 - Retaining {len(discovered_list)} cached schemes)"
     else:
-        egress_type = "Tor Proxy Egress" if tor_active else "Tier 1 Direct"
-        add_scraper_log(f"  [Trackr API] {egress_type} Success: Fetched {total_items_fetched} raw items ({relevant_found} active recent schemes).")
-        SCRAPER_STATUS["source_status"][source_name] = f"OK ({egress_type} - {total_items_fetched} items fetched)"
+        add_scraper_log(f"  [Trackr Summary] Fetched {total_items_fetched} raw items ({relevant_found} active schemes opened in last 6 months matching Maths & CS)")
+        SCRAPER_STATUS["source_status"][source_name] = f"OK ({total_items_fetched} items fetched, {relevant_found} active recent schemes)"
 
     return new_jobs
 
 
-def purge_expired_jobs():
-    from config import add_scraper_log
-    add_scraper_log("🧹 Starting expired job link health check across all indexed schemes...")
-    discovered = load_discovered_jobs()
-    if not discovered:
-        return 0
 
+
+def purge_expired_jobs():
+    add_scraper_log("🧹 Starting Job Link Health Check & Purge...")
+    discovered = load_discovered_jobs()
+    initial_count = len(discovered)
     valid_jobs = []
     purged_count = 0
 
-    def check_job_health(job):
-        url = job.get("link")
-        if not url or "the-trackr.com" in url:
-            return job, True
-
+    def check_job(job):
+        nonlocal purged_count
+        link = job.get("link", "")
+        if not link or not link.startswith("http"):
+            return None
         try:
-            r = requests.head(url, timeout=3, allow_redirects=True)
-            if r.status_code in [404, 410]:
-                return job, False
+            resp = requests.head(link, timeout=4, allow_redirects=True, headers={"User-Agent": "Mozilla/5.0"})
+            if resp.status_code in [404, 410]:
+                add_scraper_log(f"  [Purge] Dead link ({resp.status_code}): {job.get('company')} - {job.get('title')}")
+                return None
         except Exception:
             pass
-        return job, True
+        return job
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-        results = executor.map(check_job_health, discovered)
-        for job, is_valid in results:
-            if is_valid:
-                valid_jobs.append(job)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+        results = executor.map(check_job, discovered)
+        for res in results:
+            if res:
+                valid_jobs.append(res)
             else:
                 purged_count += 1
-                add_scraper_log(f"  [Purge] Removed closed/expired job link (404/410): {job.get('company')} - {job.get('title')}")
 
-    if purged_count > 0:
-        save_discovered_jobs(valid_jobs)
-        add_scraper_log(f"🧹 Health check complete! Purged {purged_count} dead job links.")
-    else:
-        add_scraper_log("🧹 Health check complete! All indexed job links are active and healthy.")
-
+    save_discovered_jobs(valid_jobs)
+    add_scraper_log(f"🧹 Purge Complete: Checked {initial_count} schemes, removed {purged_count} dead/closed listings.")
     return purged_count
-
-
 
 
 def run_all_scrapers():
     start_time = time.time()
-    print("\n🔍 Running Parallel Multi-Threaded UK Scraper Engine...")
+    add_scraper_log("🔍 Running Parallel Multi-Threaded UK Scraper Engine...")
     seen_jobs = load_seen_jobs()
     discovered_list = load_discovered_jobs()
     all_new_jobs = []
@@ -603,8 +586,7 @@ def run_all_scrapers():
     SCRAPER_STATUS["total_discovered_jobs"] = len(discovered_list)
     SCRAPER_STATUS["last_new_jobs_found"] = len(all_new_jobs)
 
-    print(f"📊 Parallel Scraper Run Complete in {elapsed}s: {len(discovered_list)} total active schemes indexed ({len(all_new_jobs)} new alerts sent).")
-
+    add_scraper_log(f"📊 Parallel Scraper Run Complete in {elapsed}s: {len(discovered_list)} total active schemes indexed ({len(all_new_jobs)} new alerts sent).")
 
     if all_new_jobs:
         if len(all_new_jobs) > 5:

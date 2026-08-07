@@ -19,10 +19,10 @@ from sheets import (
 from scrapers import run_all_scrapers, load_discovered_jobs, purge_expired_jobs
 from scheduler import trigger_daily_briefing, trigger_weekly_report
 
+
 class ThreadedHTTPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     allow_reuse_address = True
     daemon_threads = True
-
 
 def render_unified_dashboard_html(active_tab="flow"):
     stats = parse_sheet_stats()
@@ -167,18 +167,19 @@ def render_unified_dashboard_html(active_tab="flow"):
 
         if is_applied:
             status_badge = '<span class="badge badge-applied">✅ APPLIED</span>'
-            action_btn = '<button class="btn btn-disabled" disabled>✓ Logged</button>'
+            action_btn = '<span class="ios-btn ios-btn-secondary" style="opacity:0.65; cursor:default;">✓ Logged</span>'
             status_tag = "applied"
             applied_count += 1
         else:
-            status_badge = '<span class="badge badge-not-applied">⚡ NOT APPLIED</span>'
+            status_badge = '<span class="badge badge-not-applied">⚡ AVAILABLE</span>'
             action_btn = f'''
-            <button onclick="autoApply('{comp_js}', '{title_js}', '{j['link']}')" class="btn btn-auto">⚡ Auto-Apply & Log</button>
-            <button onclick="logJob('{comp_js}', '{title_js}')" class="btn btn-success">+ Log Only</button>
-            <button onclick="hideJob('{j_id}', this)" class="btn btn-danger" style="background:#ef4444; color:white;" title="Hide this job listing">🚫 Hide</button>
+            <a href="{j['link']}" target="_blank" rel="noopener noreferrer" onclick="logJob('{comp_js}', '{title_js}')" class="ios-btn ios-btn-success">⚡ Apply & Log ↗</a>
+            <button onclick="logJob('{comp_js}', '{title_js}')" class="ios-btn ios-btn-secondary">+ Log Only</button>
+            <button onclick="hideJob('{j_id}', this)" class="ios-btn ios-btn-danger" title="Hide listing">🚫 Hide</button>
             '''
             status_tag = "notapplied"
             not_applied_count += 1
+
 
         source_name = j.get('source', 'Discovered API')
         source_url = j.get('source_url') or j.get('link') or '#'
@@ -201,9 +202,10 @@ def render_unified_dashboard_html(active_tab="flow"):
                 🔍 <b>Scraped Webpage:</b> <a href="{source_url}" target="_blank" class="source-link">{display_url} ↗</a>
             </div>
             <div class="job-actions">
-                <a href="{j['link']}" target="_blank" class="btn btn-primary">Apply Direct ↗</a>
+                <a href="{j['link']}" target="_blank" rel="noopener noreferrer" class="ios-btn ios-btn-primary">Apply Direct ↗</a>
                 {action_btn}
             </div>
+
         </div>
         """
 
@@ -880,122 +882,134 @@ def render_unified_dashboard_html(active_tab="flow"):
 
         function hideJob(jobId, btn) {{
             if (confirm("Hide this job listing from your directory?")) {{
-                alert('🔄 Refreshed Sankey Diagram!');
+                let card = btn.closest('.job-card');
+                if (card) {{
+                    card.style.transition = 'all 0.25s ease';
+                    card.style.opacity = '0';
+                    card.style.transform = 'scale(0.9)';
+                    setTimeout(() => card.remove(), 250);
+                }}
+                fetch('/api/hide-job?id=' + encodeURIComponent(jobId));
+            }}
+        }}
+
+        function unhideAll() {{
+            if (confirm("Restore all hidden job listings?")) {{
+                fetch('/api/unhide-all')
+                    .then(r => r.json())
+                    .then(d => {{
+                        alert("✅ All hidden job listings have been restored!");
+                        location.reload();
+                    }});
             }}
         }}
 
         function saveSettings(e) {{
             e.preventDefault();
-            let payload = {{
-                grad_years_allowed: document.getElementById('grad_years').value.split(',').map(s => s.trim()).filter(Boolean),
-                exclude_keywords: document.getElementById('ex_keywords').value.split(',').map(s => s.trim()).filter(Boolean),
-                exclude_locations: document.getElementById('ex_locations').value.split(',').map(s => s.trim()).filter(Boolean),
-                my_skills: document.getElementById('my_skills').value.split(',').map(s => s.trim()).filter(Boolean),
-                auto_hide_company_jobs: document.getElementById('auto_hide_company').checked
+            let body = {{
+                grad_years_allowed: document.getElementById('grad_years').value.split(',').map(s=>s.trim()).filter(Boolean),
+                exclude_keywords: document.getElementById('ex_keywords').value.split(',').map(s=>s.trim()).filter(Boolean),
+                exclude_locations: document.getElementById('ex_locations').value.split(',').map(s=>s.trim()).filter(Boolean),
+                my_skills: document.getElementById('my_skills').value.split(',').map(s=>s.trim()).filter(Boolean),
+                auto_hide_applied_company_jobs: document.getElementById('auto_hide_company').checked
             }};
-
             fetch('/api/settings', {{
                 method: 'POST',
-                headers: {{ 'Content-Type': 'application/json' }},
-                body: JSON.stringify(payload)
+                headers: {{'Content-Type': 'application/json'}},
+                body: JSON.stringify(body)
             }})
-            .then(r => r.json())
-            .then(d => {{
-                alert('💾 Filter preferences saved!');
+            .then(r=>r.json())
+            .then(d=> {{
+                alert('💾 Settings saved successfully! Filters and auto-hide rules updated.');
                 location.reload();
-            }});
+            }})
+            .catch(err=> alert('❌ Error saving settings: ' + err));
         }}
 
+
         function triggerTestEndpoint(endpoint, label) {{
-            alert('⚡ Triggered ' + label + '! Checks running in background.');
-            fetch(endpoint).catch(e => console.log(e));
+            fetch(endpoint)
+                .then(r => r.text())
+                .then(msg => alert('✅ ' + label + ': ' + msg))
+                .catch(e => alert('❌ Error triggering ' + label + ': ' + e));
         }}
     </script>
 </head>
 <body>
     <div class="container">
-        <!-- Liquid Glass Header -->
-        <div class="ios-header">
-            <div class="brand-area">
-                <div class="brand-title">⚡ Trackr</div>
-                <div class="brand-subtitle">Headless HP Stream Server &bull; 24/7 UK Maths & CS Career Engine</div>
+        <!-- Top Header & System Bar -->
+        <div class="header-bar">
+            <div>
+                <div class="brand-title">⚡ ApplicationTrackr <span style="font-size:12px; padding:4px 10px; border-radius:12px; background:rgba(56,189,248,0.15); color:#38bdf8; border:1px solid rgba(56,189,248,0.3); font-weight:700;">COMMAND CENTER</span></div>
+                <div class="brand-subtitle">Headless HP Stream Server &bull; 24/7 UK Maths, Quant & CS Career Engine</div>
             </div>
             <div class="header-actions">
-                <span class="server-pill">
+                <span class="server-status-pill">
                     <span class="status-dot"></span> HP-STREAM ONLINE ({HP_STREAM_TAILSCALE_IP}:5000)
                 </span>
-                <button onclick="triggerInlineScan()" class="ios-btn ios-btn-primary">⚡ Rescan Now</button>
-                <button onclick="refreshSankey()" class="ios-btn ios-btn-secondary">🔄 Sync Sheet</button>
+                <button onclick="triggerInlineScan()" class="btn-header">⚡ Rescan Now</button>
+                <button onclick="refreshSankey()" class="btn-header">🔄 Sync Sheet</button>
             </div>
         </div>
 
-        <!-- Liquid Glass Metrics Cards Grid -->
+        <!-- Top KPI Metrics Cards -->
         <div class="metrics-grid">
             <div class="metric-card">
-                <div class="metric-label">Total Applied</div>
+                <div class="metric-label">Total Applications</div>
                 <div class="metric-value">{total}</div>
             </div>
             <div class="metric-card">
-                <div class="metric-label">Active / Pending</div>
+                <div class="metric-label">Active / Pending Rounds</div>
                 <div class="metric-value active">{active}</div>
             </div>
             <div class="metric-card">
-                <div class="metric-label">Offers</div>
+                <div class="metric-label">Offers Secured</div>
                 <div class="metric-value offers">{offers}</div>
             </div>
             <div class="metric-card">
-                <div class="metric-label">Rejections</div>
+                <div class="metric-label">Rejections / Ghosted</div>
                 <div class="metric-value rejections">{rejections}</div>
             </div>
             <div class="metric-card">
-                <div class="metric-label">Conversion</div>
-                <div class="metric-value">{conv_rate}%</div>
+                <div class="metric-label">Funnel Conversion Rate</div>
+                <div class="metric-value rate">{conv_rate}%</div>
             </div>
             <div class="metric-card">
-                <div class="metric-label">Schemes Indexed</div>
+                <div class="metric-label">Discovered Schemes</div>
                 <div class="metric-value">{discovered_count}</div>
             </div>
         </div>
 
-        <!-- Quick Profile Copy Shelf -->
-        <div class="copy-shelf">
-            <span class="copy-shelf-title">📋 Quick Copy Details:</span>
-            <div class="copy-chips">
-                <button onclick="copyText('nodagala.joga@gmail.com', 'Email')" class="chip-btn">✉️ Email</button>
-                <button onclick="copyText('+447831726326', 'Phone')" class="chip-btn">📞 Phone</button>
-                <button onclick="copyText('University of Birmingham', 'Uni')" class="chip-btn">🎓 Uni</button>
-                <button onclick="copyText('BSc Mathematics and Computer Science', 'Degree')" class="chip-btn">📜 Degree</button>
-                <button onclick="copyText('2028', 'Grad Year')" class="chip-btn">🗓 Grad 2028</button>
-                <button onclick="copyText('https://www.linkedin.com/in/j-nodagala', 'LinkedIn')" class="chip-btn">💼 LinkedIn</button>
+        <!-- Navigation Tabs -->
+        <div class="nav-tabs">
+            <div id="nav-flow" class="nav-tab {flow_active}" onclick="switchTab('flow')">📊 Application Flow & Sankey</div>
+            <div id="nav-jobs" class="nav-tab {jobs_active}" onclick="switchTab('jobs')">💼 Discovered Schemes ({discovered_count})</div>
+            <div id="nav-settings" class="nav-tab {settings_active}" onclick="switchTab('settings')">⚙️ Filter Settings</div>
+            <div id="nav-diagnostics" class="nav-tab {diag_active}" onclick="switchTab('diagnostics')">🛠 System Diagnostics</div>
+        </div>
+
+        <!-- Tab 1: Application Flow & Sankey -->
+        <div id="tab-flow" class="tab-content" style="display:{flow_display};">
+            <div class="content-card">
+                <div class="card-header">
+                    <div class="card-title">📊 Multi-Stage Application Sankey Diagram</div>
+                    <button onclick="refreshSankey()" class="btn btn-header">🔄 Refresh Plot</button>
+                </div>
+                <iframe id="sankey-iframe" src="/sankey-embed" width="100%" height="580" style="border:none; border-radius:12px; background:#0f172a;"></iframe>
             </div>
-        </div>
 
-        <!-- Sticky Liquid Desktop Quick-Jump Segmented Nav -->
-        <div class="desktop-nav">
-            <button type="button" id="nav-pipeline" class="nav-tab active" onclick="scrollToSection('pipeline', event)">📊 Pipeline Tracker</button>
-            <button type="button" id="nav-schemes" class="nav-tab" onclick="scrollToSection('schemes', event)">🎯 Target Schemes ({discovered_count})</button>
-            <button type="button" id="nav-preferences" class="nav-tab" onclick="scrollToSection('preferences', event)">⚙️ Preferences</button>
-            <button type="button" id="nav-system" class="nav-tab" onclick="scrollToSection('system', event)">🛠 System Health</button>
-        </div>
-
-        <!-- ========================================== -->
-        <!-- CONTINUOUS LIQUID GLASS STREAM SECTIONS    -->
-        <!-- ========================================== -->
-
-        <!-- SECTION 1: Pipeline Tracker & Sankey Diagram -->
-        <section id="pipeline" class="stream-section">
-            <div class="ios-card">
+            <div class="content-card">
                 <div class="card-header">
                     <div class="card-title">⚡ Active Applications Tracker</div>
                 </div>
-                <div class="table-container">
+                <div class="table-responsive">
                     <table class="app-table">
                         <thead>
                             <tr>
                                 <th>Company</th>
                                 <th>Target Role</th>
                                 <th>Latest Stage</th>
-                                <th>Pipeline Flow</th>
+                                <th>Pipeline Stage Flow</th>
                                 <th>Status</th>
                             </tr>
                         </thead>
@@ -1005,122 +1019,94 @@ def render_unified_dashboard_html(active_tab="flow"):
                     </table>
                 </div>
             </div>
+        </div>
 
-            <div class="ios-card">
+        <!-- Tab 2: Discovered Schemes Directory -->
+        <div id="tab-jobs" class="tab-content" style="display:{jobs_display};">
+            <div class="content-card">
                 <div class="card-header">
-                    <div class="card-title">📊 Multi-Stage Application Flow (Sankey)</div>
-                    <button onclick="refreshSankey()" class="ios-btn ios-btn-secondary">🔄 Refresh</button>
-                </div>
-                <iframe id="sankey-iframe" src="/sankey-embed" style="width:100%; height:520px; border:none; border-radius:14px; background:transparent;"></iframe>
-            </div>
-        </section>
-
-        <!-- SECTION 2: Discovered Target Schemes Directory -->
-        <section id="schemes" class="stream-section">
-            <div class="ios-card">
-                <div class="card-header">
-                    <div class="card-title">🎯 Discovered Target Schemes ({discovered_count})</div>
-                    <button onclick="triggerInlineScan()" class="ios-btn ios-btn-primary">⚡ Rescan Now</button>
+                    <div class="card-title">💼 Discovered UK Schemes Directory ({discovered_count})</div>
+                    <button onclick="triggerInlineScan()" class="btn btn-primary">⚡ Trigger Scraper Rescan</button>
                 </div>
 
                 <div id="terminal-box" class="terminal-box" style="display:none;">
-                    <div style="display:flex; justify-content:space-between; margin-bottom:8px; font-weight:700;">
-                        <span>⚡ LIVE SCRAPER CONSOLE</span>
-                        <span id="scan-tag">Running...</span>
+                    <div class="terminal-header">
+                        <span>⚡ Live Scraper Terminal Console</span>
+                        <span id="scan-tag" style="color:#10b981;">Running...</span>
                     </div>
-                    <div id="terminal-logs" class="terminal-logs"></div>
+                    <pre id="terminal-logs" class="terminal-logs">Initializing...</pre>
                 </div>
 
-                <input type="text" id="search" onkeyup="filterJobs()" placeholder="🔍 Search company, role, or technology..." class="ios-search">
+                <input type="text" id="search" onkeyup="filterJobs()" placeholder="🔍 Search by company, role, location, or status ('applied', 'quant', 'software')..." class="search-box">
 
                 <div class="filter-pills">
-                    <button class="pill active" onclick="filterPill('all', this)">All ({discovered_count})</button>
-                    <button class="pill" onclick="filterPill('notapplied', this)">⚡ Available ({not_applied_count})</button>
+                    <button class="pill active" onclick="filterPill('all', this)">All Schemes ({discovered_count})</button>
+
+                    <button class="pill" onclick="filterPill('notapplied', this)">⚡ Not Applied ({not_applied_count})</button>
                     <button class="pill" onclick="filterPill('applied', this)">✅ Applied ({applied_count})</button>
-                    <button class="pill" onclick="filterPill('software', this)">💻 Software ({sw_count})</button>
-                    <button class="pill" onclick="filterPill('quant', this)">📈 Quant ({quant_count})</button>
+                    <button class="pill" onclick="filterPill('software', this)">💻 Software / Dev ({sw_count})</button>
+                    <button class="pill" onclick="filterPill('quant', this)">📈 Quant / Trading ({quant_count})</button>
                     <button class="pill" onclick="filterPill('ml', this)">🧠 ML / AI ({ml_count})</button>
-                    <button class="pill" onclick="filterPill('cyber', this)">🔒 Cyber ({cyber_count})</button>
+                    <button class="pill" onclick="filterPill('cyber', this)">🔒 Cyber / Cloud ({cyber_count})</button>
                 </div>
 
                 <div id="job-list">
                     {cards_html}
                 </div>
             </div>
-        </section>
+        </div>
 
-        <!-- SECTION 3: Dynamic Filter Preferences -->
-        <section id="preferences" class="stream-section">
-            <div class="ios-card" style="max-width:720px; margin:0 auto;">
+        <!-- Tab 3: Filter Settings -->
+        <div id="tab-settings" class="tab-content" style="display:{settings_display};">
+            <div class="content-card" style="max-width:700px; margin:0 auto;">
                 <div class="card-header">
-                    <div class="card-title">⚙️ Dynamic Filter Preferences</div>
+                    <div class="card-title">⚙️ Dynamic Scraper Filter Settings</div>
                 </div>
-                <p style="color:var(--ios-text-secondary); font-size:14px; margin-bottom:20px;">Rule updates apply immediately to live scrapers.</p>
+                <p style="color:var(--text-muted); font-size:14px; margin-bottom:24px;">Updates filter rules immediately — No git push required!</p>
                 <form onsubmit="saveSettings(event)">
                     <div class="form-group">
-                        <label class="form-label">Target Graduation Years (Comma-separated)</label>
+                        <label>Target Graduation Years (Comma-separated)</label>
                         <input type="text" id="grad_years" value="{grad_years}" class="form-input">
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Excluded Terms / Seniority / Unwanted Keywords</label>
+                        <label>Excluded Terms / Seniority / Unwanted Keywords (e.g. data science, vice president, sales)</label>
                         <input type="text" id="ex_keywords" value="{ex_keywords}" class="form-input">
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Excluded Foreign Locations</label>
+                        <label>Excluded Foreign Locations (Comma-separated)</label>
                         <input type="text" id="ex_locations" value="{ex_locations}" class="form-input">
                     </div>
                     <div class="form-group">
-                        <label class="form-label">My Skills Matrix</label>
+                        <label>My Known Skills Matrix (Comma-separated)</label>
                         <input type="text" id="my_skills" value="{my_skills}" class="form-input">
                     </div>
-                    <div class="form-group" style="display:flex; align-items:center; gap:12px; background:rgba(255,255,255,0.06); padding:14px; border-radius:12px; border:0.5px solid var(--ios-border);">
+                    <div class="form-group" style="display:flex; align-items:center; gap:12px; background:rgba(15,23,42,0.6); padding:14px; border-radius:10px; border:1px solid var(--card-border);">
                         <input type="checkbox" id="auto_hide_company" {auto_hide_checked} style="width:20px; height:20px; cursor:pointer;">
-                        <label for="auto_hide_company" style="cursor:pointer; color:var(--ios-text-primary); font-size:14px; font-weight:500;">Auto-hide extra roles from companies I've already applied to (Strict 1-App Policy)</label>
+                        <label for="auto_hide_company" style="margin:0; cursor:pointer; color:#f8fafc; font-size:14px;">Auto-hide other job listings from companies I've applied to (Strict 1-App Policy)</label>
                     </div>
-                    <button type="submit" class="ios-btn ios-btn-primary" style="width:100%; padding:12px;">💾 Save Preferences</button>
+                    <button type="submit" class="btn-save">💾 Save Filter Settings</button>
                 </form>
             </div>
-        </section>
+        </div>
 
-        <!-- SECTION 4: System Health & Diagnostics -->
-        <section id="system" class="stream-section">
-            <div class="ios-card">
+        <!-- Tab 4: Diagnostics & System Control -->
+        <div id="tab-diagnostics" class="tab-content" style="display:{diag_display};">
+            <div class="content-card">
                 <div class="card-header">
-                    <div class="card-title">🛠 System Health & Triggers</div>
-                    <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                        <button onclick="purgeExpiredJobs()" class="ios-btn ios-btn-secondary" style="color:var(--ios-orange);">🧹 Clean Closed Jobs</button>
-                        <button onclick="unhideAll()" class="ios-btn ios-btn-danger">🔄 Restore Hidden Jobs ({hidden_count})</button>
-                        <button onclick="triggerTestEndpoint('/test-briefing', 'Daily Briefing')" class="ios-btn ios-btn-secondary">🔔 Briefing</button>
-                        <button onclick="triggerTestEndpoint('/test-weekly', 'Weekly Report')" class="ios-btn ios-btn-secondary">📈 Weekly</button>
-                        <button onclick="triggerTestEndpoint('/test-scraper', 'Manual Scraper')" class="ios-btn ios-btn-success">⚡ Scraper</button>
+                    <div class="card-title">🛠 System Diagnostics & Triggers</div>
+                    <div style="display:flex; gap:10px;">
+                        <button onclick="unhideAll()" class="btn btn-danger" style="background:#ef4444; color:white;">🔄 Restore Hidden Jobs ({hidden_count})</button>
+                        <button onclick="triggerTestEndpoint('/test-briefing', 'Daily Briefing')" class="btn btn-primary">🔔 Test Briefing</button>
+                        <button onclick="triggerTestEndpoint('/test-weekly', 'Weekly Report')" class="btn btn-auto">📈 Test Weekly</button>
+                        <button onclick="triggerTestEndpoint('/test-scraper', 'Manual Scraper')" class="btn btn-success">⚡ Test Scraper</button>
                     </div>
                 </div>
-                <p style="color:var(--ios-text-secondary); font-size:13px; margin-bottom:14px;">Scraper System Status (`/status` JSON):</p>
+                <p style="color:var(--text-muted); font-size:14px; margin-bottom:16px;">Live Scraper & System Status Output (`/status` JSON):</p>
                 <pre class="code-block">{status_json_formatted}</pre>
             </div>
-        </section>
+        </div>
 
     </div>
-
-    <!-- Apple iOS Liquid Bottom Floating Quick-Jump Dock -->
-    <nav class="mobile-dock">
-        <button type="button" id="dock-pipeline" class="dock-item active" onclick="scrollToSection('pipeline', event)">
-            <span class="dock-icon">📊</span>
-            <span>Pipeline</span>
-        </button>
-        <button type="button" id="dock-schemes" class="dock-item" onclick="scrollToSection('schemes', event)">
-            <span class="dock-icon">🎯</span>
-            <span>Schemes</span>
-        </button>
-        <button type="button" id="dock-preferences" class="dock-item" onclick="scrollToSection('preferences', event)">
-            <span class="dock-icon">⚙️</span>
-            <span>Preferences</span>
-        </button>
-        <button type="button" id="dock-system" class="dock-item" onclick="scrollToSection('system', event)">
-            <span class="dock-icon">🛠</span>
-            <span>System</span>
-        </button>
-    </nav>
 </body>
 </html>"""
 
@@ -1336,6 +1322,34 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps(SCRAPER_STATUS, indent=2).encode("utf-8"))
                 return
 
+        elif clean_path == "/api/trigger-scan":
+            clear_scraper_logs()
+            threading.Thread(target=run_all_scrapers, daemon=True).start()
+            self.send_response(200)
+            self.send_cors_headers()
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "started", "message": "Scraper run initiated"}).encode("utf-8"))
+            return
+
+        elif clean_path == "/api/scraper-logs":
+            self.send_response(200)
+            self.send_cors_headers()
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"logs": get_scraper_logs()}).encode("utf-8"))
+            return
+
+        elif clean_path == "/api/purge-expired":
+            clear_scraper_logs()
+            purged = purge_expired_jobs()
+            self.send_response(200)
+            self.send_cors_headers()
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "success", "purged": purged}).encode("utf-8"))
+            return
+
         elif clean_path == "/test-briefing":
             trigger_daily_briefing()
             self.send_response(200)
@@ -1369,6 +1383,11 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
         self.wfile.write("404 Not Found".encode("utf-8"))
 
 def start_web_server():
-    with ThreadedHTTPServer(("", PORT), CleanHandler) as httpd:
-        print(f"🌍 Threaded Web Dashboard running at: http://{HP_STREAM_TAILSCALE_IP}:{PORT}")
-        httpd.serve_forever()
+    for port in [PORT, 5001, 5055, 8080]:
+        try:
+            httpd = ThreadedHTTPServer(("", port), CleanHandler)
+            print(f"🌍 Threaded Web Dashboard running at: http://{HP_STREAM_TAILSCALE_IP}:{port} (Local: http://127.0.0.1:{port})")
+            httpd.serve_forever()
+            break
+        except OSError:
+            continue
