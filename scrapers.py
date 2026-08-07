@@ -424,18 +424,24 @@ def scrape_trackr_website(seen_jobs, discovered_list, force=False):
     tasks = [(season, t) for season in seasons for t in types]
 
     rate_limited = False
-    use_tor = False
+    socks_missing_logged = False
     LAST_TRACKR_RUN = now
 
-    def fetch_trackr_param(pair, proxies=None):
-        nonlocal rate_limited, total_items_fetched, relevant_found
-        if rate_limited and not proxies:
+    def fetch_trackr_param(pair, proxies=None, rotate_ua=False):
+        nonlocal rate_limited, total_items_fetched, relevant_found, socks_missing_logged
+        if rate_limited and not proxies and not rotate_ua:
             return []
         season, t = pair
-        url = f"https://api.the-trackr.com/programmes?region=UK&industry=Tech&season={season}&type={t}"
+        cb = int(time.time())
+        url = f"https://api.the-trackr.com/programmes?region=UK&industry=Tech&season={season}&type={t}&_cb={cb}"
         local_new = []
+
+        req_headers = dict(headers)
+        if rotate_ua:
+            req_headers["User-Agent"] = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1"
+
         try:
-            resp = requests.get(url, headers=headers, proxies=proxies, timeout=6)
+            resp = requests.get(url, headers=req_headers, proxies=proxies, timeout=6)
             if resp.status_code == 429:
                 with _JOB_LOCK:
                     rate_limited = True
@@ -483,7 +489,14 @@ def scrape_trackr_website(seen_jobs, discovered_list, force=False):
             else:
                 add_scraper_log(f"  [Trackr API] {season}/{t} HTTP {resp.status_code}")
         except Exception as e:
-            add_scraper_log(f"  [Trackr API] Connection timeout/error ({season}/{t}): {e}")
+            err_msg = str(e)
+            if "Missing dependencies for SOCKS support" in err_msg or "InvalidSchema" in err_msg:
+                with _JOB_LOCK:
+                    if not socks_missing_logged:
+                        add_scraper_log("  [Trackr API Tier 2] PySocks dependency missing for SOCKS proxy. Relying on Direct ATS Auto-Discovery & Cache.")
+                        socks_missing_logged = True
+            else:
+                add_scraper_log(f"  [Trackr API] Connection notice ({season}/{t}): {err_msg}")
         return local_new
 
     # Tier 1 Execution
@@ -492,18 +505,36 @@ def scrape_trackr_website(seen_jobs, discovered_list, force=False):
         for res in results:
             new_jobs.extend(res)
 
-    # Tier 2 Egress Fallback (Tor SOCKS5 Proxy if Tier 1 hit 429)
+    # Tier 1B Egress Rotation (Header & User-Agent Rotation if Tier 1 hit 429)
     if rate_limited:
-        add_scraper_log("  [Trackr API Tier 2] ⚠️ Tier 1 hit HTTP 429 rate limit. Engaging Tor SOCKS5 Egress (socks5h://127.0.0.1:9050)...")
-        tor_proxies = {
-            "http": "socks5h://127.0.0.1:9050",
-            "https": "socks5h://127.0.0.1:9050"
-        }
         rate_limited = False
         with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-            results = executor.map(lambda p: fetch_trackr_param(p, proxies=tor_proxies), tasks)
+            results = executor.map(lambda p: fetch_trackr_param(p, proxies=None, rotate_ua=True), tasks)
             for res in results:
                 new_jobs.extend(res)
+
+    # Tier 2 Egress Fallback (Tor SOCKS5 Proxy if Tier 1B hit 429)
+    if rate_limited:
+        has_socks = False
+        try:
+            import socks
+            has_socks = True
+        except ImportError:
+            has_socks = False
+
+        if has_socks:
+            add_scraper_log("  [Trackr API Tier 2] ⚠️ Engaging Tor SOCKS5 Egress (socks5h://127.0.0.1:9050)...")
+            tor_proxies = {
+                "http": "socks5h://127.0.0.1:9050",
+                "https": "socks5h://127.0.0.1:9050"
+            }
+            rate_limited = False
+            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+                results = executor.map(lambda p: fetch_trackr_param(p, proxies=tor_proxies), tasks)
+                for res in results:
+                    new_jobs.extend(res)
+        else:
+            add_scraper_log("  [Trackr API Tier 2] PySocks missing in Python environment. Relying on Direct ATS Auto-Discovery.")
 
     if rate_limited:
         add_scraper_log("  [Trackr API Tier 3] ⚠️ Retaining smart cache (discovered_list) and relying on Direct ATS Auto-Discovery.")
@@ -513,6 +544,7 @@ def scrape_trackr_website(seen_jobs, discovered_list, force=False):
         SCRAPER_STATUS["source_status"][source_name] = f"OK ({total_items_fetched} items fetched, {relevant_found} active recent schemes)"
 
     return new_jobs
+
 
 
 
