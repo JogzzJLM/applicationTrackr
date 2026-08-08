@@ -33,3 +33,38 @@ def send_heartbeat_ping():
             print("💓 Sent Watchdog Heartbeat Ping to Healthchecks.io")
         except Exception as e:
             print(f"⚠️ Heartbeat Ping Error: {e}")
+
+import time
+from datetime import datetime, timedelta
+
+def generate_apple_calendar_ics(summary, description="ApplicationTrackr Reminder", location="Online / Email", start_dt=None):
+    """Generates standard RFC 5545 iCalendar (.ics) format compatible with Apple Calendar on iOS and macOS."""
+    if not start_dt:
+        start_dt = datetime.now() + timedelta(days=2)
+
+    dtstart = start_dt.strftime("%Y%m%dT%H%M00Z")
+    dtend = (start_dt + timedelta(hours=1)).strftime("%Y%m%dT%H%M00Z")
+    dtstamp = datetime.utcnow().strftime("%Y%m%dT%H%M00Z")
+
+    ics_content = f"""BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//ApplicationTrackr//Apple Calendar Sync//EN
+CALSCALE:GREGORIAN
+METHOD:REQUEST
+BEGIN:VEVENT
+UID:apptrackr-{int(time.time())}@the-trackr.com
+DTSTAMP:{dtstamp}
+DTSTART:{dtstart}
+DTEND:{dtend}
+SUMMARY:{summary}
+DESCRIPTION:{description}
+LOCATION:{location}
+STATUS:CONFIRMED
+BEGIN:VALARM
+TRIGGER:-PT24H
+ACTION:DISPLAY
+DESCRIPTION:Reminder: {summary} in 24 hours
+END:VALARM
+END:VEVENT
+END:VCALENDAR"""
+    return ics_content

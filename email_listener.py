@@ -6,9 +6,11 @@ import email
 from email.header import decode_header
 import time
 from datetime import datetime, timedelta
-from config import GMAIL_USER, GMAIL_APP_PASS, SEEN_EMAILS_FILE
+from urllib.parse import quote
+from config import GMAIL_USER, GMAIL_APP_PASS, SEEN_EMAILS_FILE, HP_STREAM_TAILSCALE_IP
 from notifications import send_notification
 from sheets import update_google_sheet_via_webhook
+
 
 GENERIC_DOMAINS = {
     "gmail", "yahoo", "hotmail", "outlook", "icloud", "proton", "mail",
@@ -218,9 +220,11 @@ def check_email_inbox():
 
                     elif detected_stage == "Interview":
                         update_google_sheet_via_webhook(company_name, "Interview")
+                        cal_url = f"http://{HP_STREAM_TAILSCALE_IP}:5000/api/calendar.ics?summary={quote('Interview: ' + company_name)}&desc={quote('Interview invite received from ' + company_name)}"
                         send_notification(
                             title=f"Interview Invite: {company_name}",
-                            message=f"Next round/interview email received from {company_name}.\nCheck your inbox to schedule!",
+                            message=f"Next round/interview email received from {company_name}.\nTap to add to Apple Calendar!",
+                            link=cal_url,
                             tags="calendar,fire",
                             priority=5,
                             sound="fanfare"
@@ -229,14 +233,17 @@ def check_email_inbox():
 
                     elif detected_stage == "Online Assessment":
                         update_google_sheet_via_webhook(company_name, "Online Assessment")
+                        cal_url = f"http://{HP_STREAM_TAILSCALE_IP}:5000/api/calendar.ics?summary={quote('Assessment Deadline: ' + company_name)}&desc={quote('Coding test / online assessment received from ' + company_name)}"
                         send_notification(
                             title=f"Assessment Invite: {company_name}",
-                            message=f"Coding test / online assessment email received from {company_name}.\nCheck your inbox!",
+                            message=f"Coding test / online assessment email received from {company_name}.\nTap to add deadline to Apple Calendar!",
+                            link=cal_url,
                             tags="computer,fire",
                             priority=5,
                             sound="fanfare"
                         )
                         print(f"📧 [Email Listener] 💻 ASSESSMENT INVITE DETECTED for {company_name}!")
+
 
                     elif detected_stage == "Rejected":
                         update_google_sheet_via_webhook(company_name, "Rejected")

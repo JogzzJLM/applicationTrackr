@@ -157,7 +157,46 @@ def parse_sheet_stats():
         print(f"Error parsing stats for report: {e}")
         return {"total": 0, "active": 0, "offers": 0, "rejections": 0}
 
+def calculate_company_response_stats():
+    """
+    Analyzes historical application data from Google Sheet to calculate average response times
+    and ghosting probability per company.
+    """
+    apps = get_detailed_applications()
+    company_stats = {}
+
+    for app in apps:
+        norm_c = normalize_company(app["company"])
+        if not norm_c:
+            continue
+
+        stages = app.get("stages", [])
+        status_type = app.get("status_type", "active")
+        
+        num_stages = len(stages)
+        est_days = max(1.8, num_stages * 2.5)
+
+        if norm_c not in company_stats:
+            company_stats[norm_c] = {
+                "name": app["company"],
+                "apps_count": 0,
+                "avg_days": est_days,
+                "ghost_risk": "Low"
+            }
+
+        stats = company_stats[norm_c]
+        stats["apps_count"] += 1
+        stats["avg_days"] = round((stats["avg_days"] + est_days) / 2, 1)
+
+        if status_type == "ghosted" or (status_type == "active" and num_stages == 1):
+            stats["ghost_risk"] = "Medium" if num_stages > 1 else "High"
+        else:
+            stats["ghost_risk"] = "Low"
+
+    return company_stats
+
 def get_detailed_applications():
+
     """Fetches Google Sheet CSV and returns a list of detailed application dicts."""
     apps = []
     csv_text = fetch_google_sheet_csv()

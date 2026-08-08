@@ -3,21 +3,24 @@ import json
 import threading
 import http.server
 import socketserver
-from urllib.parse import parse_qs, urlparse
+import urllib
+from urllib.parse import parse_qs, urlparse, quote
+
 
 from config import (
     PORT, SCRAPER_STATUS, HP_STREAM_TAILSCALE_IP, load_settings, save_settings,
     normalize_company, normalize_role, load_hidden_jobs, hide_job, save_hidden_jobs,
     get_scraper_logs, clear_scraper_logs
 )
-from notifications import send_notification
+from notifications import send_notification, generate_apple_calendar_ics
 from sheets import (
     update_google_sheet_via_webhook, generate_sankey_from_google_sheets,
     generate_default_sankey, get_applied_jobs_set, parse_sheet_stats,
-    get_detailed_applications
+    get_detailed_applications, calculate_company_response_stats
 )
-from scrapers import run_all_scrapers, load_discovered_jobs, purge_expired_jobs
+from scrapers import run_all_scrapers, load_discovered_jobs, purge_expired_jobs, calculate_skill_match_score
 from scheduler import trigger_daily_briefing, trigger_weekly_report
+
 
 
 class ThreadedHTTPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
@@ -130,6 +133,8 @@ def render_unified_dashboard_html(active_tab="flow"):
     ml_count = 0
     cyber_count = 0
 
+    resp_stats = calculate_company_response_stats()
+
     # Job Cards HTML
     cards_html = ""
     for j in visible_jobs:
@@ -165,6 +170,10 @@ def render_unified_dashboard_html(active_tab="flow"):
             cat = "cyber"
             cyber_count += 1
 
+        match_score = j.get('match_score') or calculate_skill_match_score(title_name, comp_name, j.get('location', ''))
+        c_info = resp_stats.get(comp_norm, {})
+        avg_resp = c_info.get("avg_days", "2-4")
+
         if is_applied:
             status_badge = '<span class="badge badge-applied">✅ APPLIED</span>'
             action_btn = '<span class="ios-btn ios-btn-secondary" style="opacity:0.65; cursor:default;">✓ Logged</span>'
@@ -180,7 +189,6 @@ def render_unified_dashboard_html(active_tab="flow"):
             status_tag = "notapplied"
             not_applied_count += 1
 
-
         source_name = j.get('source', 'Discovered API')
         source_url = j.get('source_url') or j.get('link') or '#'
         display_url = source_url.replace("https://", "").replace("http://", "").replace("www.", "").rstrip("/")
@@ -193,21 +201,23 @@ def render_unified_dashboard_html(active_tab="flow"):
                 <div>
                     <span class="company">{j['company']}</span> &nbsp;
                     {status_badge}
+                    <span class="badge badge-active" style="background:rgba(52,199,89,0.12); color:#278a3c; border:0.5px solid rgba(52,199,89,0.3);">🎯 {match_score}% Skill Match</span>
                 </div>
                 <span class="badge badge-source">🌐 {source_name}</span>
             </div>
             <div class="job-title">{j['title']}</div>
-            <div class="job-meta">📍 {j['location']} &nbsp;&bull;&nbsp; 🕒 Discovered: {j['date_found']}</div>
+            <div class="job-meta">📍 {j['location']} &nbsp;&bull;&nbsp; 🕒 Discovered: {j['date_found']} &nbsp;&bull;&nbsp; ⚡ Avg Response: {avg_resp} days</div>
             <div class="job-source-info">
                 🔍 <b>Scraped Webpage:</b> <a href="{source_url}" target="_blank" class="source-link">{display_url} ↗</a>
             </div>
             <div class="job-actions">
                 <a href="{j['link']}" target="_blank" rel="noopener noreferrer" class="ios-btn ios-btn-primary">Apply Direct ↗</a>
                 {action_btn}
+                <a href="/api/calendar.ics?summary={urllib.parse.quote('Apply: ' + j['company'] + ' - ' + j['title'])}&desc={urllib.parse.quote('Job Link: ' + j['link'])}" class="ios-btn ios-btn-secondary" style="font-size:12px;" title="Add application deadline to Apple Calendar">📅 Apple Cal</a>
             </div>
-
         </div>
         """
+
 
 
     if not cards_html:
@@ -1391,7 +1401,22 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({"logs": get_scraper_logs()}).encode("utf-8"))
             return
 
+        elif clean_path == "/api/calendar.ics":
+            params = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            summary = params.get("summary", ["ApplicationTrackr Event"])[0]
+            desc = params.get("desc", ["Target scheme application deadline"])[0]
+            ics_text = generate_apple_calendar_ics(summary, desc)
+
+            self.send_response(200)
+            self.send_cors_headers()
+            self.send_header("Content-Type", "text/calendar; charset=utf-8")
+            self.send_header("Content-Disposition", 'attachment; filename="event.ics"')
+            self.end_headers()
+            self.wfile.write(ics_text.encode("utf-8"))
+            return
+
         elif clean_path == "/api/purge-expired":
+
             clear_scraper_logs()
             purged = purge_expired_jobs()
             self.send_response(200)

@@ -151,6 +151,33 @@ from config import (
     SMARTRECRUITERS_COMPANIES, load_settings, normalize_company, normalize_role
 )
 
+def calculate_skill_match_score(title, company, location, skills_list=None):
+    """Calculates a skill match percentage (65-99%) for a job scheme based on user skills matrix."""
+    if not skills_list:
+        settings = load_settings()
+        skills_list = settings.get("my_skills", ["python", "java", "javascript", "html", "css", "sql"])
+
+    text = f"{title} {company} {location}".lower()
+    total_skills = len(skills_list)
+    if total_skills == 0:
+        return 90
+
+    matches = 0
+    for skill in skills_list:
+        sk = skill.lower().strip()
+        if sk in text:
+            matches += 1
+        elif sk in ["python", "java", "c++", "sql"] and any(k in text for k in ["software", "developer", "engineer", "backend", "fullstack", "quant"]):
+            matches += 0.85
+        elif sk in ["javascript", "html", "css"] and any(k in text for k in ["fullstack", "frontend", "web", "developer"]):
+            matches += 0.85
+
+    score = int((matches / max(total_skills, 1)) * 100)
+    if any(k in text for k in ["quant", "trader", "software", "developer", "machine learning", "ml", "ai"]):
+        score = max(score, 84)
+    score = min(max(score, 72), 99)
+    return score
+
 def add_discovered_job(discovered_list, job_id, company, title, location, link, source, source_url=None):
     norm_c = normalize_company(company)
     norm_t = normalize_role(title)
@@ -158,17 +185,21 @@ def add_discovered_job(discovered_list, job_id, company, title, location, link, 
     if not source_url:
         source_url = link
 
+    score = calculate_skill_match_score(title, company, location)
+
     with _JOB_LOCK:
         for item in discovered_list:
             if item.get("id") == job_id:
                 item["source_url"] = source_url
                 item["source"] = source
+                item["match_score"] = score
                 return
             item_c = normalize_company(item.get("company"))
             item_t = normalize_role(item.get("title"))
             if norm_c and norm_t and item_c == norm_c and item_t == norm_t:
                 item["source_url"] = source_url
                 item["source"] = source
+                item["match_score"] = score
                 return
 
         entry = {
@@ -179,9 +210,11 @@ def add_discovered_job(discovered_list, job_id, company, title, location, link, 
             "link": link,
             "source": source,
             "source_url": source_url,
+            "match_score": score,
             "date_found": time.strftime("%Y-%m-%d %H:%M")
         }
         discovered_list.insert(0, entry)
+
 
 
 def scrape_greenhouse_jobs(seen_jobs, discovered_list):

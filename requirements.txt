@@ -1,5 +1,6 @@
 requests[socks]
 PySocks
+httpx
 beautifulsoup4
 plotly
 pandas
