@@ -33,4 +33,4 @@ if __name__ == "__main__":
         run_all_scrapers()
         generate_sankey_from_google_sheets()
         send_heartbeat_ping()
-        time.sleep(1800)
+        time.sleep(300)  # 5-minute interval = 288 multi-source scans & email checks per day
