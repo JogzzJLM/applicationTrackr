@@ -64,7 +64,72 @@ def extract_company_name(subject, from_sender, body_text=""):
 
     return "Target Company"
 
+def classify_email_stage(combined_text):
+    """
+    Evaluates combined subject & body text against recruitment stage categories using strict priority hierarchy.
+
+    Priority Order:
+    1. Offer (Score 500)
+    2. Rejected (Score 400 - if explicit rejection phrasing present)
+    3. Interview / Next Round (Score 300)
+    4. Online Assessment (Score 200)
+    5. Applied / Confirmation (Score 100)
+    6. Application Update Fallback (Score 50)
+    """
+    has_offer = any(k in combined_text for k in [
+        "offer of employment", "job offer", "pleased to offer", "congratulations!",
+        "offer letter", "formal offer", "delighted to offer"
+    ])
+
+    has_rejection = any(k in combined_text for k in [
+        "we regret to inform", "regret to inform", "unfortunately", "will not be moving forward",
+        "pursue other candidates", "decided not to proceed", "other candidates whose skills",
+        "unsuccessful", "not shortlisted", "not selected", "filled the role"
+    ])
+
+    has_interview = any(k in combined_text for k in [
+        "invitation to interview", "interview invitation", "schedule your interview",
+        "schedule a chat", "speak with our team", "technical interview", "behavioral interview",
+        "final round", "next round", "next steps", "next stage", "move forward with your application",
+        "pleased to invite you for an interview", "pleased to invite you to an interview", "progress your application", "advanced to the next stage",
+        "shortlisted", "book your time slot", "interview slot"
+
+    ])
+
+    has_assessment = any(k in combined_text for k in [
+        "online assessment", "coding test", "technical assessment", "hackerrank",
+        "codility", "hirevue", "codesignal", "pymetrics", "shl", "testgorilla",
+        "workday test", "greenhouse assessment", "assessment centre", "assessment center",
+        "superday", "take-home test", "online test"
+    ])
+
+    has_applied = any(k in combined_text for k in [
+        "thank you for applying", "thanks for applying", "application received",
+        "thanks for your interest", "received your application", "application submitted",
+        "successfully submitted", "received your resume", "received your cv", "application confirmation"
+    ])
+
+    has_update_fallback = any(k in combined_text for k in [
+        "application update", "update on your application", "status update",
+        "regarding your application", "application status", "position at", "role at"
+    ])
+
+    if has_offer:
+        return "Offer"
+    elif has_rejection:
+        return "Rejected"
+    elif has_interview:
+        return "Interview"
+    elif has_assessment:
+        return "Online Assessment"
+    elif has_applied:
+        return "Applied"
+    elif has_update_fallback:
+        return "Application Update"
+    return None
+
 def check_email_inbox():
+
     if not GMAIL_USER or not GMAIL_APP_PASS or "your_email" in GMAIL_USER:
         return
 
@@ -138,12 +203,9 @@ def check_email_inbox():
 
                     combined_text = f"{subject} {body_text}".lower()
                     company_name = extract_company_name(subject, from_sender, body_text)
+                    detected_stage = classify_email_stage(combined_text)
 
-                    # 1. Offer Stage
-                    if any(k in combined_text for k in [
-                        "offer of employment", "job offer", "pleased to offer", "congratulations!",
-                        "offer letter", "formal offer", "delighted to offer"
-                    ]):
+                    if detected_stage == "Offer":
                         update_google_sheet_via_webhook(company_name, "Offer")
                         send_notification(
                             title=f"🎉 JOB OFFER: {company_name}!",
@@ -154,14 +216,7 @@ def check_email_inbox():
                         )
                         print(f"📧 [Email Listener] 🥳 OFFER DETECTED for {company_name}!")
 
-                    # 2. Interview / Next Round Stage
-                    elif any(k in combined_text for k in [
-                        "invitation to interview", "interview invitation", "schedule your interview",
-                        "schedule a chat", "speak with our team", "technical interview", "behavioral interview",
-                        "final round", "next round", "next steps", "next stage", "move forward with your application",
-                        "pleased to invite you", "progress your application", "advanced to the next stage",
-                        "shortlisted", "book your time slot", "interview slot"
-                    ]):
+                    elif detected_stage == "Interview":
                         update_google_sheet_via_webhook(company_name, "Interview")
                         send_notification(
                             title=f"Interview Invite: {company_name}",
@@ -172,13 +227,7 @@ def check_email_inbox():
                         )
                         print(f"📧 [Email Listener] 🗓 INTERVIEW INVITE DETECTED for {company_name}!")
 
-                    # 3. Online Assessment / Coding Test Stage
-                    elif any(k in combined_text for k in [
-                        "online assessment", "coding test", "technical assessment", "hackerrank",
-                        "codility", "hirevue", "codesignal", "pymetrics", "shl", "testgorilla",
-                        "workday test", "greenhouse assessment", "assessment centre", "assessment center",
-                        "superday", "take-home test", "online test"
-                    ]):
+                    elif detected_stage == "Online Assessment":
                         update_google_sheet_via_webhook(company_name, "Online Assessment")
                         send_notification(
                             title=f"Assessment Invite: {company_name}",
@@ -189,12 +238,7 @@ def check_email_inbox():
                         )
                         print(f"📧 [Email Listener] 💻 ASSESSMENT INVITE DETECTED for {company_name}!")
 
-                    # 4. Rejection / Unsuccessful Stage
-                    elif any(k in combined_text for k in [
-                        "we regret to inform", "regret to inform", "unfortunately", "will not be moving forward",
-                        "pursue other candidates", "decided not to proceed", "other candidates whose skills",
-                        "unsuccessful", "not shortlisted", "not selected", "filled the role"
-                    ]):
+                    elif detected_stage == "Rejected":
                         update_google_sheet_via_webhook(company_name, "Rejected")
                         send_notification(
                             title=f"Update: {company_name}",
@@ -205,12 +249,7 @@ def check_email_inbox():
                         )
                         print(f"📧 [Email Listener] ❌ REJECTION DETECTED for {company_name}.")
 
-                    # 5. Application Confirmed Stage
-                    elif any(k in combined_text for k in [
-                        "thank you for applying", "thanks for applying", "application received",
-                        "thanks for your interest", "received your application", "application submitted",
-                        "successfully submitted", "received your resume", "received your cv", "application confirmation"
-                    ]):
+                    elif detected_stage == "Applied":
                         update_google_sheet_via_webhook(company_name, "Applied")
                         send_notification(
                             title=f"Application Confirmed: {company_name}",
@@ -221,11 +260,7 @@ def check_email_inbox():
                         )
                         print(f"📧 [Email Listener] ✅ APPLICATION CONFIRMED for {company_name}.")
 
-                    # 6. Fallback Catch-All for Unclassified Application Updates
-                    elif any(k in combined_text for k in [
-                        "application update", "update on your application", "status update",
-                        "regarding your application", "application status", "position at", "role at"
-                    ]):
+                    elif detected_stage == "Application Update":
                         update_google_sheet_via_webhook(company_name, "Application Update")
                         send_notification(
                             title=f"Application Update: {company_name}",
@@ -235,6 +270,7 @@ def check_email_inbox():
                             sound="fanfare"
                         )
                         print(f"📧 [Email Listener] 🔔 APPLICATION UPDATE DETECTED for {company_name}!")
+
 
         mail.logout()
         save_seen_emails(seen_emails)

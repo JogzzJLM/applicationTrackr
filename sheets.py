@@ -28,18 +28,74 @@ def fetch_google_sheet_csv(force_refresh=False):
 
     return _SHEET_CSV_CACHE.get("content", "")
 
-def update_google_sheet_via_webhook(company, stage, role="Software/Quant Role", link=""):
+def resolve_smart_stage(company, stage):
+    """
+    Inspects existing stages logged for `company` in Google Sheets and returns an intelligent
+    sequentially numbered stage name (e.g., 'Interview 1' -> 'Interview 2', 'Assessment 1' -> 'Assessment 2').
+    """
+    apps = get_detailed_applications()
+    norm_c = normalize_company(company)
+
+    existing_stages = []
+    for app in apps:
+        if normalize_company(app["company"]) == norm_c:
+            existing_stages = app.get("stages", [])
+            break
+
+    if not existing_stages:
+        if stage == "Interview":
+            return "Interview 1"
+        elif stage == "Online Assessment":
+            return "Assessment 1"
+        return stage
+
+    stage_lower = stage.lower()
+
+    if "interview" in stage_lower:
+        count = sum(1 for s in existing_stages if "interview" in s.lower())
+        new_num = count + 1
+        return f"Interview {new_num}"
+
+    elif "assessment" in stage_lower or "oa" in stage_lower or "test" in stage_lower:
+        count = sum(1 for s in existing_stages if any(k in s.lower() for k in ["assessment", "oa", "test", "hackerrank", "codility"]))
+        new_num = count + 1
+        return f"Assessment {new_num}"
+
+    elif "applied" in stage_lower:
+        if any("applied" in s.lower() for s in existing_stages):
+            return None  # Skip duplicate Applied
+
+    elif "reject" in stage_lower or "fail" in stage_lower:
+        if any("reject" in s.lower() for s in existing_stages):
+            return None  # Skip duplicate Rejected
+
+    elif "offer" in stage_lower:
+        if any("offer" in s.lower() for s in existing_stages):
+            return None  # Skip duplicate Offer
+
+    return stage
+
+def update_google_sheet_via_webhook(company, stage, role="Software/Quant Role", link="", resolve_sequential=True):
     if not GOOGLE_SHEET_WEBHOOK_URL or "YOUR_WEBHOOK_ID" in GOOGLE_SHEET_WEBHOOK_URL:
         return
 
-    payload = {"company": company, "stage": stage, "role": role, "link": link}
+    if resolve_sequential:
+        final_stage = resolve_smart_stage(company, stage)
+        if final_stage is None:
+            print(f"📊 Sheet Notice: Stage '{stage}' for {company} already recorded. Skipping duplicate.")
+            return
+    else:
+        final_stage = stage
+
+    payload = {"company": company, "stage": final_stage, "role": role, "link": link}
     try:
         resp = requests.post(GOOGLE_SHEET_WEBHOOK_URL, json=payload, timeout=10)
         if resp.status_code == 200:
-            print(f"📊 Auto-updated Google Sheet: {company} -> {stage}")
+            print(f"📊 Auto-updated Google Sheet: {company} -> {final_stage}")
             fetch_google_sheet_csv(force_refresh=True)
     except Exception as e:
         print(f"⚠️ Error sending Webhook to Google Sheet: {e}")
+
 
 def get_applied_jobs_set():
     """Fetches Google Sheet and returns a set of (norm_comp, norm_role) tuples and set of normalized company names."""
