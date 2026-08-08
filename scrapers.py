@@ -532,21 +532,38 @@ def scrape_trackr_website(seen_jobs, discovered_list, force=False):
                 add_scraper_log(f"  [Trackr API] Connection notice ({season}/{t}): {err_msg}")
         return local_new
 
-    # Tier 1 Execution
-    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-        results = executor.map(lambda p: fetch_trackr_param(p, proxies=None), tasks)
-        for res in results:
-            new_jobs.extend(res)
+    # Check if Tor SOCKS proxy daemon is actually listening on 127.0.0.1:9050
+    def is_tor_active():
+        try:
+            import socket
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(0.8)
+            res = s.connect_ex(('127.0.0.1', 9050))
+            s.close()
+            return res == 0
+        except Exception:
+            return False
+
+    # Tier 1 Execution (Direct Egress with sequential delay)
+    for p in tasks:
+        if rate_limited:
+            break
+        res = fetch_trackr_param(p, proxies=None)
+        new_jobs.extend(res)
+        time.sleep(0.15)
 
     # Tier 1B Egress Rotation (Header & User-Agent Rotation if Tier 1 hit 429)
     if rate_limited:
         rate_limited = False
-        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-            results = executor.map(lambda p: fetch_trackr_param(p, proxies=None, rotate_ua=True), tasks)
-            for res in results:
-                new_jobs.extend(res)
+        add_scraper_log("  [Trackr API Tier 1B] ⚠️ Tier 1 hit HTTP 429 rate limit. Rotating User-Agent & Headers...")
+        for p in tasks:
+            if rate_limited:
+                break
+            res = fetch_trackr_param(p, proxies=None, rotate_ua=True)
+            new_jobs.extend(res)
+            time.sleep(0.2)
 
-    # Tier 2 Egress Fallback (Tor SOCKS5 Proxy if Tier 1B hit 429)
+    # Tier 2 Egress Fallback (Tor SOCKS5 Proxy IF Tor daemon is active)
     if rate_limited:
         has_socks = False
         try:
@@ -555,28 +572,31 @@ def scrape_trackr_website(seen_jobs, discovered_list, force=False):
         except ImportError:
             has_socks = False
 
-        if has_socks:
+        if has_socks and is_tor_active():
             add_scraper_log("  [Trackr API Tier 2] ⚠️ Engaging Tor SOCKS5 Egress (socks5h://127.0.0.1:9050)...")
             tor_proxies = {
                 "http": "socks5h://127.0.0.1:9050",
                 "https": "socks5h://127.0.0.1:9050"
             }
             rate_limited = False
-            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-                results = executor.map(lambda p: fetch_trackr_param(p, proxies=tor_proxies), tasks)
-                for res in results:
-                    new_jobs.extend(res)
+            for p in tasks:
+                if rate_limited:
+                    break
+                res = fetch_trackr_param(p, proxies=tor_proxies)
+                new_jobs.extend(res)
+                time.sleep(0.2)
         else:
-            add_scraper_log("  [Trackr API Tier 2] PySocks missing in Python environment. Relying on Direct ATS Auto-Discovery.")
+            add_scraper_log("  [Trackr API Tier 2] Tor proxy daemon inactive on Docker container. Relying on Direct ATS Auto-Discovery & Cache.")
 
     if rate_limited:
-        add_scraper_log("  [Trackr API Tier 3] ⚠️ Retaining smart cache (discovered_list) and relying on Direct ATS Auto-Discovery.")
+        add_scraper_log(f"  [Trackr API Tier 3] ⚠️ Retaining smart cache ({len(discovered_list)} schemes) and relying on Direct ATS Auto-Discovery.")
         SCRAPER_STATUS["source_status"][source_name] = f"⚠️ Rate Limited (HTTP 429 - Retaining {len(discovered_list)} cached schemes)"
     else:
         add_scraper_log(f"  [Trackr Summary] Fetched {total_items_fetched} raw items ({relevant_found} active schemes opened in last 6 months matching Maths & CS)")
         SCRAPER_STATUS["source_status"][source_name] = f"OK ({total_items_fetched} items fetched, {relevant_found} active recent schemes)"
 
     return new_jobs
+
 
 
 
