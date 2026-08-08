@@ -532,64 +532,84 @@ def scrape_trackr_website(seen_jobs, discovered_list, force=False):
                 add_scraper_log(f"  [Trackr API] Connection notice ({season}/{t}): {err_msg}")
         return local_new
 
-    # Check if Tor SOCKS proxy daemon is actually listening on 127.0.0.1:9050
-    def is_tor_active():
-        try:
-            import socket
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.settimeout(0.8)
-            res = s.connect_ex(('127.0.0.1', 9050))
-            s.close()
-            return res == 0
-        except Exception:
-            return False
-
-    # Tier 1 Execution (Direct Egress with sequential delay)
-    for p in tasks:
-        if rate_limited:
-            break
-        res = fetch_trackr_param(p, proxies=None)
-        new_jobs.extend(res)
-        time.sleep(0.15)
+    # Tier 1 Execution
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        results = executor.map(lambda p: fetch_trackr_param(p, proxies=None), tasks)
+        for res in results:
+            new_jobs.extend(res)
 
     # Tier 1B Egress Rotation (Header & User-Agent Rotation if Tier 1 hit 429)
     if rate_limited:
         rate_limited = False
-        add_scraper_log("  [Trackr API Tier 1B] ⚠️ Tier 1 hit HTTP 429 rate limit. Rotating User-Agent & Headers...")
-        for p in tasks:
-            if rate_limited:
-                break
-            res = fetch_trackr_param(p, proxies=None, rotate_ua=True)
-            new_jobs.extend(res)
-            time.sleep(0.2)
-
-    # Tier 2 Egress Fallback (Tor SOCKS5 Proxy IF Tor daemon is active)
-    if rate_limited:
-        has_socks = False
-        try:
-            import socks
-            has_socks = True
-        except ImportError:
-            has_socks = False
-
-        if has_socks and is_tor_active():
-            add_scraper_log("  [Trackr API Tier 2] ⚠️ Engaging Tor SOCKS5 Egress (socks5h://127.0.0.1:9050)...")
-            tor_proxies = {
-                "http": "socks5h://127.0.0.1:9050",
-                "https": "socks5h://127.0.0.1:9050"
-            }
-            rate_limited = False
-            for p in tasks:
-                if rate_limited:
-                    break
-                res = fetch_trackr_param(p, proxies=tor_proxies)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+            results = executor.map(lambda p: fetch_trackr_param(p, proxies=None, rotate_ua=True), tasks)
+            for res in results:
                 new_jobs.extend(res)
-                time.sleep(0.2)
-        else:
-            add_scraper_log("  [Trackr API Tier 2] Tor proxy daemon inactive on Docker container. Relying on Direct ATS Auto-Discovery & Cache.")
 
+    # Tier 2 Egress Fallback (Dynamic Multi-Source Public Proxy Pool Egress)
     if rate_limited:
-        add_scraper_log(f"  [Trackr API Tier 3] ⚠️ Retaining smart cache ({len(discovered_list)} schemes) and relying on Direct ATS Auto-Discovery.")
+        add_scraper_log("  [Trackr API Tier 2] ⚡ Engaging Dynamic Multi-Source Public Proxy Egress Pool...")
+        candidate_proxies = []
+        sources = [
+            "https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/http.txt",
+            "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt"
+        ]
+        for src in sources:
+            try:
+                resp = requests.get(src, timeout=3)
+                if resp.status_code == 200:
+                    lines = [p.strip() for p in resp.text.split("\n") if p.strip()]
+                    candidate_proxies.extend(lines[:150])
+            except Exception:
+                pass
+
+        candidate_proxies = list(set(candidate_proxies))
+        add_scraper_log(f"  [Trackr API Tier 2] Fetched {len(candidate_proxies)} HTTP proxy nodes. Discovering fast exit node...")
+
+        working_nodes = []
+
+        def check_node(px_str):
+            px_dict = {"http": f"http://{px_str}", "https": f"http://{px_str}"}
+            try:
+                test_url = "https://api.the-trackr.com/programmes?region=UK&industry=Tech&season=2027&type=summer-internships"
+                r = requests.get(test_url, proxies=px_dict, timeout=2.5)
+                if r.status_code == 200 and len(r.content) > 1000:
+                    return px_dict
+            except Exception:
+                pass
+            return None
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
+            node_results = executor.map(check_node, candidate_proxies[:250])
+            for res in node_results:
+                if res:
+                    working_nodes.append(res)
+                    if len(working_nodes) >= len(tasks):
+                        break
+
+        if working_nodes:
+            add_scraper_log(f"  [Trackr API Tier 2] 🔥 Discovered {len(working_nodes)} fast HTTP proxy exit nodes! Fetching live schemes...")
+            rate_limited = False
+
+            def fetch_with_node(idx_task):
+                idx, task_pair = idx_task
+                for attempt_offset in range(len(working_nodes)):
+                    node_proxy = working_nodes[(idx + attempt_offset) % len(working_nodes)]
+                    res = fetch_trackr_param(task_pair, proxies=node_proxy, rotate_ua=True)
+                    if res or total_items_fetched > 0:
+                        return res
+                return []
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+                results = executor.map(fetch_with_node, enumerate(tasks))
+                for res in results:
+                    new_jobs.extend(res)
+
+
+
+
+    if rate_limited and total_items_fetched == 0:
+        add_scraper_log("  [Trackr API Tier 3] ⚠️ Retaining smart cache (discovered_list) and relying on Direct ATS Auto-Discovery.")
         SCRAPER_STATUS["source_status"][source_name] = f"⚠️ Rate Limited (HTTP 429 - Retaining {len(discovered_list)} cached schemes)"
     else:
         add_scraper_log(f"  [Trackr Summary] Fetched {total_items_fetched} raw items ({relevant_found} active schemes opened in last 6 months matching Maths & CS)")
