@@ -1,10 +1,13 @@
 import os
+import re
 import json
 import threading
 import http.server
 import socketserver
 import urllib
+import urllib.parse
 from urllib.parse import parse_qs, urlparse, quote
+
 
 
 from config import (
@@ -135,32 +138,64 @@ def render_unified_dashboard_html(active_tab="flow"):
 
     resp_stats = calculate_company_response_stats()
 
-    # Multi-Source Deduplication & Unified Merging Pass
-    merged_jobs_map = {}
+    def extract_domain_handle(url):
+        if not url or not isinstance(url, str):
+            return ""
+        gh = re.search(r"boards\.greenhouse\.io/([^/?#]+)", url)
+        if gh:
+            return gh.group(1).lower()
+        lev = re.search(r"jobs\.lever\.co/([^/?#]+)", url)
+        if lev:
+            return lev.group(1).lower()
+        ash = re.search(r"jobs\.ashbyhq\.com/([^/?#]+)", url)
+        if ash:
+            return ash.group(1).lower()
+        parsed = urllib.parse.urlparse(url)
+        netloc = parsed.netloc.lower().replace("www.", "")
+        return netloc
+
+    # Multi-Source Deduplication & Unified Merging Pass with Domain Verification Safeguard
     ordered_merged_jobs = []
 
     for j in visible_jobs:
         comp_norm = normalize_company(j.get("company", ""))
         role_norm = normalize_role(j.get("title", ""))
-        key = (comp_norm, role_norm)
+        handle_j = extract_domain_handle(j.get("link", ""))
+        
+        merged_with_existing = False
 
-        if key in merged_jobs_map:
-            existing = merged_jobs_map[key]
-            src = j.get("source", "Discovered API")
-            if src not in existing["sources"]:
-                existing["sources"].append(src)
-            if any(ats in j.get("link", "").lower() for ats in ["greenhouse", "lever", "ashby", "smartrecruiters"]):
-                existing["link"] = j["link"]
-                if j.get("company") and len(j.get("company")) > 2:
-                    existing["company"] = j.get("company")
-                existing["title"] = j.get("title")
-        else:
+        for existing in ordered_merged_jobs:
+            ex_comp_norm = normalize_company(existing.get("company", ""))
+            ex_role_norm = normalize_role(existing.get("title", ""))
+            
+            if comp_norm == ex_comp_norm and role_norm == ex_role_norm:
+                handle_ex = extract_domain_handle(existing.get("link", ""))
+                aggregators = {"app.the-trackr.com", "the-trackr.com", ""}
+                
+                # Domain Safeguard: If both have distinct ATS handles/domains that differ, do NOT merge!
+                if handle_j not in aggregators and handle_ex not in aggregators and handle_j != handle_ex:
+                    continue
+
+                # Valid merge!
+                src = j.get("source", "Discovered API")
+                if src not in existing["sources"]:
+                    existing["sources"].append(src)
+                if any(ats in j.get("link", "").lower() for ats in ["greenhouse", "lever", "ashby", "smartrecruiters"]):
+                    existing["link"] = j["link"]
+                    if j.get("company") and len(j.get("company")) > 2:
+                        existing["company"] = j.get("company")
+                    existing["title"] = j.get("title")
+                
+                merged_with_existing = True
+                break
+
+        if not merged_with_existing:
             j_copy = dict(j)
             j_copy["sources"] = [j.get("source", "Discovered API")]
-            merged_jobs_map[key] = j_copy
             ordered_merged_jobs.append(j_copy)
 
     visible_jobs = ordered_merged_jobs
+
 
     # Job Cards HTML
     cards_html = ""
