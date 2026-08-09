@@ -83,6 +83,30 @@ def normalize_role(title):
     words = [w for w in cleaned.split() if w not in stop_words]
     return " ".join(words)
 
+def normalize_url(url):
+    """Strips query strings, tracking parameters, hashes, and trailing slashes for exact URL matching."""
+    if not url or not isinstance(url, str):
+        return ""
+    cleaned = re.sub(r'^https?://(www\.)?', '', url.strip().lower())
+    cleaned = cleaned.split('?')[0].split('#')[0].rstrip('/')
+    return cleaned
+
+def extract_ats_post_id(url):
+    """Extracts unique ATS job post IDs (e.g. Greenhouse job ID, Lever job UUID, Ashby UUID)."""
+    if not url or not isinstance(url, str):
+        return None
+    gh_match = re.search(r'greenhouse\.io/[^/]+/jobs/(\d+)', url, re.IGNORECASE)
+    if gh_match:
+        return f"gh_{gh_match.group(1)}"
+    lev_match = re.search(r'lever\.co/[^/]+/([a-f0-9\-]{20,})', url, re.IGNORECASE)
+    if lev_match:
+        return f"lev_{lev_match.group(1)}"
+    ash_match = re.search(r'ashbyhq\.com/[^/]+/([a-f0-9\-]{20,})', url, re.IGNORECASE)
+    if ash_match:
+        return f"ash_{ash_match.group(1)}"
+    return None
+
+
 
 
 GMAIL_USER = os.getenv("GMAIL_USER", "")

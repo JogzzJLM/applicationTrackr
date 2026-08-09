@@ -157,8 +157,28 @@ _JOB_LOCK = threading.Lock()
 from config import (
     SEEN_JOBS_FILE, DISCOVERED_JOBS_FILE, SCRAPER_STATUS,
     GREENHOUSE_COMPANIES, LEVER_COMPANIES, ASHBY_COMPANIES,
-    SMARTRECRUITERS_COMPANIES, load_settings, normalize_company, normalize_role
+    SMARTRECRUITERS_COMPANIES, load_settings, normalize_company, normalize_role,
+    normalize_url, extract_ats_post_id
 )
+
+def validate_job_legitimacy(company, title, link):
+    """Multi-stage pre-ingestion legitimacy check to verify a job before adding to index."""
+    if not company or not isinstance(company, str) or len(company.strip()) < 2:
+        return False
+    if not title or not isinstance(title, str) or len(title.strip()) < 4:
+        return False
+    if not link or not isinstance(link, str) or not link.startswith("http"):
+        return False
+
+    t_lower = title.lower()
+    c_lower = company.lower()
+
+    # Reject obvious dummy / noise / test records
+    noise_words = ["test", "demo", "sample", "undefined", "null", "placeholder", "test job", "do not apply"]
+    if any(nw in t_lower for nw in noise_words) or any(nw in c_lower for nw in noise_words):
+        return False
+
+    return True
 
 def calculate_skill_match_score(title, company, location, skills_list=None):
     """Calculates a skill match percentage (65-99%) for a job scheme based on user skills matrix."""
@@ -188,8 +208,13 @@ def calculate_skill_match_score(title, company, location, skills_list=None):
     return score
 
 def add_discovered_job(discovered_list, job_id, company, title, location, link, source, source_url=None):
+    if not validate_job_legitimacy(company, title, link):
+        return
+
     norm_c = normalize_company(company)
     norm_t = normalize_role(title)
+    norm_u = normalize_url(link)
+    ats_id = extract_ats_post_id(link)
 
     if not source_url:
         source_url = link
@@ -198,16 +223,28 @@ def add_discovered_job(discovered_list, job_id, company, title, location, link, 
 
     with _JOB_LOCK:
         for item in discovered_list:
-            if item.get("id") == job_id:
-                item["source_url"] = source_url
-                item["source"] = source
-                item["match_score"] = score
-                return
+            item_url = normalize_url(item.get("link", ""))
+            item_ats = extract_ats_post_id(item.get("link", ""))
             item_c = normalize_company(item.get("company"))
             item_t = normalize_role(item.get("title"))
-            if norm_c and norm_t and item_c == norm_c and item_t == norm_t:
-                item["source_url"] = source_url
-                item["source"] = source
+
+            # Multi-Stage Verification Hierarchy
+            is_match = False
+            if ats_id and item_ats and ats_id == item_ats:
+                is_match = True
+            elif norm_u and item_url and norm_u == item_url:
+                is_match = True
+            elif norm_c and norm_t and item_c == norm_c and item_t == norm_t:
+                is_match = True
+
+            if is_match:
+                if "sources" not in item:
+                    item["sources"] = [item.get("source", "Discovered API")]
+                if source not in item["sources"]:
+                    item["sources"].append(source)
+                if any(ats in link.lower() for ats in ["greenhouse", "lever", "ashby", "smartrecruiters"]):
+                    item["link"] = link
+                    item["source_url"] = source_url
                 item["match_score"] = score
                 return
 
@@ -218,11 +255,13 @@ def add_discovered_job(discovered_list, job_id, company, title, location, link, 
             "location": location if location else "UK / Remote",
             "link": link,
             "source": source,
+            "sources": [source],
             "source_url": source_url,
             "match_score": score,
             "date_found": time.strftime("%Y-%m-%d %H:%M")
         }
         discovered_list.insert(0, entry)
+
 
 
 
