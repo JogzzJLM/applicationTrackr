@@ -8,8 +8,53 @@ SEEN_JOBS_FILE = "seen_jobs.json"
 SEEN_EMAILS_FILE = "seen_emails.json"
 DISCOVERED_JOBS_FILE = "discovered_jobs.json"
 SETTINGS_FILE = "settings.json"
+CLOSED_KB_FILE = "closed_keywords_kb.json"
 PORT = 5000
 HP_STREAM_TAILSCALE_IP = "100.75.135.73"
+
+
+DEFAULT_CLOSED_PHRASES = [
+    "no longer accepting applications",
+    "application closed",
+    "job closed",
+    "this position has been filled",
+    "no longer available",
+    "position closed",
+    "applications are now closed",
+    "role has been filled",
+    "applications closed",
+    "job is no longer active",
+    "programme is now closed",
+    "applications for this role have closed",
+    "this job posting has expired",
+    "listing expired",
+    "404 not found",
+    "page not found",
+    "this position is closed"
+]
+
+def load_closed_keywords_kb():
+    kb = list(DEFAULT_CLOSED_PHRASES)
+    if os.path.exists(CLOSED_KB_FILE):
+        try:
+            with open(CLOSED_KB_FILE, "r") as f:
+                saved = json.load(f)
+                if isinstance(saved, list):
+                    for item in saved:
+                        if item and item.lower() not in kb:
+                            kb.append(item.lower())
+        except Exception:
+            pass
+    return kb
+
+def save_closed_keywords_kb(kb_list):
+    try:
+        clean_kb = list(set([k.lower().strip() for k in kb_list if k and len(k.strip()) > 3]))
+        with open(CLOSED_KB_FILE, "w") as f:
+            json.dump(clean_kb, f, indent=2)
+    except Exception as e:
+        print(f"⚠️ Error saving closed_keywords_kb: {e}")
+
 
 SCRAPER_LOGS = []
 

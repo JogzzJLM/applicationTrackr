@@ -170,8 +170,37 @@ from config import (
     SEEN_JOBS_FILE, DISCOVERED_JOBS_FILE, SCRAPER_STATUS,
     GREENHOUSE_COMPANIES, LEVER_COMPANIES, ASHBY_COMPANIES,
     SMARTRECRUITERS_COMPANIES, load_settings, normalize_company, normalize_role,
-    normalize_url, extract_ats_post_id
+    normalize_url, extract_ats_post_id, load_closed_keywords_kb, save_closed_keywords_kb
 )
+
+def verify_live_page_applyable(url):
+    """Fetches the live application webpage and verifies whether the job is currently open & apply-able."""
+    if not url or not isinstance(url, str) or not url.startswith("http"):
+        return False
+
+    kb_phrases = load_closed_keywords_kb()
+
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+        }
+        resp = requests.get(url, headers=headers, timeout=4, allow_redirects=True)
+        if resp.status_code in [404, 410, 403, 500]:
+            return False
+
+        page_text = re.sub(r'<[^>]+>', ' ', resp.text).lower()
+        page_text = ' '.join(page_text.split())
+
+        for phrase in kb_phrases:
+            if phrase in page_text:
+                print(f"  [Live Closure Check] 🛑 Page indicates role is closed ('{phrase}'): {url}")
+                return False
+
+        return True
+    except Exception:
+        # If timeout or connection issue, permit to avoid false negatives
+        return True
 
 def validate_job_legitimacy(company, title, link):
     """Multi-stage pre-ingestion legitimacy check to verify a job before adding to index."""
@@ -191,6 +220,7 @@ def validate_job_legitimacy(company, title, link):
         return False
 
     return True
+
 
 def calculate_skill_match_score(title, company, location, skills_list=None):
     """Calculates a skill match percentage (65-99%) for a job scheme based on user skills matrix."""
@@ -222,6 +252,10 @@ def calculate_skill_match_score(title, company, location, skills_list=None):
 def add_discovered_job(discovered_list, job_id, company, title, location, link, source, source_url=None):
     if not validate_job_legitimacy(company, title, link):
         return
+
+    if not verify_live_page_applyable(link):
+        return
+
 
     norm_c = normalize_company(company)
     norm_t = normalize_role(title)

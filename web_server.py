@@ -246,9 +246,11 @@ def render_unified_dashboard_html(active_tab="flow"):
                 <a href="{j['link']}" target="_blank" rel="noopener noreferrer" class="ios-btn ios-btn-primary">Apply Direct ↗</a>
                 {action_btn}
                 <a href="/api/calendar.ics?summary={urllib.parse.quote('Apply: ' + j['company'] + ' - ' + j['title'])}&desc={urllib.parse.quote('Job Link: ' + j['link'])}" class="ios-btn ios-btn-secondary" style="font-size:12px;" title="Add application deadline to Apple Calendar">📅 Apple Cal</a>
+                <button onclick="reportClosedJob('{j_id}', '{j.get('link', '').replace('\'', '\\\'')}')" class="ios-btn ios-btn-danger" style="font-size:12px;" title="Report this job as closed/filled to train the AI filter">🚩 Report Closed</button>
             </div>
         </div>
         """
+
 
 
 
@@ -986,6 +988,18 @@ def render_unified_dashboard_html(active_tab="flow"):
             }}
         }}
 
+        function reportClosedJob(jobId, link) {{
+            if (confirm("Report this position as closed/filled? The AI engine will scan the webpage to extract closure wording patterns and update its self-learning filter knowledge base.")) {{
+                fetch('/api/report-closed?id=' + encodeURIComponent(jobId) + '&link=' + encodeURIComponent(link))
+                    .then(r => r.json())
+                    .then(d => {{
+                        alert(d.message || "Feedback recorded! Filter knowledge base updated.");
+                        location.reload();
+                    }});
+            }}
+        }}
+
+
         function unhideAll() {{
             if (confirm("Restore all hidden job listings?")) {{
                 fetch('/api/unhide-all')
@@ -1458,6 +1472,70 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({"status": "success", "purged": purged}).encode("utf-8"))
             return
+
+        elif clean_path == "/api/report-closed":
+            params = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            job_id = params.get("id", [""])[0]
+            link = params.get("link", [""])[0]
+
+            learned_phrases = []
+            job_title = "Position"
+
+            # 1. Remove job from discovered_jobs.json
+            discovered = load_discovered_jobs()
+            updated_jobs = []
+            for j in discovered:
+                if j.get("id") == job_id or (link and j.get("link") == link):
+                    job_title = f"{j.get('company')} - {j.get('title')}"
+                else:
+                    updated_jobs.append(j)
+            save_discovered_jobs(updated_jobs)
+
+            # 2. Fetch live page & extract newly discovered closure phrases to train knowledge base
+            if link and link.startswith("http"):
+                try:
+                    resp = requests.get(link, timeout=4, headers={"User-Agent": "Mozilla/5.0"})
+                    if resp.status_code == 200:
+                        text = re.sub(r'<[^>]+>', ' ', resp.text).lower()
+                        text = ' '.join(text.split())
+                        words = text.split()
+                        closure_triggers = ['closed', 'filled', 'no longer', 'expired', 'paused', 'unavailable']
+                        for idx, w in enumerate(words):
+                            if any(tr in w for tr in closure_triggers):
+                                start = max(0, idx - 3)
+                                end = min(len(words), idx + 4)
+                                phrase = ' '.join(words[start:end])
+                                if len(phrase) > 5 and phrase not in learned_phrases:
+                                    learned_phrases.append(phrase)
+                except Exception:
+                    pass
+
+            # 3. Save new learned phrases to knowledge base
+            if learned_phrases:
+                kb = load_closed_keywords_kb()
+                kb.extend(learned_phrases)
+                save_closed_keywords_kb(kb)
+                msg = f"Reported '{job_title}' as closed. AI extracted {len(learned_phrases)} new closure phrase patterns."
+            else:
+                msg = f"Reported '{job_title}' as closed. Job removed & knowledge base updated."
+
+            # 4. Push confirmation alert
+            send_notification(
+                title="AI Self-Learning KB Updated",
+                message=msg,
+                link=f"http://100.75.135.73:5000/jobs",
+                tags="brain,target",
+                priority=3,
+                sound="chime"
+            )
+
+            self.send_response(200)
+            self.send_cors_headers()
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "success", "message": msg, "learned": learned_phrases}).encode("utf-8"))
+            return
+
 
         elif clean_path == "/test-briefing":
             trigger_daily_briefing()
