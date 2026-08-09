@@ -12,6 +12,26 @@ from config import (
 
 from notifications import send_notification
 
+def parse_trackr_date(d_str):
+    if not d_str or not isinstance(d_str, str):
+        return None
+    d_str = d_str.strip()
+    m = re.search(r'(\d{4}-\d{2}-\d{2})', d_str)
+    if m:
+        try:
+            return datetime.strptime(m.group(1), '%Y-%m-%d')
+        except Exception:
+            pass
+    m = re.search(r'(\d{1,2}\s+[A-Za-z]{3}\s+\d{2,4})', d_str)
+    if m:
+        val = m.group(1)
+        for fmt in ['%d %b %Y', '%d %b %y']:
+            try:
+                return datetime.strptime(val, fmt)
+            except Exception:
+                pass
+    return None
+
 def is_trackr_item_active_and_recent(item):
     """Strictly checks if a Trackr scheme is currently open for applications."""
     status_raw = str(
@@ -38,14 +58,9 @@ def is_trackr_item_active_and_recent(item):
     )
 
     if close_date_str:
-        c_match = re.search(r"(\d{4}-\d{2}-\d{2})", str(close_date_str))
-        if c_match:
-            try:
-                close_dt = datetime.strptime(c_match.group(1), "%Y-%m-%d")
-                if close_dt < now - timedelta(days=1):
-                    return False
-            except Exception:
-                pass
+        c_dt = parse_trackr_date(close_date_str)
+        if c_dt and c_dt < now - timedelta(days=1):
+            return False
 
     open_date_str = (
         item.get("openDate") or item.get("openingDate") or item.get("open_date") or 
@@ -53,16 +68,13 @@ def is_trackr_item_active_and_recent(item):
     )
 
     if open_date_str:
-        o_match = re.search(r"(\d{4}-\d{2}-\d{2})", str(open_date_str))
-        if o_match:
-            try:
-                open_dt = datetime.strptime(o_match.group(1), "%Y-%m-%d")
-                if open_dt < six_months_ago or open_dt > now + timedelta(days=1):
-                    return False
-            except Exception:
-                pass
+        o_dt = parse_trackr_date(open_date_str)
+        if o_dt:
+            if o_dt < six_months_ago or o_dt > now + timedelta(days=1):
+                return False
 
     return True
+
 
 def extract_and_register_ats_company(url):
     if not url or not isinstance(url, str):
