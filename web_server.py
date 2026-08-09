@@ -135,6 +135,33 @@ def render_unified_dashboard_html(active_tab="flow"):
 
     resp_stats = calculate_company_response_stats()
 
+    # Multi-Source Deduplication & Unified Merging Pass
+    merged_jobs_map = {}
+    ordered_merged_jobs = []
+
+    for j in visible_jobs:
+        comp_norm = normalize_company(j.get("company", ""))
+        role_norm = normalize_role(j.get("title", ""))
+        key = (comp_norm, role_norm)
+
+        if key in merged_jobs_map:
+            existing = merged_jobs_map[key]
+            src = j.get("source", "Discovered API")
+            if src not in existing["sources"]:
+                existing["sources"].append(src)
+            if any(ats in j.get("link", "").lower() for ats in ["greenhouse", "lever", "ashby", "smartrecruiters"]):
+                existing["link"] = j["link"]
+                if j.get("company") and len(j.get("company")) > 2:
+                    existing["company"] = j.get("company")
+                existing["title"] = j.get("title")
+        else:
+            j_copy = dict(j)
+            j_copy["sources"] = [j.get("source", "Discovered API")]
+            merged_jobs_map[key] = j_copy
+            ordered_merged_jobs.append(j_copy)
+
+    visible_jobs = ordered_merged_jobs
+
     # Job Cards HTML
     cards_html = ""
     for j in visible_jobs:
@@ -148,7 +175,7 @@ def render_unified_dashboard_html(active_tab="flow"):
         if not is_applied:
             for (ac, ar) in applied_jobs:
                 if ac == comp_norm:
-                    if ar and (ar in title_norm or title_norm in ar):
+                    if not ar or (ar in title_norm or title_norm in ar or (len(set(ar.split()) & set(title_norm.split())) >= 2)):
                         is_applied = True
                         break
 
@@ -189,21 +216,26 @@ def render_unified_dashboard_html(active_tab="flow"):
             status_tag = "notapplied"
             not_applied_count += 1
 
-        source_name = j.get('source', 'Discovered API')
+        sources_list = j.get('sources', [j.get('source', 'Discovered API')])
+        if len(sources_list) > 1:
+            source_badge_text = "🌐 " + " + ".join(sources_list)
+        else:
+            source_badge_text = f"🌐 {sources_list[0]}"
+
         source_url = j.get('source_url') or j.get('link') or '#'
         display_url = source_url.replace("https://", "").replace("http://", "").replace("www.", "").rstrip("/")
         if len(display_url) > 42:
             display_url = display_url[:39] + "..."
 
         cards_html += f"""
-        <div class="job-card" data-search="{j['company'].lower()} {j['title'].lower()} {j['location'].lower()} {status_tag} {cat} {source_name.lower()}" data-status="{status_tag}" data-cat="{cat}">
+        <div class="job-card" data-search="{j['company'].lower()} {j['title'].lower()} {j['location'].lower()} {status_tag} {cat} {source_badge_text.lower()}" data-status="{status_tag}" data-cat="{cat}">
             <div class="job-header">
                 <div>
                     <span class="company">{j['company']}</span> &nbsp;
                     {status_badge}
                     <span class="badge badge-active" style="background:rgba(52,199,89,0.12); color:#278a3c; border:0.5px solid rgba(52,199,89,0.3);">🎯 {match_score}% Skill Match</span>
                 </div>
-                <span class="badge badge-source">🌐 {source_name}</span>
+                <span class="badge badge-source">{source_badge_text}</span>
             </div>
             <div class="job-title">{j['title']}</div>
             <div class="job-meta">📍 {j['location']} &nbsp;&bull;&nbsp; 🕒 Discovered: {j['date_found']} &nbsp;&bull;&nbsp; ⚡ Avg Response: {avg_resp} days</div>
@@ -217,6 +249,7 @@ def render_unified_dashboard_html(active_tab="flow"):
             </div>
         </div>
         """
+
 
 
 
