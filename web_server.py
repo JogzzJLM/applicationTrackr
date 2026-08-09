@@ -227,6 +227,8 @@ def render_unified_dashboard_html(active_tab="flow"):
         if len(display_url) > 42:
             display_url = display_url[:39] + "..."
 
+        link_js = j.get('link', '').replace("'", "\\'").replace('"', '&quot;')
+
         cards_html += f"""
         <div class="job-card" data-search="{j['company'].lower()} {j['title'].lower()} {j['location'].lower()} {status_tag} {cat} {source_badge_text.lower()}" data-status="{status_tag}" data-cat="{cat}">
             <div class="job-header">
@@ -246,10 +248,11 @@ def render_unified_dashboard_html(active_tab="flow"):
                 <a href="{j['link']}" target="_blank" rel="noopener noreferrer" class="ios-btn ios-btn-primary">Apply Direct ↗</a>
                 {action_btn}
                 <a href="/api/calendar.ics?summary={urllib.parse.quote('Apply: ' + j['company'] + ' - ' + j['title'])}&desc={urllib.parse.quote('Job Link: ' + j['link'])}" class="ios-btn ios-btn-secondary" style="font-size:12px;" title="Add application deadline to Apple Calendar">📅 Apple Cal</a>
-                <button onclick="reportClosedJob('{j_id}', '{j.get('link', '').replace('\'', '\\\'')}')" class="ios-btn ios-btn-danger" style="font-size:12px;" title="Report this job as closed/filled to train the AI filter">🚩 Report Closed</button>
+                <button onclick="reportClosedJob('{j_id}', '{link_js}')" class="ios-btn ios-btn-danger" style="font-size:12px;" title="Report this job as closed/filled to train the AI filter">🚩 Report Closed</button>
             </div>
         </div>
         """
+
 
 
 
