@@ -13,23 +13,25 @@ from config import (
 from notifications import send_notification
 
 def is_trackr_item_active_and_recent(item):
+    """Strictly checks if a Trackr scheme is currently open for applications."""
     status_raw = str(
-        item.get("status") or item.get("openStatus") or item.get("state") or ""
+        item.get("status") or item.get("openStatus") or item.get("state") or item.get("programmeStatus") or ""
     ).lower().strip()
 
-    if status_raw in ["closed", "unopened", "upcoming", "closed for applications", "expired"]:
+    # Reject if explicitly closed, unopened, upcoming, expired, filled, or paused
+    if any(kw in status_raw for kw in ["close", "unopen", "upcom", "expir", "fill", "pause", "archiv"]):
         return False
 
-    if item.get("isOpen") is False or item.get("isClosed") is True:
+    if item.get("isOpen") is False or item.get("isClosed") is True or item.get("is_open") is False:
+        return False
+
+    # If status is non-empty, require it to be open/active
+    if status_raw and status_raw not in ["open", "active", "opened", "accepting applications", "open for applications"]:
         return False
 
     now = datetime.now()
     six_months_ago = now - timedelta(days=180)
 
-    open_date_str = (
-        item.get("openDate") or item.get("openingDate") or item.get("open_date") or 
-        item.get("openedAt") or item.get("created_at") or ""
-    )
     close_date_str = (
         item.get("closeDate") or item.get("closingDate") or item.get("close_date") or 
         item.get("closedAt") or ""
@@ -45,22 +47,20 @@ def is_trackr_item_active_and_recent(item):
             except Exception:
                 pass
 
-    if not open_date_str:
-        if status_raw != "open":
-            return False
-        return True
+    open_date_str = (
+        item.get("openDate") or item.get("openingDate") or item.get("open_date") or 
+        item.get("openedAt") or item.get("created_at") or ""
+    )
 
-    o_match = re.search(r"(\d{4}-\d{2}-\d{2})", str(open_date_str))
-    if o_match:
-        try:
-            open_dt = datetime.strptime(o_match.group(1), "%Y-%m-%d")
-            if open_dt < six_months_ago:
-                return False
-            if open_dt > now + timedelta(days=1):
-                return False
-            return True
-        except Exception:
-            pass
+    if open_date_str:
+        o_match = re.search(r"(\d{4}-\d{2}-\d{2})", str(open_date_str))
+        if o_match:
+            try:
+                open_dt = datetime.strptime(o_match.group(1), "%Y-%m-%d")
+                if open_dt < six_months_ago or open_dt > now + timedelta(days=1):
+                    return False
+            except Exception:
+                pass
 
     return True
 
@@ -104,9 +104,18 @@ def is_relevant_role(title, location="", company=""):
             return False
 
     has_role = any(rk in t_lower for rk in settings.get("role_keywords", []))
-    has_level = any(lk in t_lower for lk in settings.get("level_keywords", []))
+    
+    # Strict word-boundary level check to prevent 'internal' from matching 'intern'
+    has_level = False
+    for lk in settings.get("level_keywords", []):
+        lk_clean = lk.lower().strip()
+        pattern = r'\b' + re.escape(lk_clean) + r'\b'
+        if re.search(pattern, t_lower):
+            has_level = True
+            break
 
     return has_role and has_level
+
 
 def load_seen_jobs():
     if os.path.exists(SEEN_JOBS_FILE):
