@@ -11,8 +11,9 @@ from config import (
     PORT, SCRAPER_STATUS, HP_STREAM_TAILSCALE_IP, load_settings, save_settings,
     normalize_company, normalize_role, load_hidden_jobs, hide_job, save_hidden_jobs,
     get_scraper_logs, clear_scraper_logs, load_reported_closed_jobs, save_reported_closed_jobs,
-    load_closed_keywords_kb, save_closed_keywords_kb
+    load_closed_keywords_kb, save_closed_keywords_kb, extract_generic_closure_phrases
 )
+
 
 from notifications import send_notification, generate_apple_calendar_ics
 from sheets import (
@@ -1581,24 +1582,20 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
 
             save_reported_closed_jobs(closed_map)
 
-            # 2. Fetch live page & extract newly discovered closure phrases to train knowledge base
+            # 2. Fetch live page & extract newly discovered generic closure phrases to train knowledge base
             if link and link.startswith("http"):
                 try:
                     resp = requests.get(link, timeout=4, headers={"User-Agent": "Mozilla/5.0"})
                     if resp.status_code == 200:
-                        text = re.sub(r'<[^>]+>', ' ', resp.text).lower()
-                        text = ' '.join(text.split())
-                        words = text.split()
-                        closure_triggers = ['closed', 'filled', 'no longer', 'expired', 'paused', 'unavailable']
-                        for idx, w in enumerate(words):
-                            if any(tr in w for tr in closure_triggers):
-                                start = max(0, idx - 3)
-                                end = min(len(words), idx + 4)
-                                phrase = ' '.join(words[start:end])
-                                if len(phrase) > 5 and phrase not in learned_phrases:
-                                    learned_phrases.append(phrase)
+                        comp_name = job_title.split(" - ")[0] if " - " in job_title else ""
+                        role_name = job_title.split(" - ")[1] if " - " in job_title else ""
+                        extracted = extract_generic_closure_phrases(resp.text, comp_name, role_name)
+                        for phrase in extracted:
+                            if phrase and phrase not in learned_phrases:
+                                learned_phrases.append(phrase)
                 except Exception:
                     pass
+
 
             # 3. Save new learned phrases to knowledge base
             if learned_phrases:
