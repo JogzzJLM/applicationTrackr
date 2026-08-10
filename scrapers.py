@@ -195,7 +195,12 @@ def verify_live_page_applyable(url):
         if resp.status_code in [404, 410, 403, 500]:
             return False
 
-        # Layer 1: ATS Redirect Egress Check (Specific job post redirected to generic portal / careers root)
+        # Layer 1: ATS Redirect & Expired Egress Check
+        if "linkedin.com" in url or "linkedin.com" in resp.url:
+            if "expired_jd_redirect" in resp.url or "trk=expired" in resp.url or ("/jobs/view/" in url and "/jobs/view/" not in resp.url):
+                print(f"  [Live Closure Check] 🛑 LinkedIn Expired Redirect Match: {url} -> {resp.url}")
+                return False
+
         if resp.url and resp.url != url:
             orig_path = url.split('?')[0].rstrip('/')
             final_path = resp.url.split('?')[0].rstrip('/')
@@ -234,16 +239,28 @@ def verify_live_page_applyable(url):
             print(f"  [Live Closure Check] 🛑 Missing Page Rule Match ('doesn't exist / cannot be found'): {url}")
             return False
 
-        # Layer 4: Dynamic SPA & Workday OpenGraph Metadata Verification
-        if "myworkdayjobs.com" in url or "eightfold.ai" in url or "phenom.com" in url:
-            og_match = re.search(r'<meta\s+[^>]*property=[\"\']og:title[\"\']\s+content=[\"\']([^\"\']+)[\"\']', resp.text, re.IGNORECASE)
-            title_match = re.search(r'<title>([^<]+)</title>', resp.text, re.IGNORECASE)
-            if not og_match or not og_match.group(1).strip():
-                if not title_match or not title_match.group(1).strip():
+        # Layer 4: Dynamic SPA & Meta Title Verification (Workday, Ashby, HiBob, Phenom, Eightfold)
+        title_match = re.search(r'<title>([^<]+)</title>', resp.text, re.IGNORECASE)
+        page_title = title_match.group(1).strip().lower() if title_match else ''
+        
+        og_match = re.search(r'<meta\s+[^>]*property=[\"\']og:title[\"\']\s+content=[\"\']([^\"\']+)[\"\']', resp.text, re.IGNORECASE)
+        og_title = og_match.group(1).strip().lower() if og_match else ''
+
+        if any(ats in url for ats in ["myworkdayjobs.com", "eightfold.ai", "phenom.com"]):
+            if not og_title:
+                if not page_title:
                     print(f"  [Live Closure Check] 🛑 Dynamic SPA Metadata Check Failed (Empty og:title & title): {url}")
                     return False
 
+        is_specific_post = any(c in url for c in ['-', '_']) and (re.search(r'/[0-9a-f\-]{8,}', url, re.I) or re.search(r'/\d{5,}', url) or 'job' in url.lower())
+        generic_titles = {'jobs', 'careers', 'job openings', 'career opportunities', 'welcome', 'search jobs', 'job search', 'workday', 'ashby'}
+
+        if is_specific_post and page_title in generic_titles and not og_title:
+            print(f"  [Live Closure Check] 🛑 Generic Meta Title Fallback Check Failed (title: '{page_title}'): {url}")
+            return False
+
         return True
+
 
     except Exception:
         # If timeout or connection issue, permit to avoid false negatives
