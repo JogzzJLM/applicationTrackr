@@ -17,6 +17,9 @@ def render_job_card(j, is_reported_closed=False, is_applied=False, is_hidden=Fal
 
     status_tag = "applied" if is_applied else ("closed" if is_reported_closed else "not_applied")
 
+    comp_js = comp_str.replace("'", "\\'").replace('"', '&quot;')
+    title_js = title_str.replace("'", "\\'").replace('"', '&quot;')
+
     if is_applied:
         status_badge = '<span class="badge badge-applied">✅ Applied & Tracked</span>'
         action_btn = '<span class="ios-btn ios-btn-secondary" style="opacity:0.85; font-weight:600; cursor:default;">✓ In Sheet</span>'
@@ -25,7 +28,8 @@ def render_job_card(j, is_reported_closed=False, is_applied=False, is_hidden=Fal
         action_btn = f'<button onclick="reopenJob(\'{j_id}\')" class="ios-btn ios-btn-secondary" style="font-size:12px;">🔓 Re-Open Scheme</button>'
     else:
         status_badge = '<span class="badge badge-open">⚡ Not Applied</span>'
-        action_btn = f'<button onclick="logJob(\'{comp_str.replace("\'", "\\\'")}\', \'{title_str.replace("\'", "\\\'")}\')" class="ios-btn ios-btn-success" style="font-size:12px;" title="Log this application to Google Sheets">+ Log Applied</button>'
+        action_btn = f'<button onclick="logJob(\'{comp_js}\', \'{title_js}\')" class="ios-btn ios-btn-success" style="font-size:12px;" title="Log this application to Google Sheets">+ Log Applied</button>'
+
 
     t_low = title_str.lower()
     cat = "software"
