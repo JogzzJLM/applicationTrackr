@@ -237,15 +237,16 @@ def render_unified_dashboard_html(active_tab="flow"):
 
     <style>
         :root {{
-            --bg: #ffffff;
-            --bg-secondary: #f5f5f7;
+            --bg: #f5f5f7;
+            --bg-secondary: #ededf0;
             --border: #d2d2d7;
-            --border-light: #e8e8ed;
+            --border-light: rgba(0, 0, 0, 0.06);
             --text-primary: #1d1d1f;
             --text-secondary: #6e6e73;
             --text-tertiary: #86868b;
             --blue: #0071e3;
             --blue-bg: rgba(0, 113, 227, 0.08);
+            --blue-glow: rgba(0, 113, 227, 0.18);
             --green: #34c759;
             --green-bg: rgba(52, 199, 89, 0.1);
             --red: #ff3b30;
@@ -253,12 +254,12 @@ def render_unified_dashboard_html(active_tab="flow"):
             --orange: #ff9500;
             --orange-bg: rgba(255, 149, 0, 0.1);
             --gray-bg: rgba(142, 142, 147, 0.12);
-            --card-bg: #ffffff;
-            --card-border: #e8e8ed;
-            --card-shadow: 0 1px 3px rgba(0,0,0,0.04);
-            --card-shadow-hover: 0 4px 12px rgba(0,0,0,0.08);
-            --radius: 12px;
-            --radius-lg: 16px;
+            --card-bg: rgba(255, 255, 255, 0.72);
+            --card-border: rgba(255, 255, 255, 0.85);
+            --card-shadow: 0 1px 4px rgba(0,0,0,0.04), 0 2px 12px rgba(0,0,0,0.03);
+            --card-shadow-hover: 0 8px 30px rgba(0,0,0,0.08), 0 2px 8px rgba(0,0,0,0.04);
+            --radius: 14px;
+            --radius-lg: 18px;
             --font: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
         }}
 
@@ -266,6 +267,10 @@ def render_unified_dashboard_html(active_tab="flow"):
 
         body {{
             background: var(--bg);
+            background-image:
+                radial-gradient(ellipse at 20% 0%, rgba(0, 113, 227, 0.045) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 100%, rgba(52, 199, 89, 0.035) 0%, transparent 50%);
+            background-attachment: fixed;
             color: var(--text-primary);
             font-family: var(--font);
             -webkit-font-smoothing: antialiased;
@@ -281,7 +286,7 @@ def render_unified_dashboard_html(active_tab="flow"):
             display: flex; align-items: center; justify-content: space-between;
             padding: 14px 24px;
             border-bottom: 1px solid var(--border-light);
-            background: rgba(255,255,255,0.72);
+            background: rgba(255,255,255,0.78);
             backdrop-filter: saturate(180%) blur(20px);
             -webkit-backdrop-filter: saturate(180%) blur(20px);
             position: sticky; top: 0; z-index: 100;
@@ -313,33 +318,39 @@ def render_unified_dashboard_html(active_tab="flow"):
             padding: 7px 14px; border-radius: 980px;
             font-size: 12px; font-weight: 600; font-family: var(--font);
             cursor: pointer; border: none; text-decoration: none;
-            transition: filter 0.12s ease;
+            transition: all 0.18s cubic-bezier(0.25, 0.46, 0.45, 0.94);
         }}
-        .btn:active {{ filter: brightness(0.9); }}
-        .btn-filled {{ background: var(--blue); color: #fff; }}
+        .btn:active {{ transform: scale(0.96); }}
+        .btn-filled {{ background: var(--blue); color: #fff; box-shadow: 0 2px 8px var(--blue-glow); }}
+        .btn-filled:hover {{ box-shadow: 0 4px 16px var(--blue-glow); }}
         .btn-tinted {{ background: var(--blue-bg); color: var(--blue); }}
+        .btn-tinted:hover {{ background: rgba(0, 113, 227, 0.14); }}
         .btn-ghost {{ background: transparent; color: var(--text-secondary); }}
-        .btn-ghost:hover {{ background: var(--bg-secondary); }}
+        .btn-ghost:hover {{ background: rgba(0,0,0,0.04); }}
         .btn-danger-text {{ color: var(--red); }}
 
         /* ─── Stats row ─── */
         .stats-row {{
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-            gap: 1px;
-            background: var(--border-light);
-            border: 1px solid var(--border-light);
-            border-radius: var(--radius-lg);
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 14px;
             margin: 32px 0 28px 0;
-            overflow: hidden;
         }}
         .stat-cell {{
             background: var(--card-bg);
+            backdrop-filter: blur(20px) saturate(180%);
+            -webkit-backdrop-filter: blur(20px) saturate(180%);
+            border: 1px solid var(--card-border);
+            border-radius: var(--radius);
             padding: 20px 16px;
             text-align: center;
+            box-shadow: var(--card-shadow);
+            transition: transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94), box-shadow 0.2s ease;
         }}
-        .stat-cell:first-child {{ border-radius: var(--radius-lg) 0 0 var(--radius-lg); }}
-        .stat-cell:last-child {{ border-radius: 0 var(--radius-lg) var(--radius-lg) 0; }}
+        .stat-cell:hover {{
+            transform: translateY(-2px);
+            box-shadow: var(--card-shadow-hover);
+        }}
         .stat-label {{ font-size: 11px; font-weight: 600; color: var(--text-tertiary); letter-spacing: 0.02em; text-transform: uppercase; }}
         .stat-value {{ font-size: 28px; font-weight: 700; color: var(--text-primary); margin-top: 4px; letter-spacing: -0.02em; }}
 
@@ -358,12 +369,12 @@ def render_unified_dashboard_html(active_tab="flow"):
             cursor: pointer; font-family: var(--font);
             border-bottom: 2px solid transparent;
             white-space: nowrap;
-            transition: color 0.15s ease;
+            transition: color 0.2s ease, border-color 0.2s ease;
         }}
         .tab:hover {{ color: var(--text-primary); }}
         .tab.active {{
-            color: var(--text-primary);
-            border-bottom-color: var(--text-primary);
+            color: var(--blue);
+            border-bottom-color: var(--blue);
         }}
 
         /* ─── Section panel ─── */
@@ -380,18 +391,21 @@ def render_unified_dashboard_html(active_tab="flow"):
             width: 14px; height: 14px; color: var(--text-tertiary);
         }}
         .search-input {{
-            width: 100%; padding: 9px 14px 9px 34px;
-            border: 1px solid var(--border);
+            width: 100%; padding: 10px 14px 10px 36px;
+            border: 1px solid var(--border-light);
             border-radius: var(--radius);
             font-size: 13px; font-weight: 500;
             color: var(--text-primary);
-            background: var(--card-bg);
+            background: rgba(255,255,255,0.8);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
             outline: none; font-family: var(--font);
-            transition: border-color 0.15s ease, box-shadow 0.15s ease;
+            box-shadow: var(--card-shadow);
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
         }}
         .search-input:focus {{
             border-color: var(--blue);
-            box-shadow: 0 0 0 3px rgba(0,113,227,0.12);
+            box-shadow: 0 0 0 4px var(--blue-glow), var(--card-shadow);
         }}
 
         .sort-select {{
@@ -407,22 +421,25 @@ def render_unified_dashboard_html(active_tab="flow"):
 
         .filter-chips {{ display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 20px; }}
         .chip {{
-            padding: 6px 14px;
+            padding: 7px 16px;
             border-radius: 980px;
             font-size: 12px; font-weight: 600;
             color: var(--text-secondary);
-            background: var(--bg-secondary);
+            background: rgba(255,255,255,0.65);
             border: 1px solid var(--border-light);
             cursor: pointer;
             white-space: nowrap;
             font-family: var(--font);
-            transition: all 0.15s ease;
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            transition: all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
         }}
-        .chip:hover {{ border-color: var(--border); }}
+        .chip:hover {{ background: rgba(255,255,255,0.9); border-color: var(--border); }}
         .chip.active {{
-            background: var(--text-primary);
+            background: var(--blue);
             color: #fff;
-            border-color: var(--text-primary);
+            border-color: var(--blue);
+            box-shadow: 0 2px 10px var(--blue-glow);
         }}
 
         /* ─── Job cards ─── */
@@ -433,14 +450,19 @@ def render_unified_dashboard_html(active_tab="flow"):
         }}
         .card {{
             background: var(--card-bg);
+            backdrop-filter: blur(20px) saturate(180%);
+            -webkit-backdrop-filter: blur(20px) saturate(180%);
             border: 1px solid var(--card-border);
             border-radius: var(--radius);
-            padding: 16px;
+            padding: 18px;
             display: flex; flex-direction: column; gap: 8px;
             box-shadow: var(--card-shadow);
-            transition: box-shadow 0.2s ease;
+            transition: transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94), box-shadow 0.25s ease;
         }}
-        .card:hover {{ box-shadow: var(--card-shadow-hover); }}
+        .card:hover {{
+            transform: translateY(-3px);
+            box-shadow: var(--card-shadow-hover);
+        }}
         .card-top {{ display: flex; justify-content: space-between; align-items: center; }}
         .card-status {{
             display: inline-flex; align-items: center; gap: 5px;
@@ -496,9 +518,11 @@ def render_unified_dashboard_html(active_tab="flow"):
         /* ─── Section card ─── */
         .section-card {{
             background: var(--card-bg);
+            backdrop-filter: blur(20px) saturate(180%);
+            -webkit-backdrop-filter: blur(20px) saturate(180%);
             border: 1px solid var(--card-border);
             border-radius: var(--radius-lg);
-            padding: 24px; margin-bottom: 20px;
+            padding: 26px; margin-bottom: 20px;
             box-shadow: var(--card-shadow);
         }}
         .section-title {{
@@ -513,17 +537,18 @@ def render_unified_dashboard_html(active_tab="flow"):
             margin-bottom: 6px; display: block;
         }}
         .form-input {{
-            width: 100%; padding: 9px 12px;
-            border: 1px solid var(--border);
-            border-radius: 8px;
+            width: 100%; padding: 10px 14px;
+            border: 1px solid var(--border-light);
+            border-radius: 10px;
             font-size: 14px; font-weight: 500;
             color: var(--text-primary);
-            background: var(--card-bg);
+            background: rgba(255,255,255,0.85);
             outline: none; font-family: var(--font);
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
         }}
         .form-input:focus {{
             border-color: var(--blue);
-            box-shadow: 0 0 0 3px rgba(0,113,227,0.12);
+            box-shadow: 0 0 0 4px var(--blue-glow);
         }}
         textarea.form-input {{ resize: vertical; }}
 
