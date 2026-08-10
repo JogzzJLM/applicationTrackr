@@ -215,8 +215,8 @@ def verify_live_page_applyable(url):
                 return False
 
         # Layer 3: High-Confidence Structural Proximity & Semantic Rules
-        closure_states = {'closed', 'filled', 'expired', 'paused', 'unavailable', 'inactive'}
-        job_nouns = {'application', 'applications', 'programme', 'program', 'role', 'position', 'vacancy', 'scheme', 'opportunity', 'posting', 'job'}
+        closure_states = {'closed', 'filled', 'expired', 'paused', 'unavailable', 'inactive', 'exist', 'removed', 'missing', 'invalid'}
+        job_nouns = {'application', 'applications', 'programme', 'program', 'role', 'position', 'vacancy', 'scheme', 'opportunity', 'posting', 'job', 'page'}
 
         words = text_clean.split()
         for idx, w in enumerate(words):
@@ -229,6 +229,11 @@ def verify_live_page_applyable(url):
         if 'no longer' in text_clean and any(k in text_clean for k in ['accepting', 'available', 'taking', 'open']):
             print(f"  [Live Closure Check] 🛑 Semantic Rule Match ('no longer accepting/available'): {url}")
             return False
+
+        if any(k in text_clean for k in ["doesn t exist", "does not exist", "page you are looking for", "cannot be found"]):
+            print(f"  [Live Closure Check] 🛑 Missing Page Rule Match ('doesn't exist / cannot be found'): {url}")
+            return False
+
 
         return True
     except Exception:

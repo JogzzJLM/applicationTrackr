@@ -60,7 +60,15 @@ DEFAULT_CLOSED_PHRASES = [
     "applications are closed",
     "applications have closed",
     "position is filled",
-    "role is filled"
+    "role is filled",
+    "doesn't exist",
+    "does not exist",
+    "page you are looking for",
+    "job no longer exists",
+    "cannot be found",
+    "posting has been removed",
+    "job listing has been removed",
+    "position no longer exists"
 ]
 
 def extract_generic_closure_phrases(html, company_name="", title_name=""):
@@ -74,7 +82,11 @@ def extract_generic_closure_phrases(html, company_name="", title_name=""):
     text = ' '.join(text.split())
 
     noise_items = [company_name.lower(), title_name.lower(), '2024', '2025', '2026', '2027', '2028', 'uk', 'london']
-    closure_triggers = ['closed', 'filled', 'no longer', 'expired', 'paused', 'unavailable', 'ended', 'completed']
+    closure_triggers = [
+        'closed', 'filled', 'no longer', 'expired', 'paused', 'unavailable',
+        'ended', 'completed', 'exist', 'does not exist', 'doesn\'t exist',
+        'not found', 'removed', 'inactive', 'cannot be found'
+    ]
 
     extracted = []
     clauses = re.split(r'[\.\!\?\,\;\:]+', text)
@@ -84,12 +96,13 @@ def extract_generic_closure_phrases(html, company_name="", title_name=""):
             words = clause_str.split()
             for idx, w in enumerate(words):
                 if any(tr in w for tr in closure_triggers):
-                    start = max(0, idx - 2)
+                    start = max(0, idx - 3)
                     end = min(len(words), idx + 4)
                     sub = ' '.join(words[start:end])
                     if len(sub) > 6 and not any(nw and len(nw) > 3 and nw in sub for nw in noise_items):
                         extracted.append(sub)
     return list(set(extracted))
+
 
 def load_closed_keywords_kb():
     kb = list(DEFAULT_CLOSED_PHRASES)
