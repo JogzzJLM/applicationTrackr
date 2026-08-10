@@ -268,10 +268,13 @@ def render_unified_dashboard_html(active_tab="flow"):
 
         link_js = j.get('link', '').replace("'", "\\'").replace('"', '&quot;')
 
+        resp_days_val = float(str(avg_resp).split('-')[0]) if '-' in str(avg_resp) else (float(avg_resp) if str(avg_resp).replace('.','',1).isdigit() else 3.0)
         report_btn_html = f'<button onclick="reportClosedJob(\'{j_id}\', \'{link_js}\')" class="ios-btn ios-btn-danger" style="font-size:12px;" title="Report this job as closed/filled to train the AI filter">🚩 Report Closed</button>' if not is_reported_closed else ''
 
         card_markup = f"""
-        <div class="job-card" data-search="{j['company'].lower()} {j['title'].lower()} {j['location'].lower()} {status_tag} {cat} {source_badge_text.lower()}" data-status="{status_tag}" data-cat="{cat}">
+
+        <div class="job-card" data-search="{j['company'].lower()} {j['title'].lower()} {j['location'].lower()} {status_tag} {cat} {source_badge_text.lower()}" data-status="{status_tag}" data-cat="{cat}" data-date="{j.get('date_found', '')}" data-match="{match_score}" data-resp="{resp_days_val}" data-company="{j['company'].lower()}" data-title="{j['title'].lower()}">
+
             <div class="job-header">
                 <div>
                     <span class="company">{j['company']}</span> &nbsp;
@@ -943,7 +946,33 @@ def render_unified_dashboard_html(active_tab="flow"):
             }}
         }}
 
+        function sortJobs() {{
+            let sortVal = document.getElementById('sort-select').value;
+            let list = document.getElementById('job-list');
+            let cards = Array.from(list.querySelectorAll('.job-card'));
+
+            cards.sort((a, b) => {{
+                if (sortVal === 'date-desc') {{
+                    return (b.getAttribute('data-date') || '').localeCompare(a.getAttribute('data-date') || '');
+                }} else if (sortVal === 'date-asc') {{
+                    return (a.getAttribute('data-date') || '').localeCompare(b.getAttribute('data-date') || '');
+                }} else if (sortVal === 'match-desc') {{
+                    return (parseFloat(b.getAttribute('data-match')) || 0) - (parseFloat(a.getAttribute('data-match')) || 0);
+                }} else if (sortVal === 'resp-asc') {{
+                    return (parseFloat(a.getAttribute('data-resp')) || 99) - (parseFloat(b.getAttribute('data-resp')) || 99);
+                }} else if (sortVal === 'company-asc') {{
+                    return (a.getAttribute('data-company') || '').localeCompare(b.getAttribute('data-company') || '');
+                }} else if (sortVal === 'title-asc') {{
+                    return (a.getAttribute('data-title') || '').localeCompare(b.getAttribute('data-title') || '');
+                }}
+                return 0;
+            }});
+
+            cards.forEach(card => list.appendChild(card));
+        }}
+
         function filterJobs() {{
+
             let q = document.getElementById('search').value.toLowerCase();
             let cards = document.querySelectorAll('.job-card');
             cards.forEach(c => {{
@@ -1224,7 +1253,21 @@ def render_unified_dashboard_html(active_tab="flow"):
                     <pre id="terminal-logs" class="terminal-logs">Initializing...</pre>
                 </div>
 
-                <input type="text" id="search" onkeyup="filterJobs()" placeholder="🔍 Search by company, role, location, or status ('applied', 'quant', 'software')..." class="search-box">
+                <div style="display:flex; gap:12px; margin-bottom:16px; flex-wrap:wrap; align-items:center;">
+                    <input type="text" id="search" onkeyup="filterJobs()" placeholder="🔍 Search by company, role, location, or status ('applied', 'quant', 'software')..." class="search-box" style="flex:1; min-width:260px; margin-bottom:0;">
+                    <div style="display:flex; align-items:center; gap:8px; background:rgba(15,23,42,0.6); padding:8px 14px; border-radius:10px; border:1px solid var(--card-border);">
+                        <label for="sort-select" style="font-size:13px; color:var(--text-muted); font-weight:600; margin:0; white-space:nowrap;">⇅ Sort By:</label>
+                        <select id="sort-select" onchange="sortJobs()" class="form-input" style="padding:6px 12px; font-size:13px; border:none; background:transparent; color:#f8fafc; cursor:pointer; font-weight:600;">
+                            <option value="date-desc" style="background:#0f172a; color:#f8fafc;">🆕 Discovered: Newest First</option>
+                            <option value="date-asc" style="background:#0f172a; color:#f8fafc;">⏳ Discovered: Oldest First</option>
+                            <option value="match-desc" style="background:#0f172a; color:#f8fafc;">🎯 Skill Match: Highest First</option>
+                            <option value="resp-asc" style="background:#0f172a; color:#f8fafc;">⚡ Response Time: Fastest First</option>
+                            <option value="company-asc" style="background:#0f172a; color:#f8fafc;">🔤 Company Name: A → Z</option>
+                            <option value="title-asc" style="background:#0f172a; color:#f8fafc;">💼 Role Title: A → Z</option>
+                        </select>
+                    </div>
+                </div>
+
 
                 <div class="filter-pills">
                     <button class="pill active" onclick="filterPill('all', this)">All Open Schemes ({open_count})</button>
