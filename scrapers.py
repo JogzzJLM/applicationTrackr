@@ -292,13 +292,23 @@ def add_discovered_job(discovered_list, job_id, company, title, location, link, 
     if not validate_job_legitimacy(company, title, link):
         return False
 
-    if not verify_live_page_applyable(link):
-        return False
-
     norm_c = normalize_company(company)
     norm_t = normalize_role(title)
     norm_u = normalize_url(link)
     ats_id = extract_ats_post_id(link)
+
+    # Filter out reported closed jobs strictly
+    closed_map = load_reported_closed_jobs()
+    if (job_id in closed_map) or (norm_u in set(c.get("link") for c in closed_map.values() if c.get("link"))):
+        return False
+
+    for c_job in closed_map.values():
+        if normalize_company(c_job.get("company")) == norm_c and normalize_role(c_job.get("title")) == norm_t:
+            return False
+
+    if not verify_live_page_applyable(link):
+        return False
+
 
     if not source_url:
         source_url = link
@@ -658,7 +668,9 @@ def scrape_trackr_website(seen_jobs, discovered_list, force=False):
                 add_scraper_log(f"  [Trackr API] {season}/{t} HTTP {resp.status_code}")
         except Exception as e:
             err_msg = str(e)
-            if "Missing dependencies for SOCKS support" in err_msg or "InvalidSchema" in err_msg:
+            if "ProxyError" in err_msg or "503" in err_msg or "Tunnel connection failed" in err_msg or "Max retries exceeded" in err_msg:
+                pass # Silent failover retry for proxy pool
+            elif "Missing dependencies for SOCKS support" in err_msg or "InvalidSchema" in err_msg:
                 with _JOB_LOCK:
                     if not socks_missing_logged:
                         add_scraper_log("  [Trackr API Tier 2] PySocks dependency missing for SOCKS proxy. Relying on Direct ATS Auto-Discovery & Cache.")
@@ -873,9 +885,28 @@ def run_all_scrapers():
         all_new_jobs.extend(f_sr.result())
         all_new_jobs.extend(f_trackr.result())
 
+    # Filter out reported closed jobs strictly before saving
+    closed_map = load_reported_closed_jobs()
+    closed_ids = set(closed_map.keys())
+    closed_links = set(c.get("link") for c in closed_map.values() if c.get("link"))
+    closed_pairs = set((normalize_company(c.get("company")), normalize_role(c.get("title"))) for c in closed_map.values())
+
+    clean_discovered = []
+    for j in discovered_list:
+        j_id = j.get("id", "")
+        j_link = j.get("link", "")
+        j_c = normalize_company(j.get("company"))
+        j_t = normalize_role(j.get("title"))
+        if j_id in closed_ids or j_link in closed_links or (j_c, j_t) in closed_pairs:
+            continue
+        clean_discovered.append(j)
+
+    discovered_list = clean_discovered
+
     elapsed = round(time.time() - start_time, 2)
     save_seen_jobs(seen_jobs)
     save_discovered_jobs(discovered_list)
+
 
     SCRAPER_STATUS["last_run"] = time.strftime("%Y-%m-%d %H:%M:%S")
     SCRAPER_STATUS["total_seen_jobs"] = len(seen_jobs)

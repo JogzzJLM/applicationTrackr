@@ -354,5 +354,11 @@
       "Lever (palantir)"
     ],
     "match_score": 84
+  },
+  "test_closed_123": {
+    "id": "test_closed_123",
+    "company": "Dummy Closed Corp",
+    "title": "Closed Software Engineer",
+    "link": "https://jobs.example.com/closed/123"
   }
 }
