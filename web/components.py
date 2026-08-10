@@ -21,14 +21,14 @@ def render_job_card(j, is_reported_closed=False, is_applied=False, is_hidden=Fal
     title_js = title_str.replace("'", "\\'").replace('"', '&quot;')
 
     if is_applied:
-        status_badge = '<span class="ln-badge ln-badge-applied">✅ APPLIED</span>'
-        action_btn = '<span class="ios-btn ios-btn-secondary" style="opacity:0.85; cursor:default;">✓ IN SHEET</span>'
+        status_badge = '<span class="apple-pill pill-applied">✓ Applied & Tracked</span>'
+        action_btn = '<span class="apple-btn apple-btn-secondary disabled">✓ In Sheet</span>'
     elif is_reported_closed:
-        status_badge = '<span class="ln-badge ln-badge-closed">🛑 CLOSED</span>'
-        action_btn = f'<button onclick="reopenJob(\'{j_id}\')" class="ios-btn ios-btn-secondary">🔓 RE-OPEN</button>'
+        status_badge = '<span class="apple-pill pill-closed">🛑 Scheme Closed</span>'
+        action_btn = f'<button onclick="reopenJob(\'{j_id}\')" class="apple-btn apple-btn-secondary">🔓 Re-Open Scheme</button>'
     else:
-        status_badge = '<span class="ln-badge ln-badge-open">⚡ OPEN</span>'
-        action_btn = f'<button onclick="logJob(\'{comp_js}\', \'{title_js}\')" class="ios-btn ios-btn-success" title="Log this application to Google Sheets">+ LOG APPLIED</button>'
+        status_badge = '<span class="apple-pill pill-open">⚡ Active Scheme</span>'
+        action_btn = f'<button onclick="logJob(\'{comp_js}\', \'{title_js}\')" class="apple-btn apple-btn-success" title="Log this application to Google Sheets">+ Log Applied</button>'
 
     t_low = title_str.lower()
     cat = "software"
@@ -40,50 +40,61 @@ def render_job_card(j, is_reported_closed=False, is_applied=False, is_hidden=Fal
         cat = "cyber"
 
     sources_list = j.get("sources", [j.get("source", "Discovered Web")])
-    source_badge_text = " • ".join(sources_list)
+    if len(sources_list) > 1:
+        source_badge_text = "🌐 " + " + ".join(sources_list)
+    else:
+        source_badge_text = f"🌐 {sources_list[0]}"
 
     source_url = j.get('source_url') or link_str
     display_url = source_url.replace("https://", "").replace("http://", "").replace("www.", "").rstrip("/")
-    if len(display_url) > 38:
-        display_url = display_url[:35] + "..."
+    if len(display_url) > 42:
+        display_url = display_url[:39] + "..."
 
     link_js = link_str.replace("'", "\\'").replace('"', '&quot;')
     resp_days_val = float(str(avg_resp).split('-')[0]) if '-' in str(avg_resp) else (float(avg_resp) if str(avg_resp).replace('.','',1).isdigit() else 3.0)
-    report_btn_html = f'<button onclick="reportClosedJob(\'{j_id}\', \'{link_js}\')" class="ios-btn ios-btn-danger" title="Report closed to train AI filter">🚩 REPORT CLOSED</button>' if not is_reported_closed else ''
+    report_btn_html = f'<button onclick="reportClosedJob(\'{j_id}\', \'{link_js}\')" class="apple-btn apple-btn-danger" title="Report this job as closed/filled to train the AI filter">🚩 Report Closed</button>' if not is_reported_closed else ''
 
-    # Highlight LN yellow for high skill match (>= 80)
-    match_cls = "ln-match-high" if match_score >= 80 else "ln-match-norm"
+    # Compute company initials for Apple-style avatar icon
+    comp_parts = [p for p in comp_str.split() if p.isalnum() or p.isalpha()]
+    initials = (comp_parts[0][0] + comp_parts[1][0]).upper() if len(comp_parts) >= 2 else comp_str[:2].upper()
+
+    # Dynamic Progress Bar Color based on match score
+    progress_color = "#34c759" if match_score >= 80 else ("#0071e3" if match_score >= 60 else "#ff9500")
 
     return f"""
     <div class="job-card" data-search="{comp_str.lower()} {title_str.lower()} {loc_str.lower()} {status_tag} {cat} {source_badge_text.lower()}" data-status="{status_tag}" data-cat="{cat}" data-date="{date_str}" data-match="{match_score}" data-resp="{resp_days_val}" data-company="{comp_str.lower()}" data-title="{title_str.lower()}">
-        <div class="job-card-header">
-            <div class="company-badge-wrap">
-                <span class="company">{comp_str}</span>
-                {status_badge}
+        <div class="job-header">
+            <div class="company-avatar-row">
+                <div class="company-avatar">{initials}</div>
+                <div>
+                    <div class="company">{comp_str}</div>
+                    <div class="job-meta-inline">📍 {loc_str} &bull; 🕒 {date_str}</div>
+                </div>
             </div>
-            <span class="ln-source-tag">⚡ {source_badge_text}</span>
+            {status_badge}
         </div>
 
         <div class="job-title">{title_str}</div>
 
-        <div class="telemetry-bar">
-            <span class="ln-match-badge {match_cls}">🎯 {match_score}% MATCH</span>
-            <span class="telemetry-item">📍 {loc_str}</span>
-            <span class="telemetry-item">⏱️ {avg_resp}d RESP</span>
-        </div>
-
-        <div class="job-meta-row">
-            <span>🕒 DISCOVERED: <b>{date_str}</b></span>
+        <!-- Telemetry Match Score Bar -->
+        <div class="telemetry-bar-container">
+            <div class="telemetry-label-row">
+                <span class="telemetry-label">Skill Match Score</span>
+                <span class="telemetry-score" style="color:{progress_color};">{match_score}%</span>
+            </div>
+                <div class="telemetry-bar-track">
+                <div class="telemetry-bar-fill" style="width: {match_score}%; background: {progress_color};"></div>
+            </div>
         </div>
 
         <div class="job-source-info">
-            <span style="color:var(--text-muted);">SOURCE EGRESS:</span> <a href="{source_url}" target="_blank" class="source-link">{display_url} ↗</a>
+            <span style="color:var(--apple-text-tertiary);">Source Egress:</span> <a href="{source_url}" target="_blank" class="source-link">{display_url} ↗</a>
         </div>
 
         <div class="job-actions">
-            <a href="{link_str}" target="_blank" rel="noopener noreferrer" class="ios-btn ios-btn-primary">APPLY DIRECT ↗</a>
+            <a href="{link_str}" target="_blank" rel="noopener noreferrer" class="apple-btn apple-btn-primary">Apply Direct ↗</a>
             {action_btn}
-            <a href="/api/calendar.ics?summary={urllib.parse.quote('Apply: ' + comp_str + ' - ' + title_str)}&desc={urllib.parse.quote('Job Link: ' + link_str)}" class="ios-btn ios-btn-secondary" title="Add application deadline to Apple Calendar">📅 CALENDAR</a>
+            <a href="/api/calendar.ics?summary={urllib.parse.quote('Apply: ' + comp_str + ' - ' + title_str)}&desc={urllib.parse.quote('Job Link: ' + link_str)}" class="apple-btn apple-btn-secondary" title="Add application deadline to Apple Calendar">📅 Cal</a>
             {report_btn_html}
         </div>
     </div>
