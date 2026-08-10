@@ -1067,13 +1067,14 @@ def render_unified_dashboard_html(active_tab="flow"):
                     .then(d => {{
                         let popupMsg = d.message || "Feedback recorded! Filter knowledge base updated.";
                         if (d.learned && d.learned.length > 0) {{
-                            popupMsg += "\n\n🧠 New Phrase Patterns Added to Knowledge Base (closed_keywords_kb.json):\n" + d.learned.map(p => "  • \"" + p + "\"").join("\n");
+                            popupMsg += "\\n\\n🧠 New Phrase Patterns Added to Knowledge Base (closed_keywords_kb.json):\\n" + d.learned.map(p => "  • \\"" + p + "\\"").join("\\n");
                         }}
                         alert(popupMsg);
                         location.reload();
                     }});
             }}
         }}
+
 
 
 
