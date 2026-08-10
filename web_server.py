@@ -22,7 +22,7 @@ from sheets import (
 )
 from scrapers import (
     run_all_scrapers, load_discovered_jobs, purge_expired_jobs,
-    calculate_skill_match_score, recheck_all_open_jobs_against_closure_kb
+    calculate_skill_match_score, recheck_existing_open_jobs_for_closure
 )
 
 from scheduler import trigger_daily_briefing, trigger_weekly_report
@@ -1268,12 +1268,14 @@ def render_unified_dashboard_html(active_tab="flow"):
             <div class="content-card">
                 <div class="card-header">
                     <div class="card-title">🛠 System Diagnostics & Triggers</div>
-                    <div style="display:flex; gap:10px;">
+                    <div style="display:flex; gap:10px; flex-wrap:wrap;">
                         <button onclick="unhideAll()" class="btn btn-danger" style="background:#ef4444; color:white;">🔄 Restore Hidden Jobs ({hidden_count})</button>
+                        <button onclick="triggerTestEndpoint('/api/recheck-open-schemes', 'Closure Audit on Open Schemes')" class="btn btn-warning" style="background:#f59e0b; color:white;">🧹 Audit Open Schemes for Closure</button>
                         <button onclick="triggerTestEndpoint('/test-briefing', 'Daily Briefing')" class="btn btn-primary">🔔 Test Briefing</button>
                         <button onclick="triggerTestEndpoint('/test-weekly', 'Weekly Report')" class="btn btn-auto">📈 Test Weekly</button>
                         <button onclick="triggerTestEndpoint('/test-scraper', 'Manual Scraper')" class="btn btn-success">⚡ Test Scraper</button>
                     </div>
+
                 </div>
                 <p style="color:var(--text-muted); font-size:14px; margin-bottom:16px;">Live Scraper & System Status Output (`/status` JSON):</p>
                 <pre class="code-block">{status_json_formatted}</pre>
@@ -1607,24 +1609,33 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             else:
                 msg = f"Reported '{job_title}' as closed. Moved to Closed Schemes & filter knowledge base updated."
 
-            # 4. Trigger asynchronous background re-evaluation sweep across ALL remaining open schemes!
-            threading.Thread(target=recheck_all_open_jobs_against_closure_kb, daemon=True).start()
-
-            # 5. Push confirmation alert
+            # 4. Push confirmation alert
             send_notification(
-                title="AI Self-Learning Sweep Initiated",
-                message=f"{msg} Automatically checking all open schemes...",
+                title="AI Self-Learning KB Updated",
+                message=msg,
                 link=f"http://100.75.135.73:5000/jobs",
                 tags="brain,target",
                 priority=3,
                 sound="chime"
             )
 
+            # 5. Launch asynchronous background cascade re-check for all existing open schemes
+            threading.Thread(target=recheck_existing_open_jobs_for_closure, daemon=True).start()
+
             self.send_response(200)
             self.send_cors_headers()
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps({"status": "success", "message": msg, "learned": learned_phrases}).encode("utf-8"))
+            return
+
+        elif clean_path == "/api/recheck-open-schemes":
+            threading.Thread(target=recheck_existing_open_jobs_for_closure, daemon=True).start()
+            self.send_response(200)
+            self.send_cors_headers()
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "started", "message": "Cascade Closure Audit on existing open schemes initiated"}).encode("utf-8"))
             return
 
 

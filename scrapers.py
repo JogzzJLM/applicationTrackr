@@ -175,6 +175,7 @@ from config import (
 )
 
 def verify_live_page_applyable(url):
+
     """Fetches the live application webpage and verifies whether the job is currently open & apply-able."""
     if not url or not isinstance(url, str) or not url.startswith("http"):
         return False
@@ -202,40 +203,6 @@ def verify_live_page_applyable(url):
     except Exception:
         # If timeout or connection issue, permit to avoid false negatives
         return True
-
-def recheck_all_open_jobs_against_closure_kb():
-    """Sweeps all currently open jobs against the updated self-learning closure knowledge base."""
-    add_scraper_log("🧠 Triggering Self-Learning Knowledge Base Sweep across all open schemes...")
-    discovered = load_discovered_jobs()
-    closed_map = load_reported_closed_jobs()
-
-    newly_closed = []
-
-    def check_job(job):
-        link = job.get("link", "")
-        if link and link.startswith("http"):
-            if not verify_live_page_applyable(link):
-                return job
-        return None
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
-        results = executor.map(check_job, discovered)
-        for res in results:
-            if res:
-                j_id = res.get("id")
-                if j_id and j_id not in closed_map:
-                    closed_map[j_id] = res
-                    newly_closed.append(res)
-                    add_scraper_log(f"  [AI Self-Learning Sweep] 🛑 Auto-flagged newly closed scheme: {res.get('company')} - {res.get('title')}")
-
-    if newly_closed:
-        save_reported_closed_jobs(closed_map)
-        add_scraper_log(f"🧠 Self-Learning Sweep Complete: Automatically identified & moved {len(newly_closed)} newly closed schemes to Diagnostics!")
-    else:
-        add_scraper_log("🧠 Self-Learning Sweep Complete: All remaining open schemes verified active.")
-
-    return len(newly_closed)
-
 
 def validate_job_legitimacy(company, title, link):
     """Multi-stage pre-ingestion legitimacy check to verify a job before adding to index."""
@@ -785,6 +752,67 @@ def purge_expired_jobs():
     save_discovered_jobs(valid_jobs)
     add_scraper_log(f"🧹 Purge Complete: Checked {initial_count} schemes, removed {purged_count} dead/closed listings.")
     return purged_count
+
+def recheck_existing_open_jobs_for_closure():
+    """
+    Cascade Re-Evaluation Task:
+    Iterates through all existing open schemes in discovered_jobs.json, fetches their live webpages,
+    and checks if any match newly learned closure patterns. If closed, automatically moves them to reported_closed_jobs.json.
+    """
+    add_scraper_log("🔄 Starting Cascade Closure Audit on all existing open schemes...")
+    discovered = load_discovered_jobs()
+    closed_map = load_reported_closed_jobs()
+    
+    closed_links = set(c.get("link") for c in closed_map.values() if c.get("link"))
+    closed_ids = set(closed_map.keys())
+    
+    existing_open = [j for j in discovered if j.get("id") not in closed_ids and j.get("link") not in closed_links]
+    
+    if not existing_open:
+        add_scraper_log("  [Closure Audit] No open schemes to recheck.")
+        return 0
+
+    add_scraper_log(f"  [Closure Audit] Re-evaluating {len(existing_open)} active open schemes against updated Knowledge Base...")
+    
+    newly_detected_closed = []
+    
+    def evaluate_open_job(job):
+        link = job.get("link", "")
+        if not link or not link.startswith("http"):
+            return None
+        if not verify_live_page_applyable(link):
+            return job
+        return None
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+        results = executor.map(evaluate_open_job, existing_open)
+        for res in results:
+            if res:
+                newly_detected_closed.append(res)
+
+    if newly_detected_closed:
+        with _JOB_LOCK:
+            closed_map = load_reported_closed_jobs()
+            for c_job in newly_detected_closed:
+                j_id = c_job.get("id", f"job_{time.time()}")
+                closed_map[j_id] = c_job
+                add_scraper_log(f"  [Closure Audit] 🛑 Auto-Moved to Closed Directory: {c_job.get('company')} - {c_job.get('title')}")
+            save_reported_closed_jobs(closed_map)
+
+        send_notification(
+            title=f"Closure Audit: {len(newly_detected_closed)} Schemes Moved to Closed",
+            message=f"Re-evaluated {len(existing_open)} open schemes against updated AI patterns. Automatically moved {len(newly_detected_closed)} newly closed schemes to Closed Directory.",
+            link="http://100.75.135.73:5000/status",
+            tags="broom,brain",
+            priority=3,
+            sound="chime"
+        )
+        add_scraper_log(f"✅ Cascade Closure Audit complete! Automatically moved {len(newly_detected_closed)} newly closed schemes to Closed Directory.")
+    else:
+        add_scraper_log(f"✅ Cascade Closure Audit complete! All {len(existing_open)} open schemes confirmed 100% active & apply-able.")
+
+    return len(newly_detected_closed)
+
 
 
 def run_all_scrapers():
