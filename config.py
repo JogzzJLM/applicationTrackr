@@ -73,22 +73,26 @@ DEFAULT_CLOSED_PHRASES = [
 
 def extract_generic_closure_phrases(html, company_name="", title_name=""):
     """
-    Strips company names, dates, numbers, and noise from target webpage HTML,
-    extracting clean generic 3-5 word closure phrases to train the knowledge base.
+    Truly Universal Zero-Shot Closure Extractor:
+    1. Extracts clauses matching known trigger words (if present).
+    2. Zero-Shot Fallback: Parses text clauses from headings, status banners, alerts, and notice elements.
+    3. Strips company names, role titles, dates, locations, and common web boilerplate noise.
     """
     if not html or not isinstance(html, str):
         return []
     text = re.sub(r'<[^>]+>', ' ', html).lower()
     text = ' '.join(text.split())
 
-    noise_items = [company_name.lower(), title_name.lower(), '2024', '2025', '2026', '2027', '2028', 'uk', 'london']
+    noise_items = [company_name.lower(), title_name.lower(), '2024', '2025', '2026', '2027', '2028', 'uk', 'london', 'privacy', 'policy', 'rights', 'reserved', 'copyright', 'cookie', 'cookies', 'terms', 'conditions', 'contact', 'home']
     closure_triggers = [
         'closed', 'filled', 'no longer', 'expired', 'paused', 'unavailable',
         'ended', 'completed', 'exist', 'does not exist', 'doesn\'t exist',
-        'not found', 'removed', 'inactive', 'cannot be found'
+        'not found', 'removed', 'inactive', 'cannot be found', 'archived',
+        'deactivated', 'concluded', 'finished', 'passed', 'full'
     ]
 
     extracted = []
+    # Strategy A: Clause Extraction via Triggers
     clauses = re.split(r'[\.\!\?\,\;\:]+', text)
     for clause in clauses:
         clause_str = clause.strip()
@@ -101,7 +105,21 @@ def extract_generic_closure_phrases(html, company_name="", title_name=""):
                     sub = ' '.join(words[start:end])
                     if len(sub) > 6 and not any(nw and len(nw) > 3 and nw in sub for nw in noise_items):
                         extracted.append(sub)
+
+    # Strategy B: Zero-Shot Heading & Banner Extraction (Handles completely novel wording)
+    banner_matches = re.findall(r'<(h[1-4]|div|p|span)[^>]*?(?:class|id|role)=["\'][^"\']*?(?:alert|banner|notice|status|error|message|closed|hero|title|heading)[^"\']*?>(.*?)</\1>', html, re.IGNORECASE | re.DOTALL)
+    for _, banner_html in banner_matches:
+        banner_text = re.sub(r'<[^>]+>', ' ', banner_html).lower()
+        banner_clean = ' '.join(banner_text.split())
+        for sub_clause in re.split(r'[\.\!\?\,\;\:]+', banner_clean):
+            words = sub_clause.strip().split()
+            if 3 <= len(words) <= 7:
+                sub = ' '.join(words)
+                if len(sub) > 8 and not any(nw and len(nw) > 3 and nw in sub for nw in noise_items):
+                    extracted.append(sub)
+
     return list(set(extracted))
+
 
 
 def load_closed_keywords_kb():
