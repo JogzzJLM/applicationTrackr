@@ -175,9 +175,12 @@ def render_unified_dashboard_html(active_tab="flow"):
     visible_jobs = ordered_merged_jobs
 
     open_count = len([j for j in visible_jobs if j.get('id') not in closed_ids and j.get('link') not in closed_links])
+    discovered_count = open_count
 
     # Job Cards HTML
     cards_html = ""
+    closed_cards_html = ""
+
     for j in visible_jobs:
         j_id = j.get('id', '')
         j_link = j.get('link', '')
@@ -255,7 +258,9 @@ def render_unified_dashboard_html(active_tab="flow"):
 
         link_js = j.get('link', '').replace("'", "\\'").replace('"', '&quot;')
 
-        cards_html += f"""
+        report_btn_html = f'<button onclick="reportClosedJob(\'{j_id}\', \'{link_js}\')" class="ios-btn ios-btn-danger" style="font-size:12px;" title="Report this job as closed/filled to train the AI filter">🚩 Report Closed</button>' if not is_reported_closed else ''
+
+        card_markup = f"""
         <div class="job-card" data-search="{j['company'].lower()} {j['title'].lower()} {j['location'].lower()} {status_tag} {cat} {source_badge_text.lower()}" data-status="{status_tag}" data-cat="{cat}">
             <div class="job-header">
                 <div>
@@ -274,10 +279,19 @@ def render_unified_dashboard_html(active_tab="flow"):
                 <a href="{j['link']}" target="_blank" rel="noopener noreferrer" class="ios-btn ios-btn-primary">Apply Direct ↗</a>
                 {action_btn}
                 <a href="/api/calendar.ics?summary={urllib.parse.quote('Apply: ' + j['company'] + ' - ' + j['title'])}&desc={urllib.parse.quote('Job Link: ' + j['link'])}" class="ios-btn ios-btn-secondary" style="font-size:12px;" title="Add application deadline to Apple Calendar">📅 Apple Cal</a>
-                <button onclick="reportClosedJob('{j_id}', '{link_js}')" class="ios-btn ios-btn-danger" style="font-size:12px;" title="Report this job as closed/filled to train the AI filter">🚩 Report Closed</button>
+                {report_btn_html}
             </div>
         </div>
         """
+
+        if is_reported_closed:
+            closed_cards_html += card_markup
+        else:
+            cards_html += card_markup
+
+    if not closed_cards_html:
+        closed_cards_html = '<div class="empty-msg" style="color:var(--text-muted); background:rgba(15,23,42,0.4); padding:20px; border-radius:12px; text-align:center;">No schemes reported as closed yet.</div>'
+
 
 
 
@@ -1204,7 +1218,6 @@ def render_unified_dashboard_html(active_tab="flow"):
                     <button class="pill" onclick="filterPill('quant', this)">📈 Quant / Trading ({quant_count})</button>
                     <button class="pill" onclick="filterPill('ml', this)">🧠 ML / AI ({ml_count})</button>
                     <button class="pill" onclick="filterPill('cyber', this)">🔒 Cyber / Cloud ({cyber_count})</button>
-                    <button class="pill" onclick="filterPill('closed', this)" style="border-color:#ef4444; color:#f87171;">🚫 Closed Schemes ({closed_count})</button>
                 </div>
 
                 <div id="job-list">
@@ -1264,6 +1277,16 @@ def render_unified_dashboard_html(active_tab="flow"):
 
             <div class="content-card" style="margin-top:24px;">
                 <div class="card-header">
+                    <div class="card-title">🚫 Reported Closed & Inactive Schemes Directory ({closed_count})</div>
+                </div>
+                <p style="color:var(--text-muted); font-size:14px; margin-bottom:16px;">Positions you reported as closed. Click "Re-Open Scheme" to restore back to active directory anytime.</p>
+                <div class="job-list">
+                    {closed_cards_html}
+                </div>
+            </div>
+
+            <div class="content-card" style="margin-top:24px;">
+                <div class="card-header">
                     <div class="card-title">📜 Live Engine Console Logs (`docker logs -f applicationtrackr`)</div>
                     <button onclick="refreshLiveLogs()" class="btn btn-header">🔄 Refresh Logs</button>
                 </div>
@@ -1272,6 +1295,7 @@ def render_unified_dashboard_html(active_tab="flow"):
                 </div>
             </div>
         </div>
+
 
 
     </div>

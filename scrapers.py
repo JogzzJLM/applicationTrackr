@@ -251,11 +251,10 @@ def calculate_skill_match_score(title, company, location, skills_list=None):
 
 def add_discovered_job(discovered_list, job_id, company, title, location, link, source, source_url=None):
     if not validate_job_legitimacy(company, title, link):
-        return
+        return False
 
     if not verify_live_page_applyable(link):
-        return
-
+        return False
 
     norm_c = normalize_company(company)
     norm_t = normalize_role(title)
@@ -292,7 +291,7 @@ def add_discovered_job(discovered_list, job_id, company, title, location, link, 
                     item["link"] = link
                     item["source_url"] = source_url
                 item["match_score"] = score
-                return
+                return False
 
         entry = {
             "id": job_id,
@@ -307,6 +306,8 @@ def add_discovered_job(discovered_list, job_id, company, title, location, link, 
             "date_found": time.strftime("%Y-%m-%d %H:%M")
         }
         discovered_list.insert(0, entry)
+        return True
+
 
 
 
@@ -603,13 +604,14 @@ def scrape_trackr_website(seen_jobs, discovered_list, force=False):
                                 if is_relevant_role(full_title, "UK", company):
                                     trackr_source_name = f"Trackr UK Tech ({season})"
                                     trackr_source_url = "https://app.the-trackr.com"
-                                    add_discovered_job(discovered_list, job_id, company, role, "UK", link, trackr_source_name, trackr_source_url)
+                                    is_new = add_discovered_job(discovered_list, job_id, company, role, "UK", link, trackr_source_name, trackr_source_url)
 
                                     with _JOB_LOCK:
                                         relevant_found += 1
-                                        if job_id not in seen_jobs:
+                                        if is_new and job_id not in seen_jobs:
                                             seen_jobs.add(job_id)
                                             local_new.append((full_title, "UK", link))
+
 
                 except Exception:
                     pass
@@ -782,12 +784,12 @@ def run_all_scrapers():
 
     add_scraper_log(f"📊 Parallel Scraper Run Complete in {elapsed}s: {len(discovered_list)} total active schemes indexed ({len(all_new_jobs)} new alerts sent).")
 
-    if all_new_jobs:
-        if len(all_new_jobs) > 5:
+    if all_new_jobs and len(all_new_jobs) <= 10:
+        if len(all_new_jobs) > 3:
             summary = "\n".join([f"• {t[0]}" for t in all_new_jobs[:3]])
             send_notification(
-                title=f"{len(all_new_jobs)} New Roles Discovered!",
-                message=f"Latest roles found:\n{summary}\n...\nTap to view all listings.",
+                title=f"{len(all_new_jobs)} New Active Schemes Discovered!",
+                message=f"Latest roles found:\n{summary}\nTap to view all listings.",
                 link=f"http://100.75.135.73:5000/jobs",
                 tags="sparkles,uk",
                 priority=4,
