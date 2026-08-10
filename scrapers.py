@@ -170,7 +170,8 @@ from config import (
     SEEN_JOBS_FILE, DISCOVERED_JOBS_FILE, SCRAPER_STATUS,
     GREENHOUSE_COMPANIES, LEVER_COMPANIES, ASHBY_COMPANIES,
     SMARTRECRUITERS_COMPANIES, load_settings, normalize_company, normalize_role,
-    normalize_url, extract_ats_post_id, load_closed_keywords_kb, save_closed_keywords_kb
+    normalize_url, extract_ats_post_id, load_closed_keywords_kb, save_closed_keywords_kb,
+    load_reported_closed_jobs, save_reported_closed_jobs
 )
 
 def verify_live_page_applyable(url):
@@ -201,6 +202,40 @@ def verify_live_page_applyable(url):
     except Exception:
         # If timeout or connection issue, permit to avoid false negatives
         return True
+
+def recheck_all_open_jobs_against_closure_kb():
+    """Sweeps all currently open jobs against the updated self-learning closure knowledge base."""
+    add_scraper_log("🧠 Triggering Self-Learning Knowledge Base Sweep across all open schemes...")
+    discovered = load_discovered_jobs()
+    closed_map = load_reported_closed_jobs()
+
+    newly_closed = []
+
+    def check_job(job):
+        link = job.get("link", "")
+        if link and link.startswith("http"):
+            if not verify_live_page_applyable(link):
+                return job
+        return None
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+        results = executor.map(check_job, discovered)
+        for res in results:
+            if res:
+                j_id = res.get("id")
+                if j_id and j_id not in closed_map:
+                    closed_map[j_id] = res
+                    newly_closed.append(res)
+                    add_scraper_log(f"  [AI Self-Learning Sweep] 🛑 Auto-flagged newly closed scheme: {res.get('company')} - {res.get('title')}")
+
+    if newly_closed:
+        save_reported_closed_jobs(closed_map)
+        add_scraper_log(f"🧠 Self-Learning Sweep Complete: Automatically identified & moved {len(newly_closed)} newly closed schemes to Diagnostics!")
+    else:
+        add_scraper_log("🧠 Self-Learning Sweep Complete: All remaining open schemes verified active.")
+
+    return len(newly_closed)
+
 
 def validate_job_legitimacy(company, title, link):
     """Multi-stage pre-ingestion legitimacy check to verify a job before adding to index."""

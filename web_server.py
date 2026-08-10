@@ -20,7 +20,11 @@ from sheets import (
     generate_default_sankey, get_applied_jobs_set, parse_sheet_stats,
     get_detailed_applications, calculate_company_response_stats
 )
-from scrapers import run_all_scrapers, load_discovered_jobs, purge_expired_jobs, calculate_skill_match_score
+from scrapers import (
+    run_all_scrapers, load_discovered_jobs, purge_expired_jobs,
+    calculate_skill_match_score, recheck_all_open_jobs_against_closure_kb
+)
+
 from scheduler import trigger_daily_briefing, trigger_weekly_report
 
 
@@ -1603,10 +1607,13 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             else:
                 msg = f"Reported '{job_title}' as closed. Moved to Closed Schemes & filter knowledge base updated."
 
-            # 4. Push confirmation alert
+            # 4. Trigger asynchronous background re-evaluation sweep across ALL remaining open schemes!
+            threading.Thread(target=recheck_all_open_jobs_against_closure_kb, daemon=True).start()
+
+            # 5. Push confirmation alert
             send_notification(
-                title="AI Self-Learning KB Updated",
-                message=msg,
+                title="AI Self-Learning Sweep Initiated",
+                message=f"{msg} Automatically checking all open schemes...",
                 link=f"http://100.75.135.73:5000/jobs",
                 tags="brain,target",
                 priority=3,
@@ -1619,6 +1626,7 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({"status": "success", "message": msg, "learned": learned_phrases}).encode("utf-8"))
             return
+
 
         elif clean_path == "/api/reopen-closed":
             params = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
