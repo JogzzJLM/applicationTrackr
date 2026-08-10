@@ -81,23 +81,23 @@ def render_unified_dashboard_html(active_tab="flow"):
         for a in apps:
             st = a.get("status_type", "active")
             if st == "offer":
-                badge_cls = "badge-offer"
+                badge_cls = "ln-badge ln-badge-applied"
             elif st == "rejected":
-                badge_cls = "badge-rejected"
+                badge_cls = "ln-badge ln-badge-closed"
             elif st == "ghosted":
-                badge_cls = "badge-ghosted"
+                badge_cls = "ln-badge ln-badge-closed"
             else:
-                badge_cls = "badge-active"
+                badge_cls = "ln-badge ln-badge-open"
 
             pipeline_str = " &rarr; ".join(a.get("stages", [])) if a.get("stages") else a.get("latest_stage", "Applied")
 
             apps_table_rows += f"""
             <tr>
-                <td style="font-weight:700; color:#1c1c1e;">{a['company']}</td>
-                <td style="color:#3a3a3c;">{a['role']}</td>
-                <td><span class="badge {badge_cls}">{a['latest_stage']}</span></td>
-                <td style="color:#6c6c70; font-size:13px;">{pipeline_str}</td>
-                <td><span class="badge {badge_cls}">{a['status']}</span></td>
+                <td style="font-weight:800; color:var(--apple-text-main);">{a['company']}</td>
+                <td style="color:#3a3a3c; font-weight:600;">{a['role']}</td>
+                <td><span class="{badge_cls}">{a['latest_stage']}</span></td>
+                <td style="color:var(--apple-text-sub); font-size:12px; font-weight:600;">{pipeline_str}</td>
+                <td><span class="{badge_cls}">{a['status']}</span></td>
             </tr>
             """
 
@@ -115,7 +115,7 @@ def render_unified_dashboard_html(active_tab="flow"):
 
     kb_phrases = load_closed_keywords_kb()
     kb_count = len(kb_phrases)
-    kb_badges_html = " ".join([f'<span class="badge badge-kb">{p}</span>' for p in kb_phrases])
+    kb_badges_html = " ".join([f'<span class="kb-tag">{p}</span>' for p in kb_phrases])
 
     resp_stats = calculate_company_response_stats()
 
@@ -221,183 +221,225 @@ def render_unified_dashboard_html(active_tab="flow"):
 
     src_status_html = ""
     for s_name, s_msg in SCRAPER_STATUS.get("source_status", {}).items():
-        src_status_html += f'<div style="padding:6px 0; border-bottom:0.5px solid var(--ios-border);"><b>{s_name}:</b> <span style="color:var(--ios-green); font-weight:600;">{s_msg}</span></div>'
+        src_status_html += f'<div style="padding:8px 0; border-bottom:0.5px solid var(--apple-border);"><b>{s_name}:</b> <span style="color:var(--apple-blue); font-weight:700;">{s_msg}</span></div>'
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>⚡ ApplicationTrackr - Command Center</title>
+    <title>ApplicationTrackr // LN4 Telemetry Command Center</title>
+
+    <!-- Embedded High-Performance Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700;800&display=swap" rel="stylesheet">
+
     <style>
         :root {{
-            --ios-bg: #f2f2f7;
-            --ios-card: #ffffff;
-            --ios-border: rgba(0, 0, 0, 0.08);
-            --ios-blue: #007aff;
-            --ios-green: #34c759;
-            --ios-orange: #ff9500;
-            --ios-red: #ff3b30;
-            --ios-purple: #af52de;
-            --ios-indigo: #5856d6;
-            --ios-text-primary: #1c1c1e;
-            --ios-text-secondary: #6c6c70;
-            --font-main: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            --font-sans: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+            --font-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
+            
+            --ln-yellow: #dfff00;
+            --ln-yellow-dark: #000000;
+            --apple-bg: #f4f4f7;
+            --apple-card: #ffffff;
+            --apple-border: rgba(0, 0, 0, 0.07);
+            --apple-border-strong: rgba(0, 0, 0, 0.12);
+            --apple-text-main: #1d1d1f;
+            --apple-text-sub: #6e6e73;
+            --apple-blue: #007aff;
+            --apple-green: #34c759;
+            --apple-orange: #ff9500;
+            --apple-red: #ff3b30;
+            --apple-purple: #af52de;
+            --apple-indigo: #5856d6;
         }}
 
-        * {{ margin:0; padding:0; box-sizing:border-box; font-family: var(--font-main); -webkit-tap-highlight-color: transparent; }}
-        body {{ background: var(--ios-bg); color: var(--ios-text-primary); padding: 16px; min-height: 100vh; font-size: 14px; -webkit-font-smoothing: antialiased; }}
+        * {{ margin:0; padding:0; box-sizing:border-box; font-family: var(--font-sans) !important; -webkit-tap-highlight-color: transparent; }}
+        body {{
+            background: var(--apple-bg); color: var(--apple-text-main);
+            padding: 16px; min-height: 100vh; font-size: 14px; -webkit-font-smoothing: antialiased;
+            background-image: radial-gradient(circle at 50% 0%, rgba(223, 255, 0, 0.05) 0%, transparent 60%);
+        }}
 
-        .container {{ max-width: 1240px; margin: 0 auto; }}
+        .container {{ max-width: 1280px; margin: 0 auto; }}
 
-        /* Apple Header Bar */
+        /* LN4 Telemetry Strip */
+        .ln-telemetry-strip {{
+            display: flex; justify-content: space-between; align-items: center;
+            background: #18181b; color: #ffffff; padding: 8px 18px; border-radius: 12px;
+            margin-bottom: 16px; font-size: 11px; font-weight: 700; letter-spacing: 0.5px;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.12); flex-wrap: wrap; gap: 8px;
+        }}
+        .ln-badge-yellow {{ background: var(--ln-yellow); color: #000000; padding: 3px 8px; border-radius: 6px; font-weight: 900; text-transform: uppercase; }}
+
+        /* Apple Glass Header */
         .header {{
             display: flex; justify-content: space-between; align-items: center;
-            padding: 16px 22px; background: var(--ios-card); border-radius: 18px;
-            border: 0.5px solid var(--ios-border); margin-bottom: 20px;
+            padding: 18px 24px; background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(25px) saturate(180%);
+            border-radius: 20px; border: 0.5px solid var(--apple-border-strong); margin-bottom: 20px;
             box-shadow: 0 4px 20px rgba(0,0,0,0.03); flex-wrap: wrap; gap: 14px;
         }}
 
-        .brand {{ display: flex; align-items: center; gap: 12px; }}
-        .brand-icon {{ font-size: 26px; }}
-        .brand-title {{ font-size: 20px; font-weight: 800; color: var(--ios-text-primary); letter-spacing: -0.5px; }}
-        .brand-sub {{ font-size: 12px; color: var(--ios-text-secondary); margin-top: 1px; font-weight: 500; }}
+        .brand {{ display: flex; align-items: center; gap: 14px; }}
+        .brand-logo {{
+            width: 44px; height: 44px; background: #000000; color: var(--ln-yellow);
+            border-radius: 12px; display: flex; align-items: center; justify-content: center;
+            font-size: 20px; font-weight: 900; font-family: var(--font-mono) !important;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }}
+
+        .brand-title {{ font-size: 22px; font-weight: 900; color: var(--apple-text-main); letter-spacing: -0.6px; }}
+        .brand-sub {{ font-size: 12px; color: var(--apple-text-sub); font-weight: 600; margin-top: 1px; }}
 
         .status-pill {{
             display: inline-flex; align-items: center; gap: 6px;
-            padding: 6px 12px; background: rgba(52,199,89,0.12); color: #278a3c;
-            border: 0.5px solid rgba(52,199,89,0.25); border-radius: 20px;
-            font-size: 12px; font-weight: 700;
+            padding: 6px 14px; background: rgba(52,199,89,0.12); color: #278a3c;
+            border: 0.5px solid rgba(52,199,89,0.3); border-radius: 20px;
+            font-size: 12px; font-weight: 800;
         }}
 
-        /* Apple Metrics Row */
+        /* Racing Telemetry Stat Cards */
         .stats-grid {{
             display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
             gap: 12px; margin-bottom: 20px;
         }}
 
         .stat-card {{
-            background: var(--ios-card); border: 0.5px solid var(--ios-border);
-            border-radius: 16px; padding: 16px; box-shadow: 0 2px 10px rgba(0,0,0,0.02);
-            transition: transform 0.15s ease;
+            background: var(--apple-card); border: 0.5px solid var(--apple-border);
+            border-radius: 18px; padding: 18px; box-shadow: 0 2px 10px rgba(0,0,0,0.02);
+            position: relative; overflow: hidden; transition: transform 0.15s ease, box-shadow 0.15s ease;
         }}
-        .stat-card:hover {{ transform: translateY(-1px); }}
+        .stat-card:hover {{ transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.05); }}
+        .stat-card::before {{ content:''; position:absolute; top:0; left:0; right:0; height:3px; background: var(--apple-border); }}
+        .stat-card.accent-yellow::before {{ background: var(--ln-yellow); }}
+        .stat-card.accent-blue::before {{ background: var(--apple-blue); }}
+        .stat-card.accent-green::before {{ background: var(--apple-green); }}
+        .stat-card.accent-red::before {{ background: var(--apple-red); }}
+        .stat-card.accent-purple::before {{ background: var(--apple-purple); }}
 
-        .stat-val {{ font-size: 24px; font-weight: 800; color: var(--ios-text-primary); margin-top: 4px; }}
-        .stat-lbl {{ font-size: 11px; color: var(--ios-text-secondary); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }}
+        .stat-val {{ font-size: 26px; font-weight: 900; color: var(--apple-text-main); margin-top: 4px; letter-spacing: -0.5px; }}
+        .stat-lbl {{ font-size: 10px; color: var(--apple-text-sub); font-weight: 800; text-transform: uppercase; letter-spacing: 0.8px; }}
 
-        /* Apple Segmented Nav Tabs */
+        /* Segmented Apple Nav Tabs */
         .nav-tabs {{
             display: flex; gap: 6px; background: rgba(229, 229, 234, 0.7);
-            padding: 4px; border-radius: 14px; margin-bottom: 20px; overflow-x: auto;
+            padding: 4px; border-radius: 16px; margin-bottom: 20px; overflow-x: auto;
         }}
 
         .tab-btn {{
-            flex: 1; padding: 10px 16px; background: transparent; border: none;
-            color: var(--ios-text-secondary); font-size: 13px; font-weight: 700;
-            cursor: pointer; border-radius: 10px; transition: all 0.2s ease; whitespace: nowrap; text-align: center;
+            flex: 1; padding: 12px 18px; background: transparent; border: none;
+            color: var(--apple-text-sub); font-size: 13px; font-weight: 800;
+            cursor: pointer; border-radius: 12px; transition: all 0.2s ease; whitespace: nowrap; text-align: center;
         }}
 
         .tab-btn.active {{
-            background: var(--ios-card); color: var(--ios-text-primary);
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            background: var(--apple-card); color: var(--apple-text-main);
+            box-shadow: 0 2px 10px rgba(0,0,0,0.08); font-weight: 900;
         }}
 
-        /* Filtering & Search Bar */
+        /* Control Filter & Search Bar */
         .controls-bar {{
             display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 18px;
         }}
 
-        .search-box {{
-            flex: 1; min-width: 260px; position: relative;
-        }}
+        .search-box {{ flex: 1; min-width: 260px; position: relative; }}
 
         .search-input {{
-            width: 100%; padding: 10px 14px 10px 38px; background: var(--ios-card);
-            border: 0.5px solid var(--ios-border); border-radius: 12px; color: var(--ios-text-primary);
-            font-size: 14px; font-weight: 500; outline: none; box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+            width: 100%; padding: 12px 16px 12px 40px; background: var(--apple-card);
+            border: 0.5px solid var(--apple-border-strong); border-radius: 14px; color: var(--apple-text-main);
+            font-size: 14px; font-weight: 600; outline: none; box-shadow: 0 2px 8px rgba(0,0,0,0.02);
         }}
-        .search-input:focus {{ border-color: var(--ios-blue); }}
+        .search-input:focus {{ border-color: var(--apple-blue); box-shadow: 0 0 0 3px rgba(0,122,255,0.15); }}
 
-        .search-icon {{ position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--ios-text-secondary); font-size: 14px; }}
+        .search-icon {{ position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--apple-text-sub); font-size: 14px; }}
 
         .sort-select {{
-            padding: 10px 14px; background: var(--ios-card); border: 0.5px solid var(--ios-border);
-            border-radius: 12px; color: var(--ios-text-primary); font-size: 13px; font-weight: 600; cursor: pointer;
+            padding: 12px 16px; background: var(--apple-card); border: 0.5px solid var(--apple-border-strong);
+            border-radius: 14px; color: var(--apple-text-main); font-size: 13px; font-weight: 700; cursor: pointer;
             outline: none; box-shadow: 0 2px 8px rgba(0,0,0,0.02);
         }}
 
         .pill-filters {{ display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; width: 100%; }}
         .pill {{
-            padding: 6px 14px; background: rgba(0, 0, 0, 0.04); border: 0.5px solid var(--ios-border);
-            border-radius: 20px; color: var(--ios-text-secondary); font-size: 12px; font-weight: 600; cursor: pointer; whitespace: nowrap;
+            padding: 8px 16px; background: rgba(0, 0, 0, 0.04); border: 0.5px solid var(--apple-border);
+            border-radius: 20px; color: var(--apple-text-sub); font-size: 12px; font-weight: 700; cursor: pointer; whitespace: nowrap;
         }}
-        .pill.active {{ background: var(--ios-blue); color: #ffffff; border-color: var(--ios-blue); font-weight: 700; }}
+        .pill.active {{ background: #18181b; color: var(--ln-yellow); border-color: #18181b; font-weight: 900; }}
 
-        /* Cards Grid */
+        /* Cards Grid Layout */
         .jobs-grid {{
-            display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 16px;
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 16px;
         }}
 
         .job-card {{
-            background: var(--ios-card); border: 0.5px solid var(--ios-border); border-radius: 16px;
-            padding: 18px; display: flex; flex-direction: column; justify-content: space-between; gap: 10px;
+            background: var(--apple-card); border: 0.5px solid var(--apple-border-strong); border-radius: 18px;
+            padding: 20px; display: flex; flex-direction: column; justify-content: space-between; gap: 12px;
             box-shadow: 0 2px 12px rgba(0,0,0,0.03); transition: transform 0.15s ease, box-shadow 0.15s ease;
         }}
-        .job-card:hover {{ transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0, 122, 255, 0.08); }}
+        .job-card:hover {{ transform: translateY(-3px); box-shadow: 0 10px 30px rgba(0, 122, 255, 0.1); }}
 
-        .job-header {{ display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }}
-        .company {{ font-weight: 800; color: var(--ios-blue); font-size: 15px; }}
-        .job-title {{ font-size: 16px; font-weight: 800; color: var(--ios-text-primary); line-height: 1.35; }}
-        .job-meta {{ font-size: 12px; color: var(--ios-text-secondary); font-weight: 500; }}
-        .job-source-info {{ font-size: 11px; color: var(--ios-text-secondary); background: rgba(0,0,0,0.03); padding: 6px 10px; border-radius: 8px; border: 0.5px solid var(--ios-border); }}
-        .source-link {{ color: var(--ios-blue); text-decoration: none; word-break: break-all; font-weight: 600; }}
+        .job-card-header {{ display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }}
+        .company-badge-wrap {{ display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }}
+        .company {{ font-weight: 900; color: var(--apple-blue); font-size: 16px; letter-spacing: -0.3px; }}
 
-        .badge {{
-            display: inline-block; padding: 4px 8px; border-radius: 8px; font-size: 11px; font-weight: 700; text-transform: uppercase;
+        .job-title {{ font-size: 17px; font-weight: 800; color: var(--apple-text-main); line-height: 1.3; }}
+
+        .telemetry-bar {{ display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 2px 0; }}
+        .telemetry-item {{ font-size: 12px; color: var(--apple-text-sub); font-weight: 700; }}
+
+        .job-meta-row {{ font-size: 11px; color: var(--apple-text-sub); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }}
+        .job-source-info {{ font-size: 11px; color: var(--apple-text-sub); background: rgba(0,0,0,0.03); padding: 8px 12px; border-radius: 10px; border: 0.5px solid var(--apple-border); font-weight: 600; }}
+        .source-link {{ color: var(--apple-blue); text-decoration: none; word-break: break-all; font-weight: 700; }}
+
+        .ln-badge {{
+            display: inline-block; padding: 4px 10px; border-radius: 8px; font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px;
         }}
-        .badge-open {{ background: rgba(52, 199, 89, 0.14); color: #278a3c; }}
-        .badge-applied {{ background: rgba(0, 122, 255, 0.14); color: var(--ios-blue); }}
-        .badge-closed {{ background: rgba(255, 59, 48, 0.14); color: var(--ios-red); }}
-        .badge-source {{ background: rgba(0,0,0,0.05); color: var(--ios-text-secondary); font-size: 10px; }}
-        .badge-match {{ background: rgba(255, 149, 0, 0.14); color: #d97706; font-size: 11px; }}
-        .badge-kb {{ background: rgba(0, 122, 255, 0.1); color: var(--ios-blue); border: 0.5px solid rgba(0, 122, 255, 0.2); font-size: 12px; margin: 2px; padding: 4px 8px; font-weight: 600; }}
+        .ln-badge-open {{ background: rgba(52, 199, 89, 0.15); color: #1fb042; }}
+        .ln-badge-applied {{ background: rgba(0, 122, 255, 0.15); color: var(--apple-blue); }}
+        .ln-badge-closed {{ background: rgba(255, 59, 48, 0.15); color: var(--apple-red); }}
 
-        .job-actions {{ display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }}
+        .ln-match-badge {{ display: inline-block; padding: 4px 10px; border-radius: 8px; font-size: 11px; font-weight: 900; letter-spacing: 0.5px; }}
+        .ln-match-high {{ background: var(--ln-yellow); color: #000000; font-weight: 900; }}
+        .ln-match-norm {{ background: rgba(255, 149, 0, 0.15); color: #d97706; }}
+
+        .ln-source-tag {{ font-size: 10px; font-weight: 800; color: var(--apple-text-sub); text-transform: uppercase; background: rgba(0,0,0,0.05); padding: 4px 8px; border-radius: 6px; }}
+
+        .job-actions {{ display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }}
 
         .ios-btn {{
-            padding: 8px 14px; border-radius: 10px; font-size: 12px; font-weight: 700; text-decoration: none;
+            padding: 9px 15px; border-radius: 12px; font-size: 11px; font-weight: 800; text-decoration: none;
             display: inline-flex; align-items: center; gap: 4px; cursor: pointer; border: none;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.06); transition: transform 0.1s ease, opacity 0.1s ease;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.06); transition: transform 0.1s ease, opacity 0.1s ease; text-transform: uppercase; letter-spacing: 0.5px;
         }}
         .ios-btn:active {{ transform: scale(0.96); opacity: 0.85; }}
 
-        .ios-btn-primary {{ background: var(--ios-blue); color: #ffffff; }}
-        .ios-btn-secondary {{ background: rgba(0,0,0,0.05); color: var(--ios-text-primary); border: 0.5px solid var(--ios-border); }}
-        .ios-btn-success {{ background: var(--ios-green); color: #ffffff; }}
-        .ios-btn-danger {{ background: rgba(255,59,48,0.12); color: var(--ios-red); border: 0.5px solid rgba(255,59,48,0.25); }}
+        .ios-btn-primary {{ background: var(--apple-blue); color: #ffffff; }}
+        .ios-btn-secondary {{ background: rgba(0,0,0,0.05); color: var(--apple-text-main); border: 0.5px solid var(--apple-border-strong); }}
+        .ios-btn-success {{ background: var(--apple-green); color: #ffffff; }}
+        .ios-btn-danger {{ background: rgba(255,59,48,0.12); color: var(--apple-red); border: 0.5px solid rgba(255,59,48,0.25); }}
 
         .view-section {{ display: none; }}
 
-        iframe {{ border: none; width: 100%; height: 520px; border-radius: 14px; background: #ffffff; border: 0.5px solid var(--ios-border); }}
+        iframe {{ border: none; width: 100%; height: 520px; border-radius: 16px; background: #ffffff; border: 0.5px solid var(--apple-border-strong); }}
 
         .settings-card {{
-            background: var(--ios-card); border: 0.5px solid var(--ios-border); border-radius: 16px; padding: 20px; margin-bottom: 20px;
+            background: var(--apple-card); border: 0.5px solid var(--apple-border-strong); border-radius: 18px; padding: 22px; margin-bottom: 20px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.02);
         }}
         .settings-group {{ margin-bottom: 16px; }}
-        .settings-label {{ font-weight: 700; margin-bottom: 6px; display: block; color: var(--ios-blue); font-size: 13px; }}
+        .settings-label {{ font-weight: 800; margin-bottom: 6px; display: block; color: var(--apple-blue); font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; }}
         .settings-input {{
-            width: 100%; padding: 10px; background: #ffffff; border: 0.5px solid var(--ios-border);
-            border-radius: 10px; color: var(--ios-text-primary); font-size: 13px; font-weight: 500; outline: none;
+            width: 100%; padding: 12px; background: #ffffff; border: 0.5px solid var(--apple-border-strong);
+            border-radius: 12px; color: var(--apple-text-main); font-size: 13px; font-weight: 600; outline: none;
         }}
-        .settings-input:focus {{ border-color: var(--ios-blue); }}
+        .settings-input:focus {{ border-color: var(--apple-blue); box-shadow: 0 0 0 3px rgba(0,122,255,0.15); }}
+
+        .kb-tag {{ display: inline-block; background: rgba(0, 122, 255, 0.1); color: var(--apple-blue); border: 0.5px solid rgba(0, 122, 255, 0.25); font-size: 12px; margin: 3px; padding: 5px 10px; border-radius: 8px; font-weight: 700; }}
 
         @media (max-width: 768px) {{
-            body {{ padding: 8px; }}
+            body {{ padding: 10px; }}
             .header {{ flex-direction: column; align-items: flex-start; gap: 12px; }}
             .jobs-grid {{ grid-template-columns: 1fr; }}
         }}
@@ -406,76 +448,89 @@ def render_unified_dashboard_html(active_tab="flow"):
 <body>
 
 <div class="container">
-    <!-- Header -->
+    <!-- LN4 Telemetry Banner -->
+    <div class="ln-telemetry-strip">
+        <div style="display:flex; align-items:center; gap:8px;">
+            <span class="ln-badge-yellow">LN4 TELEMETRY</span>
+            <span>HEADLESS HP-STREAM TELEMETRY ACTIVE</span>
+        </div>
+        <div style="display:flex; gap:14px; align-items:center;">
+            <span>⚡ EGRESS: <b>100% DIRECT</b></span>
+            <span>🎯 MATCH ENGINE: <b>ACTIVE</b></span>
+            <span>🕒 SYNC: <b>AUTO-CRON</b></span>
+        </div>
+    </div>
+
+    <!-- Apple Header -->
     <div class="header">
         <div class="brand">
-            <span class="brand-icon">⚡</span>
+            <div class="brand-logo">LN4</div>
             <div>
                 <div class="brand-title">ApplicationTrackr</div>
-                <div class="brand-sub">Headless HP Stream Server &bull; UK Maths, Quant & CS Engine</div>
+                <div class="brand-sub">UK Maths, Quant & CS High-Octane Scraper System</div>
             </div>
         </div>
         <div style="display:flex; gap:10px; align-items:center;">
             <div class="status-pill">● HP-STREAM ONLINE ({HP_STREAM_TAILSCALE_IP}:5000)</div>
-            <a href="/api/rescan" class="ios-btn ios-btn-primary">⚡ Rescan Now</a>
-            <a href="/api/sync-sheet" class="ios-btn ios-btn-secondary">🔄 Sync Sheet</a>
+            <a href="/api/rescan" class="ios-btn ios-btn-primary">⚡ RESCAN NOW</a>
+            <a href="/api/sync-sheet" class="ios-btn ios-btn-secondary">🔄 SYNC SHEET</a>
         </div>
     </div>
 
-    <!-- Apple Stat Cards -->
+    <!-- Racing Stat Cards -->
     <div class="stats-grid">
-        <div class="stat-card">
+        <div class="stat-card accent-blue">
             <div class="stat-lbl">TOTAL APPLICATIONS</div>
             <div class="stat-val">{total}</div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card accent-yellow">
             <div class="stat-lbl">ACTIVE ROUNDS</div>
-            <div class="stat-val" style="color:var(--ios-blue);">{active}</div>
+            <div class="stat-val" style="color:var(--apple-blue);">{active}</div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card accent-green">
             <div class="stat-lbl">OFFERS SECURED</div>
-            <div class="stat-val" style="color:var(--ios-green);">{offers}</div>
+            <div class="stat-val" style="color:var(--apple-green);">{offers}</div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card accent-red">
             <div class="stat-lbl">REJECTIONS / GHOSTED</div>
-            <div class="stat-val" style="color:var(--ios-red);">{rejections}</div>
+            <div class="stat-val" style="color:var(--apple-red);">{rejections}</div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card accent-purple">
             <div class="stat-lbl">CONVERSION RATE</div>
-            <div class="stat-val" style="color:var(--ios-purple);">{conv_rate}%</div>
+            <div class="stat-val" style="color:var(--apple-purple);">{conv_rate}%</div>
         </div>
-        <div class="stat-card">
-            <div class="stat-lbl">DISCOVERED SCHEMES</div>
-            <div class="stat-val" style="color:var(--ios-orange);">{discovered_count}</div>
+        <div class="stat-card accent-yellow">
+            <div class="stat-lbl">OPEN SCHEMES</div>
+            <div class="stat-val" style="color:#1d1d1f;">{discovered_count}</div>
         </div>
     </div>
 
-    <!-- Segmented Navigation Bar -->
+    <!-- Segmented Navigation Tabs -->
     <div class="nav-tabs">
-        <button class="tab-btn {tab_flow}" onclick="switchTab('flow')">📊 Application Flow & Sankey</button>
-        <button class="tab-btn {tab_jobs}" onclick="switchTab('jobs')">💼 Discovered Schemes ({discovered_count})</button>
-        <button class="tab-btn {tab_settings}" onclick="switchTab('settings')">⚙️ Filter Settings</button>
-        <button class="tab-btn {tab_status}" onclick="switchTab('diagnostics')">🛠 System Diagnostics</button>
-        <button class="tab-btn {tab_closed}" onclick="switchTab('closed')">🛑 Closed Schemes ({closed_count})</button>
+        <button class="tab-btn {tab_flow}" onclick="switchTab('flow')">📊 FLOW & TELEMETRY</button>
+        <button class="tab-btn {tab_jobs}" onclick="switchTab('jobs')">💼 DISCOVERED SCHEMES ({discovered_count})</button>
+        <button class="tab-btn {tab_settings}" onclick="switchTab('settings')">⚙️ FILTER SETTINGS</button>
+        <button class="tab-btn {tab_status}" onclick="switchTab('diagnostics')">🛠 SCRAPER TELEMETRY</button>
+        <button class="tab-btn {tab_closed}" onclick="switchTab('closed')">🛑 CLOSED SCHEMES ({closed_count})</button>
     </div>
 
     <!-- TAB 1: FLOW & SANKEY -->
     <div id="view-flow" class="view-section" style="{view_flow}">
         <div class="settings-card">
-            <h3 style="margin-bottom:12px; font-weight:800;">📊 Live Application Pipeline Flow</h3>
+            <h3 style="margin-bottom:14px; font-weight:900; font-size:18px;">📊 Live Application Pipeline Flow</h3>
             <iframe src="/sankey-embed" id="sankey-iframe"></iframe>
         </div>
 
         <div class="settings-card" style="margin-top:16px;">
-            <h3 style="margin-bottom:12px; font-weight:800;">📋 Detailed Logged Applications</h3>
+            <h3 style="margin-bottom:14px; font-weight:900; font-size:18px;">📋 Detailed Logged Applications</h3>
             <table style="width:100%; border-collapse:collapse; text-align:left; font-size:13px;">
                 <thead>
-                    <tr style="border-bottom:1px solid var(--ios-border); color:var(--ios-text-secondary);">
-                        <th style="padding:10px;">Company</th>
-                        <th style="padding:10px;">Role</th>
-                        <th style="padding:10px;">Latest Stage</th>
-                        <th style="padding:10px;">Pipeline History</th>
-                        <th style="padding:10px;">Status</th>
+                    <tr style="border-bottom:2px solid var(--apple-border-strong); color:var(--apple-text-sub); font-size:11px; text-transform:uppercase; letter-spacing:0.8px;">
+                        <th style="padding:12px;">Company</th>
+                        <th style="padding:12px;">Role</th>
+                        <th style="padding:12px;">Latest Stage</th>
+                        <th style="padding:12px;">Pipeline History</th>
+                        <th style="padding:12px;">Status</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -494,22 +549,22 @@ def render_unified_dashboard_html(active_tab="flow"):
             </div>
 
             <select id="sort-select" class="sort-select" onchange="sortJobs()">
-                <option value="newest">🆕 Discovered: Newest First</option>
-                <option value="oldest">⏳ Discovered: Oldest First</option>
-                <option value="match_desc">🎯 Skill Match: Highest First</option>
-                <option value="resp_asc">⚡ Response Time: Fastest First</option>
-                <option value="company_asc">🔤 Company Name: A → Z</option>
-                <option value="title_asc">💼 Role Title: A → Z</option>
+                <option value="newest">🆕 DISCOVERED: NEWEST FIRST</option>
+                <option value="oldest">⏳ DISCOVERED: OLDEST FIRST</option>
+                <option value="match_desc">🎯 SKILL MATCH: HIGHEST FIRST</option>
+                <option value="resp_asc">⚡ RESPONSE TIME: FASTEST FIRST</option>
+                <option value="company_asc">🔤 COMPANY NAME: A → Z</option>
+                <option value="title_asc">💼 ROLE TITLE: A → Z</option>
             </select>
 
             <div class="pill-filters">
-                <button class="pill active" onclick="filterPill('all', this)">All Open Schemes ({discovered_count})</button>
-                <button class="pill" onclick="filterPill('not_applied', this)">⚡ Not Applied ({not_applied_count})</button>
-                <button class="pill" onclick="filterPill('applied', this)">✅ Applied ({applied_count})</button>
-                <button class="pill" onclick="filterPill('quant', this)">📈 Quant & Trading ({quant_count})</button>
-                <button class="pill" onclick="filterPill('software', this)">💻 Software ({sw_count})</button>
+                <button class="pill active" onclick="filterPill('all', this)">ALL SCHEMES ({discovered_count})</button>
+                <button class="pill" onclick="filterPill('not_applied', this)">⚡ NOT APPLIED ({not_applied_count})</button>
+                <button class="pill" onclick="filterPill('applied', this)">✅ APPLIED ({applied_count})</button>
+                <button class="pill" onclick="filterPill('quant', this)">📈 QUANT ({quant_count})</button>
+                <button class="pill" onclick="filterPill('software', this)">💻 SOFTWARE ({sw_count})</button>
                 <button class="pill" onclick="filterPill('ml', this)">🧠 ML & AI ({ml_count})</button>
-                <button class="pill" onclick="filterPill('cyber', this)">🛡️ Cyber & Cloud ({cyber_count})</button>
+                <button class="pill" onclick="filterPill('cyber', this)">🛡️ CYBER ({cyber_count})</button>
             </div>
         </div>
 
@@ -521,7 +576,7 @@ def render_unified_dashboard_html(active_tab="flow"):
     <!-- TAB 3: SETTINGS -->
     <div id="view-settings" class="view-section" style="{view_settings}">
         <div class="settings-card">
-            <h3 style="margin-bottom:16px; font-weight:800;">⚙️ Scraper & Filter Criteria</h3>
+            <h3 style="margin-bottom:16px; font-weight:900; font-size:18px;">⚙️ Scraper & Filter Criteria</h3>
             <form action="/api/settings" method="POST">
                 <div class="settings-group">
                     <label class="settings-label">Target Skills Matrix (Comma-Separated)</label>
@@ -553,14 +608,14 @@ def render_unified_dashboard_html(active_tab="flow"):
                     <textarea name="smartrecruiters_companies" class="settings-input" rows="2">{sr_comp}</textarea>
                 </div>
 
-                <div class="settings-group" style="margin-top:12px;">
-                    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                <div class="settings-group" style="margin-top:14px;">
+                    <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-weight:700;">
                         <input type="checkbox" name="auto_hide_applied_company_jobs" value="true" {auto_hide_chk}>
                         <span>Automatically hide other open listings from companies I have already applied to</span>
                     </label>
                 </div>
 
-                <button type="submit" class="ios-btn ios-btn-primary" style="margin-top:10px;">💾 Save Filter Settings</button>
+                <button type="submit" class="ios-btn ios-btn-primary" style="margin-top:12px;">💾 SAVE FILTER SETTINGS</button>
             </form>
         </div>
     </div>
@@ -568,18 +623,18 @@ def render_unified_dashboard_html(active_tab="flow"):
     <!-- TAB 4: SYSTEM DIAGNOSTICS -->
     <div id="view-status" class="view-section" style="{view_status}">
         <div class="settings-card">
-            <h3 style="margin-bottom:12px; font-weight:800;">🛠 System & Scraper Diagnostics</h3>
-            <div style="font-size:13px; line-height:1.6; color:var(--ios-text-secondary);">
-                <div><b>Last Scraper Engine Run:</b> {last_run}</div>
-                <div><b>Total Schemes Indexed:</b> {discovered_count}</div>
-                <div style="margin-top:10px; font-weight:700; color:var(--ios-text-primary);">ATS Source Engine Statuses:</div>
+            <h3 style="margin-bottom:14px; font-weight:900; font-size:18px;">🛠 Scraper Telemetry Diagnostics</h3>
+            <div style="font-size:13px; line-height:1.7; color:var(--apple-text-sub);">
+                <div><b>Last Scraper Engine Run:</b> <span style="color:var(--apple-text-main); font-weight:700;">{last_run}</span></div>
+                <div><b>Total Schemes Indexed:</b> <span style="color:var(--apple-text-main); font-weight:700;">{discovered_count}</span></div>
+                <div style="margin-top:12px; font-weight:800; color:var(--apple-text-main); text-transform:uppercase; letter-spacing:0.5px;">ATS Source Egress Statuses:</div>
                 {src_status_html}
             </div>
         </div>
 
         <div class="settings-card" style="margin-top:16px;">
-            <h3 style="margin-bottom:12px; font-weight:800;">🧠 AI Self-Learning Knowledge Base ({kb_count} rules)</h3>
-            <div style="max-height:160px; overflow-y:auto; padding:10px; background:#ffffff; border-radius:10px; border:0.5px solid var(--ios-border);">
+            <h3 style="margin-bottom:14px; font-weight:900; font-size:18px;">🧠 AI Self-Learning Knowledge Base ({kb_count} rules)</h3>
+            <div style="max-height:160px; overflow-y:auto; padding:12px; background:#ffffff; border-radius:12px; border:0.5px solid var(--apple-border-strong);">
                 {kb_badges_html}
             </div>
         </div>
@@ -588,8 +643,8 @@ def render_unified_dashboard_html(active_tab="flow"):
     <!-- TAB 5: CLOSED SCHEMES -->
     <div id="view-closed" class="view-section" style="{view_closed}">
         <div class="settings-card">
-            <h3 style="margin-bottom:12px; font-weight:800;">🛑 Reported & Inactive Schemes Directory ({closed_count})</h3>
-            <p style="font-size:12px; color:var(--ios-text-secondary); margin-bottom:16px;">
+            <h3 style="margin-bottom:12px; font-weight:900; font-size:18px;">🛑 Reported & Inactive Schemes Directory ({closed_count})</h3>
+            <p style="font-size:12px; color:var(--apple-text-sub); margin-bottom:16px; font-weight:600;">
                 Schemes listed here were automatically or manually marked as closed. You can re-open any scheme if it opens again.
             </p>
             <div class="jobs-grid">
