@@ -143,7 +143,12 @@ def render_unified_dashboard_html(active_tab="flow"):
 
     reported_closed_map = load_reported_closed_jobs()
     closed_ids = set(reported_closed_map.keys())
-    closed_links = set(cj.get('link') for cj in reported_closed_map.values() if cj.get('link'))
+    closed_links = set(j.get('link') for j in reported_closed_map.values() if j.get('link'))
+
+    kb_phrases = load_closed_keywords_kb()
+    kb_count = len(kb_phrases)
+    kb_badges_html = " ".join([f'<span class="badge" style="background:rgba(56,189,248,0.12); color:#38bdf8; border:0.5px solid rgba(56,189,248,0.3); font-size:12px; margin:2px; padding:4px 8px;">{p}</span>' for p in kb_phrases])
+
 
     resp_stats = calculate_company_response_stats()
 
@@ -1060,11 +1065,17 @@ def render_unified_dashboard_html(active_tab="flow"):
                 fetch('/api/report-closed?id=' + encodeURIComponent(jobId) + '&link=' + encodeURIComponent(link))
                     .then(r => r.json())
                     .then(d => {{
-                        alert(d.message || "Feedback recorded! Filter knowledge base updated.");
+                        let popupMsg = d.message || "Feedback recorded! Filter knowledge base updated.";
+                        if (d.learned && d.learned.length > 0) {{
+                            popupMsg += "\n\n🧠 New Phrase Patterns Added to Knowledge Base (closed_keywords_kb.json):\n" + d.learned.map(p => "  • \"" + p + "\"").join("\n");
+                        }}
+                        alert(popupMsg);
                         location.reload();
                     }});
             }}
         }}
+
+
 
 
         function unhideAll() {{
@@ -1294,9 +1305,20 @@ def render_unified_dashboard_html(active_tab="flow"):
 
             <div class="content-card" style="margin-top:24px;">
                 <div class="card-header">
+                    <div class="card-title">🧠 Self-Learning Closure Knowledge Base (`closed_keywords_kb.json`)</div>
+                </div>
+                <p style="color:var(--text-muted); font-size:14px; margin-bottom:12px;">Active generic closure phrases learned from user feedback and default rules ({kb_count} phrases):</p>
+                <div style="display:flex; flex-wrap:wrap; gap:6px; background:rgba(15,23,42,0.5); padding:16px; border-radius:10px; border:1px solid var(--card-border);">
+                    {kb_badges_html}
+                </div>
+            </div>
+
+            <div class="content-card" style="margin-top:24px;">
+                <div class="card-header">
                     <div class="card-title">📜 Live Engine Console Logs (`docker logs -f applicationtrackr`)</div>
                     <button onclick="refreshLiveLogs()" class="btn btn-header">🔄 Refresh Logs</button>
                 </div>
+
                 <div id="diag-logs-container" class="terminal-box" style="display:block; max-height:450px; background:#090d16;">
                     <pre id="diag-logs-content" class="terminal-logs" style="color:#38bdf8; font-family:monospace; font-size:12px;">Loading live engine logs...</pre>
                 </div>
