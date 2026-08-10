@@ -241,3 +241,10 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
         else:
             self.send_response(404)
             self.end_headers()
+
+def start_web_server(port=PORT):
+    from config import HP_STREAM_TAILSCALE_IP
+    server = ThreadedHTTPServer(("0.0.0.0", port), CleanHandler)
+    print(f"🌍 Threaded Web Dashboard running at: http://{HP_STREAM_TAILSCALE_IP}:{port} (Local: http://127.0.0.1:{port})")
+    server.serve_forever()
+
