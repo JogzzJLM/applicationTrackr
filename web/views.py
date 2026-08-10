@@ -76,7 +76,7 @@ def render_unified_dashboard_html(active_tab="flow"):
 
     apps_table_rows = ""
     if not apps:
-        apps_table_rows = '<tr><td colspan="5" class="empty-table">No applications logged yet. Click "+ Log Applied" on any scheme to track!</td></tr>'
+        apps_table_rows = '<tr><td colspan="5" class="empty-table">No applications logged yet. Log your first application via Safari Bookmarklet or the Discovered Schemes tab!</td></tr>'
     else:
         for a in apps:
             st = a.get("status_type", "active")
@@ -95,9 +95,9 @@ def render_unified_dashboard_html(active_tab="flow"):
             <tr>
                 <td style="font-weight:700; color:#1d1d1f;">{a['company']}</td>
                 <td style="color:#3a3a3c;">{a['role']}</td>
-                <td><span class="apple-pill pill-active">{a['latest_stage']}</span></td>
+                <td><span class="badge {badge_cls}">{a['latest_stage']}</span></td>
                 <td style="color:#86868b; font-size:13px;">{pipeline_str}</td>
-                <td><span class="apple-pill pill-active">{a['status']}</span></td>
+                <td><span class="badge {badge_cls}">{a['status']}</span></td>
             </tr>
             """
 
@@ -115,7 +115,7 @@ def render_unified_dashboard_html(active_tab="flow"):
 
     kb_phrases = load_closed_keywords_kb()
     kb_count = len(kb_phrases)
-    kb_badges_html = " ".join([f'<span class="apple-pill pill-kb">{p}</span>' for p in kb_phrases])
+    kb_badges_html = " ".join([f'<span class="badge badge-kb">{p}</span>' for p in kb_phrases])
 
     resp_stats = calculate_company_response_stats()
 
@@ -221,362 +221,429 @@ def render_unified_dashboard_html(active_tab="flow"):
 
     src_status_html = ""
     for s_name, s_msg in SCRAPER_STATUS.get("source_status", {}).items():
-        src_status_html += f'<div style="padding:6px 0; border-bottom:0.5px solid var(--apple-border); display:flex; justify-content:space-between;"><b>{s_name}</b> <span style="color:var(--apple-green); font-weight:600;">{s_msg}</span></div>'
+        src_status_html += f'<div style="padding:6px 0; border-bottom:0.5px solid var(--apple-border);"><b>{s_name}:</b> <span style="color:var(--apple-green); font-weight:600;">{s_msg}</span></div>'
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>ApplicationTrackr — Apple Bento Command Center</title>
-    
-    <!-- Authentic Apple Typography & Google Fonts -->
+    <title>ApplicationTrackr - Apple Command Center</title>
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+
     <style>
         :root {{
-            --apple-bg: #f5f5f7;
-            --apple-card: #ffffff;
-            --apple-card-translucent: rgba(255, 255, 255, 0.82);
+            --apple-bg: #F5F5F7;
+            --apple-card: rgba(255, 255, 255, 0.78);
+            --apple-card-solid: #ffffff;
             --apple-border: rgba(0, 0, 0, 0.08);
-            --apple-border-strong: rgba(0, 0, 0, 0.12);
+            --apple-glass-border: rgba(255, 255, 255, 0.9);
             --apple-blue: #0071e3;
-            --apple-blue-hover: #0077ed;
+            --apple-blue-glow: rgba(0, 113, 227, 0.25);
             --apple-green: #34c759;
             --apple-orange: #ff9500;
             --apple-red: #ff3b30;
             --apple-purple: #af52de;
             --apple-indigo: #5856d6;
-            --apple-text-primary: #1d1d1f;
-            --apple-text-secondary: #515154;
-            --apple-text-tertiary: #86868b;
-            --apple-font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "SF Pro", "Helvetica Neue", "Plus Jakarta Sans", sans-serif;
-            --apple-mono: "JetBrains Mono", SFMono-Regular, ui-monospace, Menlo, monospace;
+            --apple-text-main: #1d1d1f;
+            --apple-text-sub: #86868b;
+            --font-apple: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", sans-serif;
+            --font-mono: 'JetBrains Mono', "SF Mono", monospace;
         }}
 
-        * {{ margin:0; padding:0; box-sizing:border-box; font-family: var(--apple-font); -webkit-tap-highlight-color: transparent; }}
-        
+        * {{ margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color: transparent; }}
+
         body {{
             background-color: var(--apple-bg);
             background-image: 
-                radial-gradient(ellipse at 10% 10%, rgba(0, 113, 227, 0.05) 0%, transparent 60%),
-                radial-gradient(ellipse at 90% 90%, rgba(52, 199, 89, 0.04) 0%, transparent 60%);
+                radial-gradient(ellipse at 15% 15%, rgba(0, 113, 227, 0.06) 0%, transparent 45%),
+                radial-gradient(ellipse at 85% 85%, rgba(52, 199, 89, 0.05) 0%, transparent 45%),
+                radial-gradient(ellipse at 50% 50%, rgba(175, 82, 222, 0.03) 0%, transparent 50%);
             background-attachment: fixed;
-            color: var(--apple-text-primary);
+            color: var(--apple-text-main);
+            font-family: var(--font-apple);
             padding: 20px 16px 40px 16px;
             min-height: 100vh;
-            font-size: 14px;
             -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
         }}
 
         .container {{ max-width: 1280px; margin: 0 auto; }}
 
-        /* 🍎 Apple Glass Header */
-        .apple-header {{
+        /* Lando Norris Style Dynamic Marquee Ticker Tape */
+        .marquee-container {{
+            background: rgba(0, 113, 227, 0.06);
+            border: 0.5px solid rgba(0, 113, 227, 0.18);
+            border-radius: 30px;
+            padding: 8px 16px;
+            margin-bottom: 20px;
+            overflow: hidden;
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+        }}
+
+        .marquee-content {{
+            display: inline-block;
+            animation: marquee 35s linear infinite;
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--apple-blue);
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }}
+
+        @keyframes marquee {{
+            0% {{ transform: translateX(0%); }}
+            100% {{ transform: translateX(-50%); }}
+        }}
+
+        /* Apple Glass Header */
+        .header {{
             display: flex; justify-content: space-between; align-items: center;
-            padding: 16px 24px; background: var(--apple-card-translucent);
-            backdrop-filter: blur(25px) saturate(190%);
-            -webkit-backdrop-filter: blur(25px) saturate(190%);
-            border-radius: 20px; border: 0.5px solid var(--apple-border);
-            margin-bottom: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.03);
-            flex-wrap: wrap; gap: 14px;
+            padding: 20px 26px;
+            background: var(--apple-card);
+            backdrop-filter: blur(30px) saturate(190%);
+            -webkit-backdrop-filter: blur(30px) saturate(190%);
+            border-radius: 24px;
+            border: 1px solid var(--apple-glass-border);
+            box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+            margin-bottom: 24px; flex-wrap: wrap; gap: 16px;
         }}
 
-        .brand-row {{ display: flex; align-items: center; gap: 12px; }}
+        .brand {{ display: flex; align-items: center; gap: 14px; }}
         .brand-logo {{
-            width: 42px; height: 42px; background: linear-gradient(135deg, #0071e3 0%, #5856d6 100%);
-            border-radius: 12px; display: flex; align-items: center; justify-content: center;
-            color: #ffffff; font-size: 22px; font-weight: 800; box-shadow: 0 4px 12px rgba(0, 113, 227, 0.25);
+            width: 44px; height: 44px;
+            background: linear-gradient(135deg, #0071e3 0%, #409cff 100%);
+            border-radius: 14px;
+            display: flex; align-items: center; justify-content: center;
+            color: #ffffff; font-size: 22px; font-weight: 800;
+            box-shadow: 0 4px 14px var(--apple-blue-glow);
         }}
-        .brand-title {{ font-size: 21px; font-weight: 800; color: var(--apple-text-primary); letter-spacing: -0.025em; }}
-        .brand-subtitle {{ font-size: 12px; color: var(--apple-text-tertiary); font-weight: 500; margin-top: 1px; }}
+        .brand-title {{ font-size: 22px; font-weight: 800; color: var(--apple-text-main); letter-spacing: -0.02em; }}
+        .brand-sub {{ font-size: 13px; color: var(--apple-text-sub); margin-top: 2px; font-weight: 500; }}
 
-        .status-pill {{
-            display: inline-flex; align-items: center; gap: 6px;
-            padding: 6px 14px; background: rgba(52,199,89,0.12); color: #278a3c;
-            border: 0.5px solid rgba(52,199,89,0.25); border-radius: 9999px;
-            font-size: 12px; font-weight: 700;
+        .server-status-pill {{
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 8px 16px; background: rgba(52, 199, 89, 0.12); color: #278a3c;
+            border: 0.5px solid rgba(52, 199, 89, 0.3); border-radius: 20px;
+            font-size: 13px; font-weight: 700;
         }}
-        .status-dot {{ width: 7px; height: 7px; background: var(--apple-green); border-radius: 50%; box-shadow: 0 0 8px var(--apple-green); }}
+        .status-dot {{
+            width: 8px; height: 8px; background: var(--apple-green); border-radius: 50%;
+            box-shadow: 0 0 10px var(--apple-green); animation: pulse 2s infinite;
+        }}
+        @keyframes pulse {{
+            0% {{ transform: scale(0.9); opacity: 0.8; }}
+            50% {{ transform: scale(1.2); opacity: 1; }}
+            100% {{ transform: scale(0.9); opacity: 0.8; }}
+        }}
 
-        /* 🍱 High-Tech Lando Norris Bento Grid */
+        /* Apple Bento Grid Stat Cards */
         .bento-grid {{
-            display: grid; grid-template-columns: repeat(12, 1fr); gap: 16px; margin-bottom: 20px;
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+            gap: 16px; margin-bottom: 24px;
         }}
 
         .bento-card {{
-            background: var(--apple-card); border: 0.5px solid var(--apple-border);
-            border-radius: 20px; padding: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.03);
-            transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease;
-            display: flex; flex-direction: column; justify-content: space-between;
+            background: var(--apple-card);
+            backdrop-filter: blur(25px) saturate(180%);
+            -webkit-backdrop-filter: blur(25px) saturate(180%);
+            border: 1px solid var(--apple-glass-border);
+            border-radius: 20px; padding: 20px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+            transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s ease;
+            position: relative; overflow: hidden;
         }}
-        .bento-card:hover {{ transform: translateY(-3px); box-shadow: 0 12px 32px rgba(0,113,227,0.08); }}
-
-        .bento-hero {{ grid-column: span 5; background: linear-gradient(135deg, #ffffff 0%, #f9f9fb 100%); }}
-        .bento-stats {{ grid-column: span 7; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }}
-
-        .bento-stat-box {{
-            background: var(--apple-bg); border: 0.5px solid var(--apple-border);
-            border-radius: 14px; padding: 14px; text-align: center;
+        .bento-card:hover {{
+            transform: translateY(-3px);
+            box-shadow: 0 12px 30px -10px rgba(0, 113, 227, 0.12);
         }}
-        .bento-stat-val {{ font-size: 26px; font-weight: 800; color: var(--apple-text-primary); letter-spacing: -0.03em; margin-top: 2px; }}
-        .bento-stat-lbl {{ font-size: 11px; font-weight: 700; color: var(--apple-text-tertiary); text-transform: uppercase; letter-spacing: 0.04em; }}
+        .bento-lbl {{ font-size: 11px; font-weight: 800; color: var(--apple-text-sub); text-transform: uppercase; letter-spacing: 0.05em; }}
+        .bento-val {{ font-size: 32px; font-weight: 800; color: var(--apple-text-main); margin-top: 6px; font-family: var(--font-apple); letter-spacing: -0.03em; }}
 
-        /* 🍎 Segmented Control Nav Tabs */
-        .apple-nav-container {{
-            background: rgba(229, 229, 234, 0.7); backdrop-filter: blur(20px);
-            padding: 4px; border-radius: 16px; margin-bottom: 20px;
-            border: 0.5px solid var(--apple-border);
-        }}
-        .nav-tabs {{ display: flex; gap: 4px; overflow-x: auto; }}
-
-        .tab-btn {{
-            flex: 1; padding: 10px 18px; background: transparent; border: none;
-            color: var(--apple-text-secondary); font-size: 13px; font-weight: 700;
-            cursor: pointer; border-radius: 12px; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-            whitespace: nowrap; text-align: center; letter-spacing: -0.01em;
+        /* Apple Segmented Control Nav Tabs */
+        .apple-nav {{
+            display: flex; gap: 6px; background: rgba(230, 230, 235, 0.8);
+            backdrop-filter: blur(20px);
+            padding: 5px; border-radius: 16px; margin-bottom: 24px; overflow-x: auto;
+            border: 0.5px solid rgba(0, 0, 0, 0.06);
         }}
 
-        .tab-btn.active {{
-            background: var(--apple-card); color: var(--apple-text-primary);
-            box-shadow: 0 2px 10px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+        .apple-tab {{
+            flex: 1; padding: 12px 18px; background: transparent; border: none;
+            color: var(--apple-text-sub); font-size: 13px; font-weight: 700;
+            cursor: pointer; border-radius: 12px; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            whitespace: nowrap; text-align: center; font-family: var(--font-apple);
         }}
 
-        /* 🎛️ Dynamic Controls & Search Dock */
-        .controls-dock {{
-            display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
-            justify-content: space-between; margin-bottom: 20px;
+        .apple-tab.active {{
+            background: #ffffff; color: var(--apple-text-main);
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08); font-weight: 800;
         }}
 
-        .search-dock {{ flex: 1; min-width: 280px; position: relative; }}
+        /* Interactive Controls & Floating Search Bar */
+        .controls-bar {{
+            display: flex; flex-direction: column; gap: 14px; margin-bottom: 20px;
+        }}
+
+        .search-row {{ display: flex; gap: 12px; flex-wrap: wrap; }}
+
+        .search-box {{ flex: 1; min-width: 280px; position: relative; }}
+
         .search-input {{
-            width: 100%; padding: 12px 16px 12px 42px; background: var(--apple-card);
-            border: 0.5px solid var(--apple-border); border-radius: 14px;
-            color: var(--apple-text-primary); font-size: 14px; font-weight: 500;
-            outline: none; box-shadow: 0 2px 8px rgba(0,0,0,0.02); transition: border-color 0.15s ease;
+            width: 100%; padding: 14px 16px 14px 44px; background: var(--apple-card);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--apple-glass-border); border-radius: 16px; color: var(--apple-text-main);
+            font-size: 14px; font-weight: 600; outline: none;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.03); font-family: var(--font-apple);
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
         }}
-        .search-input:focus {{ border-color: var(--apple-blue); box-shadow: 0 0 0 3px rgba(0,113,227,0.15); }}
-        .search-icon {{ position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--apple-text-tertiary); font-size: 15px; }}
+        .search-input:focus {{
+            border-color: var(--apple-blue);
+            box-shadow: 0 4px 20px var(--apple-blue-glow);
+        }}
+
+        .search-icon {{ position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: var(--apple-text-sub); font-size: 16px; }}
 
         .sort-select {{
-            padding: 12px 16px; background: var(--apple-card); border: 0.5px solid var(--apple-border);
-            border-radius: 14px; color: var(--apple-text-primary); font-size: 13px; font-weight: 700;
-            cursor: pointer; outline: none; box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+            padding: 14px 18px; background: var(--apple-card);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--apple-glass-border); border-radius: 16px;
+            color: var(--apple-text-main); font-size: 13px; font-weight: 700;
+            cursor: pointer; outline: none; box-shadow: 0 4px 16px rgba(0,0,0,0.03);
+            font-family: var(--font-apple);
         }}
 
-        .pill-dock {{ display: flex; gap: 6px; overflow-x: auto; width: 100%; padding-bottom: 4px; }}
-        .pill-item {{
-            padding: 7px 16px; background: rgba(0,0,0,0.04); border: 0.5px solid var(--apple-border);
-            border-radius: 9999px; color: var(--apple-text-secondary); font-size: 12px; font-weight: 600;
-            cursor: pointer; whitespace: nowrap; transition: all 0.15s ease;
+        .pill-filters {{ display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; }}
+        .pill {{
+            padding: 8px 18px; background: rgba(255, 255, 255, 0.7);
+            border: 0.5px solid var(--apple-border); border-radius: 20px;
+            color: var(--apple-text-sub); font-size: 13px; font-weight: 700;
+            cursor: pointer; whitespace: nowrap; transition: all 0.2s ease; font-family: var(--font-apple);
         }}
-        .pill-item.active {{ background: var(--apple-blue); color: #ffffff; border-color: var(--apple-blue); font-weight: 700; shadow: 0 2px 8px rgba(0,113,227,0.3); }}
+        .pill.active {{
+            background: var(--apple-blue); color: #ffffff; border-color: var(--apple-blue);
+            box-shadow: 0 4px 14px var(--apple-blue-glow);
+        }}
 
-        /* 💼 High-Tech Job Cards Grid */
+        /* Apple Bento Cards Grid */
         .jobs-grid {{
-            display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 16px;
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 18px;
         }}
 
         .job-card {{
-            background: var(--apple-card); border: 0.5px solid var(--apple-border);
-            border-radius: 20px; padding: 20px; display: flex; flex-direction: column;
-            justify-content: space-between; gap: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.03);
-            transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease;
+            background: var(--apple-card);
+            backdrop-filter: blur(30px) saturate(190%);
+            -webkit-backdrop-filter: blur(30px) saturate(190%);
+            border: 1px solid var(--apple-glass-border);
+            border-radius: 22px; padding: 22px;
+            display: flex; flex-direction: column; justify-content: space-between; gap: 12px;
+            box-shadow: 0 6px 24px -6px rgba(0, 0, 0, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+            transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s ease;
         }}
-        .job-card:hover {{ transform: translateY(-3px); box-shadow: 0 12px 32px rgba(0, 113, 227, 0.08); }}
-
-        .company-avatar-row {{ display: flex; align-items: center; gap: 10px; }}
-        .company-avatar {{
-            width: 38px; height: 38px; background: rgba(0, 113, 227, 0.1); color: var(--apple-blue);
-            border: 0.5px solid rgba(0, 113, 227, 0.2); border-radius: 10px; display: flex; align-items: center;
-            justify-content: center; font-weight: 800; font-size: 13px; letter-spacing: -0.02em;
+        .job-card:hover {{
+            transform: translateY(-4px) scale(1.005);
+            box-shadow: 0 16px 40px -10px rgba(0, 113, 227, 0.15);
         }}
-        .company {{ font-weight: 800; color: var(--apple-text-primary); font-size: 15px; letter-spacing: -0.02em; }}
-        .job-title {{ font-size: 16px; font-weight: 800; color: var(--apple-text-primary); line-height: 1.35; letter-spacing: -0.02em; }}
-        .job-meta-inline {{ font-size: 11px; color: var(--apple-text-tertiary); font-weight: 500; margin-top: 1px; }}
 
-        /* Telemetry Match Bar */
-        .telemetry-bar-container {{
-            background: var(--apple-bg); padding: 8px 12px; border-radius: 10px; border: 0.5px solid var(--apple-border);
+        .job-card-header {{ display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }}
+        .avatar-circle {{
+            width: 40px; height: 40px; background: linear-gradient(135deg, #0071e3 0%, #5856d6 100%);
+            color: #ffffff; border-radius: 12px; font-weight: 800; font-size: 14px;
+            display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+            box-shadow: 0 3px 10px rgba(0, 113, 227, 0.25);
         }}
-        .telemetry-label-row {{ display: flex; justify-content: space-between; font-size: 11px; font-weight: 700; margin-bottom: 4px; }}
-        .telemetry-label {{ color: var(--apple-text-tertiary); text-transform: uppercase; letter-spacing: 0.04em; }}
-        .telemetry-bar-track {{ height: 6px; background: rgba(0,0,0,0.06); border-radius: 9999px; overflow: hidden; }}
-        .telemetry-bar-fill {{ height: 100%; border-radius: 9999px; transition: width 0.4s ease; }}
+        .company-title {{ font-weight: 800; color: var(--apple-text-main); font-size: 16px; letter-spacing: -0.01em; }}
+        .job-card-title {{ font-size: 17px; font-weight: 800; color: var(--apple-blue); line-height: 1.3; letter-spacing: -0.02em; }}
 
-        .job-source-info {{ font-size: 11px; color: var(--apple-text-secondary); background: var(--apple-bg); padding: 6px 10px; border-radius: 8px; border: 0.5px solid var(--apple-border); }}
-        .source-link {{ color: var(--apple-blue); text-decoration: none; word-break: break-all; font-weight: 600; }}
-
-        .apple-pill {{
-            display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px;
-            border-radius: 9999px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em;
+        .match-score-row {{ display: flex; align-items: center; gap: 10px; margin: 4px 0; }}
+        .match-score-pill {{
+            background: rgba(255, 149, 0, 0.12); color: #d97706; border: 0.5px solid rgba(255, 149, 0, 0.3);
+            padding: 4px 10px; border-radius: 10px; font-size: 12px; font-weight: 800;
         }}
-        .pill-open {{ background: rgba(52, 199, 89, 0.14); color: #278a3c; border: 0.5px solid rgba(52, 199, 89, 0.3); }}
-        .pill-applied {{ background: rgba(0, 113, 227, 0.14); color: var(--apple-blue); border: 0.5px solid rgba(0, 113, 227, 0.3); }}
-        .pill-closed {{ background: rgba(255, 59, 48, 0.14); color: var(--apple-red); border: 0.5px solid rgba(255, 59, 48, 0.3); }}
-        .pill-active {{ background: rgba(0, 113, 227, 0.1); color: var(--apple-blue); border: 0.5px solid rgba(0, 113, 227, 0.2); }}
-        .pill-kb {{ background: rgba(88, 86, 214, 0.1); color: var(--apple-indigo); border: 0.5px solid rgba(88, 86, 214, 0.25); font-size: 12px; margin: 3px; font-weight: 600; }}
+        .match-bar-bg {{ flex: 1; height: 6px; background: rgba(0, 0, 0, 0.06); border-radius: 10px; overflow: hidden; }}
+        .match-bar-fill {{ height: 100%; background: linear-gradient(90deg, #34c759 0%, #0071e3 100%); border-radius: 10px; }}
 
-        .job-actions {{ display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }}
+        .job-card-meta {{ font-size: 12px; color: var(--apple-text-sub); font-weight: 600; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }}
+        .job-source-banner {{
+            font-size: 11px; color: var(--apple-text-sub); background: rgba(0,0,0,0.03);
+            padding: 8px 12px; border-radius: 10px; border: 0.5px solid var(--apple-border);
+        }}
+        .source-link {{ color: var(--apple-blue); text-decoration: none; word-break: break-all; font-weight: 700; }}
 
-        /* 🍏 Authentic Apple Action Buttons */
+        .badge {{ display: inline-block; padding: 5px 10px; border-radius: 10px; font-size: 11px; font-weight: 800; text-transform: uppercase; }}
+        .badge-open {{ background: rgba(52, 199, 89, 0.14); color: #278a3c; }}
+        .badge-applied {{ background: rgba(0, 113, 227, 0.14); color: var(--apple-blue); }}
+        .badge-closed {{ background: rgba(255, 59, 48, 0.14); color: var(--apple-red); }}
+        .badge-source {{ background: rgba(0,0,0,0.05); color: var(--apple-text-sub); font-size: 10px; }}
+        .badge-kb {{ background: rgba(0, 113, 227, 0.08); color: var(--apple-blue); border: 0.5px solid rgba(0, 113, 227, 0.2); font-size: 12px; margin: 3px; padding: 6px 12px; border-radius: 12px; font-weight: 700; display: inline-block; }}
+
+        .job-card-actions {{ display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }}
+
         .apple-btn {{
-            padding: 8px 14px; border-radius: 9999px; font-size: 12px; font-weight: 700;
-            text-decoration: none; display: inline-flex; align-items: center; gap: 4px;
-            cursor: pointer; border: none; transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
-            letter-spacing: -0.01em; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+            padding: 10px 16px; border-radius: 12px; font-size: 12px; font-weight: 700; text-decoration: none;
+            display: inline-flex; align-items: center; gap: 6px; cursor: pointer; border: none;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.06); transition: transform 0.12s ease, opacity 0.12s ease, background 0.12s ease;
+            font-family: var(--font-apple);
         }}
-        .apple-btn:active {{ transform: scale(0.96); opacity: 0.85; }}
+        .apple-btn:active {{ transform: scale(0.95); opacity: 0.85; }}
 
-        .apple-btn-primary {{ background: var(--apple-blue); color: #ffffff; box-shadow: 0 2px 8px rgba(0,113,227,0.28); }}
-        .apple-btn-primary:hover {{ background: var(--apple-blue-hover); }}
-        .apple-btn-secondary {{ background: rgba(0,0,0,0.05); color: var(--apple-text-primary); border: 0.5px solid var(--apple-border); }}
-        .apple-btn-secondary.disabled {{ opacity: 0.7; cursor: default; }}
-        .apple-btn-success {{ background: var(--apple-green); color: #ffffff; box-shadow: 0 2px 8px rgba(52,199,89,0.28); }}
-        .apple-btn-danger {{ background: rgba(255,59,48,0.12); color: var(--apple-red); border: 0.5px solid rgba(255,59,48,0.25); }}
+        .apple-btn-primary {{ background: var(--apple-blue); color: #ffffff; box-shadow: 0 4px 14px var(--apple-blue-glow); }}
+        .apple-btn-primary:hover {{ background: #0062c4; }}
+        .apple-btn-secondary {{ background: rgba(0,0,0,0.05); color: var(--apple-text-main); border: 0.5px solid var(--apple-border); }}
+        .apple-btn-success {{ background: var(--apple-green); color: #ffffff; box-shadow: 0 4px 14px rgba(52, 199, 89, 0.3); }}
+        .apple-btn-danger {{ background: rgba(255, 59, 48, 0.12); color: var(--apple-red); border: 0.5px solid rgba(255, 59, 48, 0.25); }}
 
         .view-section {{ display: none; }}
-        iframe {{ border: none; width: 100%; height: 500px; border-radius: 16px; background: #ffffff; border: 0.5px solid var(--apple-border); }}
 
-        .bento-form-card {{
-            background: var(--apple-card); border: 0.5px solid var(--apple-border); border-radius: 20px;
-            padding: 24px; margin-bottom: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.03);
-        }}
-        .form-group {{ margin-bottom: 16px; }}
-        .form-label {{ font-weight: 700; margin-bottom: 6px; display: block; color: var(--apple-blue); font-size: 13px; }}
-        .form-input {{
-            width: 100%; padding: 12px; background: #ffffff; border: 0.5px solid var(--apple-border);
-            border-radius: 12px; color: var(--apple-text-primary); font-size: 13px; font-weight: 500; outline: none;
-        }}
-        .form-input:focus {{ border-color: var(--apple-blue); box-shadow: 0 0 0 3px rgba(0,113,227,0.12); }}
+        iframe {{ border: none; width: 100%; height: 500px; border-radius: 18px; background: #ffffff; border: 1px solid var(--apple-glass-border); }}
 
-        @media (max-width: 900px) {{
-            .bento-hero {{ grid-column: span 12; }}
-            .bento-stats {{ grid-column: span 12; grid-template-columns: repeat(2, 1fr); }}
+        .settings-card {{
+            background: var(--apple-card);
+            backdrop-filter: blur(25px) saturate(180%);
+            -webkit-backdrop-filter: blur(25px) saturate(180%);
+            border: 1px solid var(--apple-glass-border);
+            border-radius: 22px; padding: 26px; margin-bottom: 24px;
+            box-shadow: 0 6px 24px -6px rgba(0, 0, 0, 0.04);
+        }}
+        .settings-group {{ margin-bottom: 18px; }}
+        .settings-label {{ font-weight: 800; margin-bottom: 8px; display: block; color: var(--apple-blue); font-size: 14px; letter-spacing: -0.01em; }}
+        .settings-input {{
+            width: 100%; padding: 12px 16px; background: #ffffff; border: 1px solid var(--apple-glass-border);
+            border-radius: 14px; color: var(--apple-text-main); font-size: 14px; font-weight: 600; outline: none;
+            font-family: var(--font-apple); box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+        }}
+        .settings-input:focus {{ border-color: var(--apple-blue); box-shadow: 0 4px 16px var(--apple-blue-glow); }}
+
+        @media (max-width: 768px) {{
+            body {{ padding: 12px; }}
+            .header {{ flex-direction: column; align-items: flex-start; gap: 14px; }}
             .jobs-grid {{ grid-template-columns: 1fr; }}
-            body {{ padding: 10px; }}
         }}
     </style>
 </head>
 <body>
 
 <div class="container">
-    <!-- 🍎 Apple Glass Header Bar -->
-    <div class="apple-header">
-        <div class="brand-row">
-            <div class="brand-logo">⚡</div>
+    <!-- Lando Norris Dynamic Telemetry Ticker -->
+    <div class="marquee-container">
+        <div class="marquee-content">
+            ⚡ UK TECH SCHEME ENGINE ONLINE &nbsp;&bull;&nbsp; 🚀 69 ACTIVE OPEN SCHEMES INDEXED &nbsp;&bull;&nbsp; 🎯 SKILL MATCH MATRIX RUNNING &nbsp;&bull;&nbsp; 📧 REALTIME GMAIL INBOX WATCHDOG ENGAGED &nbsp;&bull;&nbsp; 📊 SANKEY PIPELINE SYNCED &nbsp;&bull;&nbsp; ⚡ UK TECH SCHEME ENGINE ONLINE &nbsp;&bull;&nbsp; 🚀 69 ACTIVE OPEN SCHEMES INDEXED &nbsp;&bull;&nbsp; 🎯 SKILL MATCH MATRIX RUNNING
+        </div>
+    </div>
+
+    <!-- Apple Glass Header -->
+    <div class="header">
+        <div class="brand">
+            <div class="brand-logo"></div>
             <div>
                 <div class="brand-title">ApplicationTrackr</div>
-                <div class="brand-subtitle">Headless HP Stream Engine &bull; UK Tech, Quant & AI Command Center</div>
+                <div class="brand-sub">Headless HP Stream Server &bull; UK Maths, Quant & CS Engine</div>
             </div>
         </div>
-        <div style="display:flex; gap:10px; align-items:center;">
-            <div class="status-pill"><span class="status-dot"></span> HP-STREAM ONLINE ({HP_STREAM_TAILSCALE_IP}:5000)</div>
+        <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+            <div class="server-status-pill"><span class="status-dot"></span> HP-STREAM ONLINE ({HP_STREAM_TAILSCALE_IP}:5000)</div>
             <a href="/api/rescan" class="apple-btn apple-btn-primary">⚡ Rescan Now</a>
             <a href="/api/sync-sheet" class="apple-btn apple-btn-secondary">🔄 Sync Sheet</a>
         </div>
     </div>
 
-    <!-- 🍱 Lando Norris High-Tech Bento Grid Header -->
+    <!-- Apple Bento Grid Stat Cards -->
     <div class="bento-grid">
-        <div class="bento-card bento-hero">
-            <div>
-                <span class="apple-pill pill-active" style="margin-bottom:8px;">🎯 Application Telemetry</span>
-                <h2 style="font-size:24px; font-weight:800; letter-spacing:-0.03em; margin-bottom:6px;">UK Tech & Quant Pipeline</h2>
-                <p style="font-size:13px; color:var(--apple-text-secondary); line-height:1.5;">
-                    Real-time automated multi-source egress engine tracking active graduate & placement schemes.
-                </p>
-            </div>
-            <div style="margin-top:16px; display:flex; gap:12px; align-items:center;">
-                <div style="font-size:32px; font-weight:800; color:var(--apple-blue); letter-spacing:-0.04em;">{open_count}</div>
-                <div style="font-size:12px; color:var(--apple-text-tertiary); font-weight:600;">Active Apply-able<br>Schemes Indexed</div>
-            </div>
+        <div class="bento-card">
+            <div class="bento-lbl">TOTAL APPLICATIONS</div>
+            <div class="bento-val">{total}</div>
         </div>
-
-        <div class="bento-stats">
-            <div class="bento-stat-box">
-                <div class="bento-stat-lbl">TOTAL LOGGED</div>
-                <div class="bento-stat-val">{total}</div>
-            </div>
-            <div class="bento-stat-box">
-                <div class="bento-stat-lbl">ACTIVE ROUNDS</div>
-                <div class="bento-stat-val" style="color:var(--apple-blue);">{active}</div>
-            </div>
-            <div class="bento-stat-box">
-                <div class="bento-stat-lbl">OFFERS SECURED</div>
-                <div class="bento-stat-val" style="color:var(--apple-green);">{offers}</div>
-            </div>
-            <div class="bento-stat-box">
-                <div class="bento-stat-lbl">CONVERSION %</div>
-                <div class="bento-stat-val" style="color:var(--apple-purple);">{conv_rate}%</div>
-            </div>
+        <div class="bento-card">
+            <div class="bento-lbl">ACTIVE ROUNDS</div>
+            <div class="bento-val" style="color:var(--apple-blue);">{active}</div>
+        </div>
+        <div class="bento-card">
+            <div class="bento-lbl">OFFERS SECURED</div>
+            <div class="bento-val" style="color:var(--apple-green);">{offers} 🎉</div>
+        </div>
+        <div class="bento-card">
+            <div class="bento-lbl">REJECTIONS / GHOSTED</div>
+            <div class="bento-val" style="color:var(--apple-red);">{rejections}</div>
+        </div>
+        <div class="bento-card">
+            <div class="bento-lbl">CONVERSION RATE</div>
+            <div class="bento-val" style="color:var(--apple-purple);">{conv_rate}%</div>
+        </div>
+        <div class="bento-card">
+            <div class="bento-lbl">DISCOVERED SCHEMES</div>
+            <div class="bento-val" style="color:var(--apple-orange);">{discovered_count}</div>
         </div>
     </div>
 
-    <!-- 🍎 Apple Segmented Control Nav Container -->
-    <div class="apple-nav-container">
-        <div class="nav-tabs">
-            <button class="tab-btn {tab_flow}" onclick="switchTab('flow')">📊 Pipeline Flow & Sankey</button>
-            <button class="tab-btn {tab_jobs}" onclick="switchTab('jobs')">💼 Discovered Schemes ({discovered_count})</button>
-            <button class="tab-btn {tab_settings}" onclick="switchTab('settings')">⚙️ Filter Criteria</button>
-            <button class="tab-btn {tab_status}" onclick="switchTab('diagnostics')">🛠 System Telemetry</button>
-            <button class="tab-btn {tab_closed}" onclick="switchTab('closed')">🛑 Closed Schemes ({closed_count})</button>
-        </div>
+    <!-- Apple Segmented Navigation Bar -->
+    <div class="apple-nav">
+        <button class="apple-tab {tab_flow}" onclick="switchTab('flow')">📊 Application Flow & Sankey</button>
+        <button class="apple-tab {tab_jobs}" onclick="switchTab('jobs')">💼 Discovered Schemes ({discovered_count})</button>
+        <button class="apple-tab {tab_settings}" onclick="switchTab('settings')">⚙️ Filter Settings</button>
+        <button class="apple-tab {tab_status}" onclick="switchTab('diagnostics')">🛠 System Diagnostics</button>
+        <button class="apple-tab {tab_closed}" onclick="switchTab('closed')">🛑 Closed Schemes ({closed_count})</button>
     </div>
 
     <!-- TAB 1: FLOW & SANKEY -->
     <div id="view-flow" class="view-section" style="{view_flow}">
-        <div class="bento-form-card">
-            <h3 style="margin-bottom:14px; font-weight:800; font-size:18px;">📊 Live Interactive Sankey Pipeline</h3>
+        <div class="settings-card">
+            <h3 style="margin-bottom:16px; font-weight:800; font-size:18px;">📊 Live Application Pipeline Flow</h3>
             <iframe src="/sankey-embed" id="sankey-iframe"></iframe>
         </div>
 
-        <div class="bento-form-card">
-            <h3 style="margin-bottom:14px; font-weight:800; font-size:18px;">📋 Detailed Logged Applications</h3>
-            <table style="width:100%; border-collapse:collapse; text-align:left; font-size:13px;">
-                <thead>
-                    <tr style="border-bottom:1px solid var(--apple-border); color:var(--apple-text-tertiary);">
-                        <th style="padding:10px;">Company</th>
-                        <th style="padding:10px;">Role</th>
-                        <th style="padding:10px;">Latest Stage</th>
-                        <th style="padding:10px;">Pipeline History</th>
-                        <th style="padding:10px;">Status</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {apps_table_rows}
-                </tbody>
-            </table>
+        <div class="settings-card" style="margin-top:20px;">
+            <h3 style="margin-bottom:16px; font-weight:800; font-size:18px;">📋 Detailed Logged Applications</h3>
+            <div style="overflow-x:auto;">
+                <table style="width:100%; border-collapse:collapse; text-align:left; font-size:14px;">
+                    <thead>
+                        <tr style="border-bottom:1px solid var(--apple-border); color:var(--apple-text-sub);">
+                            <th style="padding:12px;">Company</th>
+                            <th style="padding:12px;">Role</th>
+                            <th style="padding:12px;">Latest Stage</th>
+                            <th style="padding:12px;">Pipeline History</th>
+                            <th style="padding:12px;">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {apps_table_rows}
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 
     <!-- TAB 2: DISCOVERED SCHEMES -->
     <div id="view-jobs" class="view-section" style="{view_jobs}">
-        <div class="controls-dock">
-            <div class="search-dock">
-                <span class="search-icon">🔍</span>
-                <input type="text" id="job-search" class="search-input" placeholder="Search by company, role, location, or source..." onkeyup="filterJobs()">
+        <div class="controls-bar">
+            <div class="search-row">
+                <div class="search-box">
+                    <span class="search-icon">🔍</span>
+                    <input type="text" id="job-search" class="search-input" placeholder="Search company, role, location, or source... (Press '/' to search)" onkeyup="filterJobs()">
+                </div>
+
+                <select id="sort-select" class="sort-select" onchange="sortJobs()">
+                    <option value="newest">🆕 Discovered: Newest First</option>
+                    <option value="oldest">⏳ Discovered: Oldest First</option>
+                    <option value="match_desc">🎯 Skill Match: Highest First</option>
+                    <option value="resp_asc">⚡ Response Time: Fastest First</option>
+                    <option value="company_asc">🔤 Company Name: A → Z</option>
+                    <option value="title_asc">💼 Role Title: A → Z</option>
+                </select>
             </div>
 
-            <select id="sort-select" class="sort-select" onchange="sortJobs()">
-                <option value="newest">🆕 Discovered: Newest First</option>
-                <option value="oldest">⏳ Discovered: Oldest First</option>
-                <option value="match_desc">🎯 Skill Match: Highest First</option>
-                <option value="resp_asc">⚡ Response Time: Fastest First</option>
-                <option value="company_asc">🔤 Company Name: A → Z</option>
-                <option value="title_asc">💼 Role Title: A → Z</option>
-            </select>
-
-            <div class="pill-dock">
-                <button class="pill-item active" onclick="filterPill('all', this)">All Open Schemes ({discovered_count})</button>
-                <button class="pill-item" onclick="filterPill('not_applied', this)">⚡ Not Applied ({not_applied_count})</button>
-                <button class="pill-item" onclick="filterPill('applied', this)">✅ Applied ({applied_count})</button>
-                <button class="pill-item" onclick="filterPill('quant', this)">📈 Quant & Trading ({quant_count})</button>
-                <button class="pill-item" onclick="filterPill('software', this)">💻 Software ({sw_count})</button>
-                <button class="pill-item" onclick="filterPill('ml', this)">🧠 ML & AI ({ml_count})</button>
-                <button class="pill-item" onclick="filterPill('cyber', this)">🛡️ Cyber & Cloud ({cyber_count})</button>
+            <div class="pill-filters">
+                <button class="pill active" onclick="filterPill('all', this)">All Open Schemes ({discovered_count})</button>
+                <button class="pill" onclick="filterPill('not_applied', this)">⚡ Not Applied ({not_applied_count})</button>
+                <button class="pill" onclick="filterPill('applied', this)">✅ Applied ({applied_count})</button>
+                <button class="pill" onclick="filterPill('quant', this)">📈 Quant & Trading ({quant_count})</button>
+                <button class="pill" onclick="filterPill('software', this)">💻 Software ({sw_count})</button>
+                <button class="pill" onclick="filterPill('ml', this)">🧠 ML & AI ({ml_count})</button>
+                <button class="pill" onclick="filterPill('cyber', this)">🛡️ Cyber & Cloud ({cyber_count})</button>
             </div>
         </div>
 
@@ -587,66 +654,66 @@ def render_unified_dashboard_html(active_tab="flow"):
 
     <!-- TAB 3: SETTINGS -->
     <div id="view-settings" class="view-section" style="{view_settings}">
-        <div class="bento-form-card">
-            <h3 style="margin-bottom:16px; font-weight:800; font-size:18px;">⚙️ Scraper & Filter Criteria</h3>
+        <div class="settings-card">
+            <h3 style="margin-bottom:18px; font-weight:800; font-size:18px;">⚙️ Scraper & Filter Criteria</h3>
             <form action="/api/settings" method="POST">
-                <div class="form-group">
-                    <label class="form-label">Target Skills Matrix (Comma-Separated)</label>
-                    <input type="text" name="my_skills" class="form-input" value="{my_skills_str}">
+                <div class="settings-group">
+                    <label class="settings-label">Target Skills Matrix (Comma-Separated)</label>
+                    <input type="text" name="my_skills" class="settings-input" value="{my_skills_str}">
                 </div>
-                <div class="form-group">
-                    <label class="form-label">Exclude Keyword Terms (Comma-Separated)</label>
-                    <input type="text" name="exclude_keywords" class="form-input" value="{ex_kw}">
+                <div class="settings-group">
+                    <label class="settings-label">Exclude Keyword Terms (Comma-Separated)</label>
+                    <input type="text" name="exclude_keywords" class="settings-input" value="{ex_kw}">
                 </div>
-                <div class="form-group">
-                    <label class="form-label">Exclude Locations (Comma-Separated)</label>
-                    <input type="text" name="exclude_locations" class="form-input" value="{ex_loc}">
-                </div>
-
-                <div class="form-group">
-                    <label class="form-label">Greenhouse Target Companies</label>
-                    <textarea name="greenhouse_companies" class="form-input" rows="3">{gh_comp}</textarea>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Lever Target Companies</label>
-                    <textarea name="lever_companies" class="form-input" rows="2">{lev_comp}</textarea>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Ashby Target Companies</label>
-                    <textarea name="ashby_companies" class="form-input" rows="2">{ash_comp}</textarea>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">SmartRecruiters Target Companies</label>
-                    <textarea name="smartrecruiters_companies" class="form-input" rows="2">{sr_comp}</textarea>
+                <div class="settings-group">
+                    <label class="settings-label">Exclude Locations (Comma-Separated)</label>
+                    <input type="text" name="exclude_locations" class="settings-input" value="{ex_loc}">
                 </div>
 
-                <div class="form-group" style="margin-top:12px;">
-                    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
-                        <input type="checkbox" name="auto_hide_applied_company_jobs" value="true" {auto_hide_chk}>
-                        <span style="font-size:13px; font-weight:600;">Automatically hide other open listings from companies I have already applied to</span>
+                <div class="settings-group">
+                    <label class="settings-label">Greenhouse Target Companies</label>
+                    <textarea name="greenhouse_companies" class="settings-input" rows="3">{gh_comp}</textarea>
+                </div>
+                <div class="settings-group">
+                    <label class="settings-label">Lever Target Companies</label>
+                    <textarea name="lever_companies" class="settings-input" rows="2">{lev_comp}</textarea>
+                </div>
+                <div class="settings-group">
+                    <label class="settings-label">Ashby Target Companies</label>
+                    <textarea name="ashby_companies" class="settings-input" rows="2">{ash_comp}</textarea>
+                </div>
+                <div class="settings-group">
+                    <label class="settings-label">SmartRecruiters Target Companies</label>
+                    <textarea name="smartrecruiters_companies" class="settings-input" rows="2">{sr_comp}</textarea>
+                </div>
+
+                <div class="settings-group" style="margin-top:14px;">
+                    <label style="display:flex; align-items:center; gap:10px; cursor:pointer; font-size:14px; font-weight:600;">
+                        <input type="checkbox" name="auto_hide_applied_company_jobs" value="true" {auto_hide_chk} style="width:18px; height:18px; accent-color:var(--apple-blue);">
+                        <span>Automatically hide other open listings from companies I have already applied to</span>
                     </label>
                 </div>
 
-                <button type="submit" class="apple-btn apple-btn-primary" style="margin-top:10px;">💾 Save Filter Criteria</button>
+                <button type="submit" class="apple-btn apple-btn-primary" style="margin-top:14px;">💾 Save Filter Settings</button>
             </form>
         </div>
     </div>
 
     <!-- TAB 4: SYSTEM DIAGNOSTICS -->
     <div id="view-status" class="view-section" style="{view_status}">
-        <div class="bento-form-card">
-            <h3 style="margin-bottom:12px; font-weight:800; font-size:18px;">🛠 System & Scraper Diagnostics</h3>
-            <div style="font-size:13px; line-height:1.6; color:var(--apple-text-secondary);">
+        <div class="settings-card">
+            <h3 style="margin-bottom:16px; font-weight:800; font-size:18px;">🛠 System & Scraper Diagnostics</h3>
+            <div style="font-size:14px; line-height:1.7; color:var(--apple-text-sub);">
                 <div><b>Last Scraper Engine Run:</b> {last_run}</div>
                 <div><b>Total Schemes Indexed:</b> {discovered_count}</div>
-                <div style="margin-top:12px; font-weight:700; color:var(--apple-text-primary);">ATS Source Egress Statuses:</div>
-                <div style="margin-top:6px;">{src_status_html}</div>
+                <div style="margin-top:12px; font-weight:800; color:var(--apple-text-main);">ATS Source Engine Statuses:</div>
+                {src_status_html}
             </div>
         </div>
 
-        <div class="bento-form-card">
-            <h3 style="margin-bottom:12px; font-weight:800; font-size:18px;">🧠 AI Self-Learning Knowledge Base ({kb_count} rules)</h3>
-            <div style="max-height:180px; overflow-y:auto; padding:12px; background:var(--apple-bg); border-radius:12px; border:0.5px solid var(--apple-border);">
+        <div class="settings-card" style="margin-top:20px;">
+            <h3 style="margin-bottom:16px; font-weight:800; font-size:18px;">🧠 AI Self-Learning Knowledge Base ({kb_count} rules)</h3>
+            <div style="max-height:200px; overflow-y:auto; padding:14px; background:#ffffff; border-radius:14px; border:1px solid var(--apple-glass-border);">
                 {kb_badges_html}
             </div>
         </div>
@@ -654,9 +721,9 @@ def render_unified_dashboard_html(active_tab="flow"):
 
     <!-- TAB 5: CLOSED SCHEMES -->
     <div id="view-closed" class="view-section" style="{view_closed}">
-        <div class="bento-form-card">
-            <h3 style="margin-bottom:12px; font-weight:800; font-size:18px;">🛑 Reported & Inactive Schemes Directory ({closed_count})</h3>
-            <p style="font-size:12px; color:var(--apple-text-tertiary); margin-bottom:16px;">
+        <div class="settings-card">
+            <h3 style="margin-bottom:14px; font-weight:800; font-size:18px;">🛑 Reported & Inactive Schemes Directory ({closed_count})</h3>
+            <p style="font-size:13px; color:var(--apple-text-sub); margin-bottom:18px;">
                 Schemes listed here were automatically or manually marked as closed. You can re-open any scheme if it opens again.
             </p>
             <div class="jobs-grid">
@@ -669,12 +736,12 @@ def render_unified_dashboard_html(active_tab="flow"):
 <script>
     function switchTab(tabId) {{
         document.querySelectorAll('.view-section').forEach(el => el.style.display = 'none');
-        document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.apple-tab').forEach(el => el.classList.remove('active'));
 
         var targetView = document.getElementById('view-' + tabId);
         if (targetView) targetView.style.display = 'block';
 
-        var btns = document.querySelectorAll('.tab-btn');
+        var btns = document.querySelectorAll('.apple-tab');
         btns.forEach(b => {{
             if (b.getAttribute('onclick').includes(tabId)) b.classList.add('active');
         }});
@@ -684,7 +751,7 @@ def render_unified_dashboard_html(active_tab="flow"):
 
     function filterPill(cat, btn) {{
         currentPill = cat;
-        document.querySelectorAll('.pill-item').forEach(p => p.classList.remove('active'));
+        document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
         btn.classList.add('active');
         filterJobs();
     }}
@@ -737,6 +804,14 @@ def render_unified_dashboard_html(active_tab="flow"):
 
         cards.forEach(card => container.appendChild(card));
     }}
+
+    document.addEventListener('keydown', function(e) {{
+        if (e.key === '/' && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {{
+            e.preventDefault();
+            var searchInput = document.getElementById('job-search');
+            if (searchInput) searchInput.focus();
+        }}
+    }});
 
     function reportClosedJob(jobId, link) {{
         if (confirm('Report this scheme as closed/filled? This will train the AI Knowledge Base and recheck all open schemes.')) {{

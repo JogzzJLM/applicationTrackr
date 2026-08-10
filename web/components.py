@@ -21,13 +21,13 @@ def render_job_card(j, is_reported_closed=False, is_applied=False, is_hidden=Fal
     title_js = title_str.replace("'", "\\'").replace('"', '&quot;')
 
     if is_applied:
-        status_badge = '<span class="apple-pill pill-applied">✓ Applied & Tracked</span>'
-        action_btn = '<span class="apple-btn apple-btn-secondary disabled">✓ In Sheet</span>'
+        status_badge = '<span class="badge badge-applied">✅ Applied</span>'
+        action_btn = '<span class="apple-btn apple-btn-secondary" style="opacity:0.85; font-weight:600; cursor:default;">✓ In Sheet</span>'
     elif is_reported_closed:
-        status_badge = '<span class="apple-pill pill-closed">🛑 Scheme Closed</span>'
+        status_badge = '<span class="badge badge-closed">🛑 Closed</span>'
         action_btn = f'<button onclick="reopenJob(\'{j_id}\')" class="apple-btn apple-btn-secondary">🔓 Re-Open Scheme</button>'
     else:
-        status_badge = '<span class="apple-pill pill-open">⚡ Active Scheme</span>'
+        status_badge = '<span class="badge badge-open">⚡ Active</span>'
         action_btn = f'<button onclick="logJob(\'{comp_js}\', \'{title_js}\')" class="apple-btn apple-btn-success" title="Log this application to Google Sheets">+ Log Applied</button>'
 
     t_low = title_str.lower()
@@ -47,51 +47,57 @@ def render_job_card(j, is_reported_closed=False, is_applied=False, is_hidden=Fal
 
     source_url = j.get('source_url') or link_str
     display_url = source_url.replace("https://", "").replace("http://", "").replace("www.", "").rstrip("/")
-    if len(display_url) > 42:
-        display_url = display_url[:39] + "..."
+    if len(display_url) > 38:
+        display_url = display_url[:35] + "..."
 
     link_js = link_str.replace("'", "\\'").replace('"', '&quot;')
     resp_days_val = float(str(avg_resp).split('-')[0]) if '-' in str(avg_resp) else (float(avg_resp) if str(avg_resp).replace('.','',1).isdigit() else 3.0)
     report_btn_html = f'<button onclick="reportClosedJob(\'{j_id}\', \'{link_js}\')" class="apple-btn apple-btn-danger" title="Report this job as closed/filled to train the AI filter">🚩 Report Closed</button>' if not is_reported_closed else ''
 
-    # Compute company initials for Apple-style avatar icon
-    comp_parts = [p for p in comp_str.split() if p.isalnum() or p.isalpha()]
-    initials = (comp_parts[0][0] + comp_parts[1][0]).upper() if len(comp_parts) >= 2 else comp_str[:2].upper()
+    # Generate initials avatar
+    words = [w for w in comp_str.split() if w[0].isalnum()]
+    initials = (words[0][0] + words[1][0]).upper() if len(words) >= 2 else (comp_str[:2].upper() if comp_str else "TC")
 
-    # Dynamic Progress Bar Color based on match score
-    progress_color = "#34c759" if match_score >= 80 else ("#0071e3" if match_score >= 60 else "#ff9500")
+    # Match score bar gradient
+    bar_width = min(100, max(10, match_score))
 
     return f"""
     <div class="job-card" data-search="{comp_str.lower()} {title_str.lower()} {loc_str.lower()} {status_tag} {cat} {source_badge_text.lower()}" data-status="{status_tag}" data-cat="{cat}" data-date="{date_str}" data-match="{match_score}" data-resp="{resp_days_val}" data-company="{comp_str.lower()}" data-title="{title_str.lower()}">
-        <div class="job-header">
-            <div class="company-avatar-row">
-                <div class="company-avatar">{initials}</div>
+        <div class="job-card-header">
+            <div style="display:flex; align-items:center; gap:10px;">
+                <div class="avatar-circle">{initials}</div>
                 <div>
-                    <div class="company">{comp_str}</div>
-                    <div class="job-meta-inline">📍 {loc_str} &bull; 🕒 {date_str}</div>
+                    <div class="company-title">{comp_str}</div>
+                    <div style="display:flex; align-items:center; gap:6px; margin-top:2px;">
+                        {status_badge}
+                        <span class="badge badge-source">{source_badge_text}</span>
+                    </div>
                 </div>
             </div>
-            {status_badge}
         </div>
 
-        <div class="job-title">{title_str}</div>
+        <div class="job-card-title">{title_str}</div>
 
-        <!-- Telemetry Match Score Bar -->
-        <div class="telemetry-bar-container">
-            <div class="telemetry-label-row">
-                <span class="telemetry-label">Skill Match Score</span>
-                <span class="telemetry-score" style="color:{progress_color};">{match_score}%</span>
-            </div>
-                <div class="telemetry-bar-track">
-                <div class="telemetry-bar-fill" style="width: {match_score}%; background: {progress_color};"></div>
+        <div class="match-score-row">
+            <div class="match-score-pill">🎯 {match_score}% Skill Match</div>
+            <div class="match-bar-bg">
+                <div class="match-bar-fill" style="width: {bar_width}%;"></div>
             </div>
         </div>
 
-        <div class="job-source-info">
-            <span style="color:var(--apple-text-tertiary);">Source Egress:</span> <a href="{source_url}" target="_blank" class="source-link">{display_url} ↗</a>
+        <div class="job-card-meta">
+            <span>📍 {loc_str}</span>
+            <span>&bull;</span>
+            <span>🕒 {date_str}</span>
+            <span>&bull;</span>
+            <span>⚡ ~{avg_resp}d response</span>
         </div>
 
-        <div class="job-actions">
+        <div class="job-source-banner">
+            🔍 <b>Source:</b> <a href="{source_url}" target="_blank" rel="noopener noreferrer" class="source-link">{display_url} ↗</a>
+        </div>
+
+        <div class="job-card-actions">
             <a href="{link_str}" target="_blank" rel="noopener noreferrer" class="apple-btn apple-btn-primary">Apply Direct ↗</a>
             {action_btn}
             <a href="/api/calendar.ics?summary={urllib.parse.quote('Apply: ' + comp_str + ' - ' + title_str)}&desc={urllib.parse.quote('Job Link: ' + link_str)}" class="apple-btn apple-btn-secondary" title="Add application deadline to Apple Calendar">📅 Cal</a>
