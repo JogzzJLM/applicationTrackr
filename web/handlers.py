@@ -90,8 +90,15 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_cors_headers()
             self.end_headers()
-            html = generate_sankey_from_google_sheets()
+            if not os.path.exists("sankey_diagram.html"):
+                generate_sankey_from_google_sheets()
+            try:
+                with open("sankey_diagram.html", "r", encoding="utf-8") as f:
+                    html = f.read()
+            except Exception:
+                html = "<html><body><h3>Sankey Diagram Loading...</h3></body></html>"
             self.wfile.write(html.encode("utf-8"))
+
 
         elif path == "/api/status":
             self.send_response(200)

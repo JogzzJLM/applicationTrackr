@@ -325,17 +325,17 @@ def generate_sankey_from_google_sheets(force_refresh=False):
         for name in node_list:
             lower = name.lower()
             if name == "Applications":
-                colors.append("#007aff")  # Apple System Blue
+                colors.append("#007aff")  # Apple Blue
             elif "offer" in lower or "accepted" in lower:
-                colors.append("#34c759")  # Apple System Green
+                colors.append("#34c759")  # Apple Green
             elif "reject" in lower or "fail" in lower:
-                colors.append("#ff3b30")  # Apple System Red
+                colors.append("#ff3b30")  # Apple Red
             elif "ghost" in lower:
-                colors.append("#8e8e93")  # Apple System Gray
+                colors.append("#8e8e93")  # Apple Gray
             elif "assessment" in lower or "interview" in lower or "oa" in lower:
-                colors.append("#ff9500")  # Apple System Orange
+                colors.append("#ff9500")  # Apple Orange
             else:
-                colors.append("#5856d6")  # Apple System Indigo
+                colors.append("#5856d6")  # Apple Indigo
 
         link_colors = []
         for src, tgt in flow_counts.keys():
@@ -343,17 +343,17 @@ def generate_sankey_from_google_sheets(force_refresh=False):
             if "offer" in tgt_lower or "accepted" in tgt_lower:
                 link_colors.append("rgba(52, 199, 89, 0.35)")
             elif "reject" in tgt_lower or "fail" in tgt_lower:
-                link_colors.append("rgba(255, 59, 48, 0.25)")
+                link_colors.append("rgba(255, 59, 48, 0.22)")
             elif "interview" in tgt_lower or "assessment" in tgt_lower or "oa" in tgt_lower:
                 link_colors.append("rgba(255, 149, 0, 0.3)")
             else:
-                link_colors.append("rgba(0, 122, 255, 0.25)")
+                link_colors.append("rgba(0, 122, 255, 0.22)")
 
         fig = go.Figure(data=[go.Sankey(
             arrangement="snap",
             node=dict(
-                pad=26,
-                thickness=22,
+                pad=24,
+                thickness=20,
                 line=dict(color="rgba(0, 0, 0, 0.08)", width=1),
                 label=node_list,
                 color=colors
@@ -369,14 +369,15 @@ def generate_sankey_from_google_sheets(force_refresh=False):
         fig.update_layout(
             font_size=13,
             font_color="#1c1c1e",
-            font_family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', sans-serif",
+            font_family="Plus Jakarta Sans, -apple-system, BlinkMacSystemFont, sans-serif",
             autosize=True,
-            height=500,
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-            margin=dict(l=10, r=10, t=20, b=20)
+            height=480,
+            paper_bgcolor="#ffffff",
+            plot_bgcolor="#ffffff",
+            margin=dict(l=15, r=15, t=15, b=15)
         )
         fig.write_html("sankey_diagram.html")
+
 
     except Exception as e:
         print(f"Error generating Sankey diagram: {e}")

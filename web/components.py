@@ -22,17 +22,17 @@ def render_job_card(j, is_reported_closed=False, is_applied=False, is_hidden=Fal
         action_btn = '<span class="ios-btn ios-btn-secondary" style="opacity:0.85; font-weight:600; cursor:default;">✓ In Sheet</span>'
     elif is_reported_closed:
         status_badge = '<span class="badge badge-closed">🛑 Scheme Closed</span>'
-        action_btn = f'<a href="/api/reopen-job?id={j_id}" class="ios-btn ios-btn-secondary" style="font-size:12px;" title="Re-open this scheme if it is active again">🔓 Re-Open Scheme</a>'
+        action_btn = f'<button onclick="reopenJob(\'{j_id}\')" class="ios-btn ios-btn-secondary" style="font-size:12px;">🔓 Re-Open Scheme</button>'
     else:
         status_badge = '<span class="badge badge-open">⚡ Not Applied</span>'
-        action_btn = f'<a href="/api/mark-applied?id={j_id}" class="ios-btn ios-btn-success" style="font-size:12px;" title="Log this application to Google Sheets">+ Log Applied</a>'
+        action_btn = f'<button onclick="logJob(\'{comp_str.replace("\'", "\\\'")}\', \'{title_str.replace("\'", "\\\'")}\')" class="ios-btn ios-btn-success" style="font-size:12px;" title="Log this application to Google Sheets">+ Log Applied</button>'
 
     t_low = title_str.lower()
     cat = "software"
     if any(k in t_low for k in ["quant", "trader", "trading", "quant analyst"]):
         cat = "quant"
     elif any(k in t_low for k in ["machine learning", "ml", "ai", "data science", "nlp"]):
-        cat = "ai"
+        cat = "ml"
     elif any(k in t_low for k in ["cyber", "security", "cloud", "devops"]):
         cat = "cyber"
 
@@ -57,14 +57,17 @@ def render_job_card(j, is_reported_closed=False, is_applied=False, is_hidden=Fal
             <div>
                 <span class="company">{comp_str}</span> &nbsp;
                 {status_badge}
-                <span class="badge badge-active" style="background:rgba(52,199,89,0.12); color:#278a3c; border:0.5px solid rgba(52,199,89,0.3);">🎯 {match_score}% Skill Match</span>
             </div>
             <span class="badge badge-source">{source_badge_text}</span>
         </div>
         <div class="job-title">{title_str}</div>
-        <div class="job-meta">📍 {loc_str} &nbsp;&bull;&nbsp; 🕒 Discovered: {date_str} &nbsp;&bull;&nbsp; ⚡ Avg Response: {avg_resp} days</div>
+        <div style="display:flex; align-items:center; gap:8px; margin: 4px 0;">
+            <span class="badge badge-match">🎯 {match_score}% Skill Match</span>
+            <span style="font-size:12px; color:var(--ios-text-secondary);">📍 {loc_str}</span>
+        </div>
+        <div class="job-meta">🕒 Discovered: {date_str} &nbsp;&bull;&nbsp; ⚡ Avg Response: {avg_resp} days</div>
         <div class="job-source-info">
-            🔍 <b>Scraped Webpage:</b> <a href="{source_url}" target="_blank" class="source-link">{display_url} ↗</a>
+            🔍 <b>Source Webpage:</b> <a href="{source_url}" target="_blank" class="source-link">{display_url} ↗</a>
         </div>
         <div class="job-actions">
             <a href="{link_str}" target="_blank" rel="noopener noreferrer" class="ios-btn ios-btn-primary">Apply Direct ↗</a>

@@ -4,8 +4,6 @@ from core.storage import (
     load_settings, load_hidden_jobs,
     load_reported_closed_jobs, load_json_safe
 )
-
-
 from core.kb import load_closed_keywords_kb
 from core.normalization import normalize_company, normalize_role
 from core.scoring import calculate_skill_match_score
@@ -23,7 +21,6 @@ def render_unified_dashboard_html(active_tab="flow"):
     applied_jobs, applied_companies = get_applied_jobs_set()
     settings = load_settings()
     hidden_jobs = load_hidden_jobs()
-    hidden_count = len(hidden_jobs)
 
     total = stats.get("total", 0)
     active = stats.get("active", 0)
@@ -96,10 +93,10 @@ def render_unified_dashboard_html(active_tab="flow"):
 
             apps_table_rows += f"""
             <tr>
-                <td style="font-weight:700; color:#f8fafc;">{a['company']}</td>
-                <td style="color:#cbd5e1;">{a['role']}</td>
+                <td style="font-weight:700; color:#1c1c1e;">{a['company']}</td>
+                <td style="color:#3a3a3c;">{a['role']}</td>
                 <td><span class="badge {badge_cls}">{a['latest_stage']}</span></td>
-                <td style="color:#94a3b8; font-size:13px;">{pipeline_str}</td>
+                <td style="color:#6c6c70; font-size:13px;">{pipeline_str}</td>
                 <td><span class="badge {badge_cls}">{a['status']}</span></td>
             </tr>
             """
@@ -118,7 +115,7 @@ def render_unified_dashboard_html(active_tab="flow"):
 
     kb_phrases = load_closed_keywords_kb()
     kb_count = len(kb_phrases)
-    kb_badges_html = " ".join([f'<span class="badge" style="background:rgba(56,189,248,0.12); color:#38bdf8; border:0.5px solid rgba(56,189,248,0.3); font-size:12px; margin:2px; padding:4px 8px;">{p}</span>' for p in kb_phrases])
+    kb_badges_html = " ".join([f'<span class="badge badge-kb">{p}</span>' for p in kb_phrases])
 
     resp_stats = calculate_company_response_stats()
 
@@ -224,168 +221,180 @@ def render_unified_dashboard_html(active_tab="flow"):
 
     src_status_html = ""
     for s_name, s_msg in SCRAPER_STATUS.get("source_status", {}).items():
-        src_status_html += f'<div><b>{s_name}:</b> <span style="color:#22c55e;">{s_msg}</span></div>'
+        src_status_html += f'<div style="padding:6px 0; border-bottom:0.5px solid var(--ios-border);"><b>{s_name}:</b> <span style="color:var(--ios-green); font-weight:600;">{s_msg}</span></div>'
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>⚡ ApplicationTrackr - Command Center</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         :root {{
-            --bg-primary: #090d16;
-            --bg-card: rgba(17, 24, 39, 0.75);
-            --border-color: rgba(255, 255, 255, 0.08);
-            --accent-blue: #38bdf8;
-            --accent-green: #34c759;
-            --accent-purple: #a855f7;
-            --accent-red: #ef4444;
-            --text-primary: #f8fafc;
-            --text-secondary: #94a3b8;
+            --ios-bg: #f2f2f7;
+            --ios-card: #ffffff;
+            --ios-border: rgba(0, 0, 0, 0.08);
+            --ios-blue: #007aff;
+            --ios-green: #34c759;
+            --ios-orange: #ff9500;
+            --ios-red: #ff3b30;
+            --ios-purple: #af52de;
+            --ios-indigo: #5856d6;
+            --ios-text-primary: #1c1c1e;
+            --ios-text-secondary: #6c6c70;
+            --font-main: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
         }}
 
-        * {{ margin:0; padding:0; box-sizing:border-box; font-family:'Inter', -apple-system, sans-serif; }}
-        body {{ background: var(--bg-primary); color: var(--text-primary); padding: 16px; min-height: 100vh; font-size: 14px; -webkit-font-smoothing: antialiased; }}
+        * {{ margin:0; padding:0; box-sizing:border-box; font-family: var(--font-main); -webkit-tap-highlight-color: transparent; }}
+        body {{ background: var(--ios-bg); color: var(--ios-text-primary); padding: 16px; min-height: 100vh; font-size: 14px; -webkit-font-smoothing: antialiased; }}
 
-        .container {{ max-width: 1280px; margin: 0 auto; }}
+        .container {{ max-width: 1240px; margin: 0 auto; }}
 
+        /* Apple Header Bar */
         .header {{
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 16px 20px;
-            background: var(--bg-card);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            border: 1px solid var(--border-color);
-            border-radius: 16px;
-            margin-bottom: 20px;
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 16px 22px; background: var(--ios-card); border-radius: 18px;
+            border: 0.5px solid var(--ios-border); margin-bottom: 20px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.03); flex-wrap: wrap; gap: 14px;
         }}
 
         .brand {{ display: flex; align-items: center; gap: 12px; }}
-        .brand-icon {{ font-size: 24px; color: var(--accent-blue); }}
-        .brand-title {{ font-size: 18px; font-weight: 800; letter-spacing: -0.5px; background: linear-gradient(135deg, #38bdf8, #a855f7); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }}
-        .brand-sub {{ font-size: 12px; color: var(--text-secondary); margin-top: 2px; }}
+        .brand-icon {{ font-size: 26px; }}
+        .brand-title {{ font-size: 20px; font-weight: 800; color: var(--ios-text-primary); letter-spacing: -0.5px; }}
+        .brand-sub {{ font-size: 12px; color: var(--ios-text-secondary); margin-top: 1px; font-weight: 500; }}
 
         .status-pill {{
             display: inline-flex; align-items: center; gap: 6px;
-            padding: 6px 12px; background: rgba(52,199,89,0.12);
-            color: var(--accent-green); border: 1px solid rgba(52,199,89,0.25);
-            border-radius: 20px; font-size: 12px; font-weight: 600;
+            padding: 6px 12px; background: rgba(52,199,89,0.12); color: #278a3c;
+            border: 0.5px solid rgba(52,199,89,0.25); border-radius: 20px;
+            font-size: 12px; font-weight: 700;
         }}
 
+        /* Apple Metrics Row */
         .stats-grid {{
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 14px;
-            margin-bottom: 20px;
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px; margin-bottom: 20px;
         }}
 
         .stat-card {{
-            background: var(--bg-card);
-            border: 1px solid var(--border-color);
-            border-radius: 14px;
-            padding: 16px;
-            backdrop-filter: blur(12px);
+            background: var(--ios-card); border: 0.5px solid var(--ios-border);
+            border-radius: 16px; padding: 16px; box-shadow: 0 2px 10px rgba(0,0,0,0.02);
+            transition: transform 0.15s ease;
         }}
+        .stat-card:hover {{ transform: translateY(-1px); }}
 
-        .stat-val {{ font-size: 26px; font-weight: 800; margin-top: 4px; color: var(--text-primary); }}
-        .stat-lbl {{ font-size: 12px; color: var(--text-secondary); font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; }}
+        .stat-val {{ font-size: 24px; font-weight: 800; color: var(--ios-text-primary); margin-top: 4px; }}
+        .stat-lbl {{ font-size: 11px; color: var(--ios-text-secondary); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }}
 
+        /* Apple Segmented Nav Tabs */
         .nav-tabs {{
-            display: flex; gap: 8px; margin-bottom: 20px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; overflow-x: auto;
+            display: flex; gap: 6px; background: rgba(229, 229, 234, 0.7);
+            padding: 4px; border-radius: 14px; margin-bottom: 20px; overflow-x: auto;
         }}
 
         .tab-btn {{
-            padding: 10px 18px; background: transparent; border: none; color: var(--text-secondary);
-            font-size: 14px; font-weight: 600; cursor: pointer; border-radius: 10px; transition: all 0.2s ease; whitespace: nowrap;
+            flex: 1; padding: 10px 16px; background: transparent; border: none;
+            color: var(--ios-text-secondary); font-size: 13px; font-weight: 700;
+            cursor: pointer; border-radius: 10px; transition: all 0.2s ease; whitespace: nowrap; text-align: center;
         }}
 
-        .tab-btn:hover {{ color: var(--text-primary); background: rgba(255,255,255,0.04); }}
-        .tab-btn.active {{ color: var(--text-primary); background: var(--border-color); border: 1px solid rgba(255,255,255,0.1); }}
+        .tab-btn.active {{
+            background: var(--ios-card); color: var(--ios-text-primary);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }}
 
+        /* Filtering & Search Bar */
         .controls-bar {{
-            display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 16px;
+            display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 18px;
         }}
 
         .search-box {{
-            flex: 1; min-width: 240px; position: relative;
+            flex: 1; min-width: 260px; position: relative;
         }}
 
         .search-input {{
-            width: 100%; padding: 10px 14px 10px 36px; background: rgba(15, 23, 42, 0.6);
-            border: 1px solid var(--border-color); border-radius: 10px; color: white; font-size: 14px;
+            width: 100%; padding: 10px 14px 10px 38px; background: var(--ios-card);
+            border: 0.5px solid var(--ios-border); border-radius: 12px; color: var(--ios-text-primary);
+            font-size: 14px; font-weight: 500; outline: none; box-shadow: 0 2px 8px rgba(0,0,0,0.02);
         }}
+        .search-input:focus {{ border-color: var(--ios-blue); }}
 
-        .search-icon {{ position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-secondary); }}
+        .search-icon {{ position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--ios-text-secondary); font-size: 14px; }}
 
         .sort-select {{
-            padding: 10px 14px; background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color);
-            border-radius: 10px; color: white; font-size: 13px; font-weight: 600; cursor: pointer;
+            padding: 10px 14px; background: var(--ios-card); border: 0.5px solid var(--ios-border);
+            border-radius: 12px; color: var(--ios-text-primary); font-size: 13px; font-weight: 600; cursor: pointer;
+            outline: none; box-shadow: 0 2px 8px rgba(0,0,0,0.02);
         }}
 
-        .pill-filters {{ display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; }}
+        .pill-filters {{ display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; width: 100%; }}
         .pill {{
-            padding: 6px 14px; background: rgba(255,255,255,0.04); border: 1px solid var(--border-color);
-            border-radius: 20px; color: var(--text-secondary); font-size: 12px; font-weight: 600; cursor: pointer; whitespace: nowrap;
+            padding: 6px 14px; background: rgba(0, 0, 0, 0.04); border: 0.5px solid var(--ios-border);
+            border-radius: 20px; color: var(--ios-text-secondary); font-size: 12px; font-weight: 600; cursor: pointer; whitespace: nowrap;
         }}
-        .pill.active {{ background: var(--accent-blue); color: #000; border-color: var(--accent-blue); }}
+        .pill.active {{ background: var(--ios-blue); color: #ffffff; border-color: var(--ios-blue); font-weight: 700; }}
 
+        /* Cards Grid */
         .jobs-grid {{
-            display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px;
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 16px;
         }}
 
         .job-card {{
-            background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 14px;
-            padding: 18px; display: flex; flex-direction: column; justify-content: space-between; gap: 12px;
-            transition: transform 0.2s ease, border-color 0.2s ease;
+            background: var(--ios-card); border: 0.5px solid var(--ios-border); border-radius: 16px;
+            padding: 18px; display: flex; flex-direction: column; justify-content: space-between; gap: 10px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.03); transition: transform 0.15s ease, box-shadow 0.15s ease;
         }}
-
-        .job-card:hover {{ transform: translateY(-2px); border-color: rgba(56,189,248,0.3); }}
+        .job-card:hover {{ transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0, 122, 255, 0.08); }}
 
         .job-header {{ display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }}
-        .company {{ font-weight: 700; color: var(--accent-blue); font-size: 15px; }}
-        .job-title {{ font-size: 16px; font-weight: 700; color: var(--text-primary); line-height: 1.3; }}
-        .job-meta {{ font-size: 12px; color: var(--text-secondary); }}
-        .job-source-info {{ font-size: 11px; color: var(--text-secondary); background: rgba(0,0,0,0.2); padding: 6px 10px; border-radius: 6px; }}
-        .source-link {{ color: var(--accent-blue); text-decoration: none; word-break: break-all; }}
+        .company {{ font-weight: 800; color: var(--ios-blue); font-size: 15px; }}
+        .job-title {{ font-size: 16px; font-weight: 800; color: var(--ios-text-primary); line-height: 1.35; }}
+        .job-meta {{ font-size: 12px; color: var(--ios-text-secondary); font-weight: 500; }}
+        .job-source-info {{ font-size: 11px; color: var(--ios-text-secondary); background: rgba(0,0,0,0.03); padding: 6px 10px; border-radius: 8px; border: 0.5px solid var(--ios-border); }}
+        .source-link {{ color: var(--ios-blue); text-decoration: none; word-break: break-all; font-weight: 600; }}
 
         .badge {{
-            display: inline-block; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; text-transform: uppercase;
+            display: inline-block; padding: 4px 8px; border-radius: 8px; font-size: 11px; font-weight: 700; text-transform: uppercase;
         }}
-
-        .badge-open {{ background: rgba(52,199,89,0.15); color: var(--accent-green); }}
-        .badge-applied {{ background: rgba(56,189,248,0.15); color: var(--accent-blue); }}
-        .badge-closed {{ background: rgba(239,68,68,0.15); color: var(--accent-red); }}
-        .badge-source {{ background: rgba(255,255,255,0.06); color: var(--text-secondary); font-size: 10px; }}
+        .badge-open {{ background: rgba(52, 199, 89, 0.14); color: #278a3c; }}
+        .badge-applied {{ background: rgba(0, 122, 255, 0.14); color: var(--ios-blue); }}
+        .badge-closed {{ background: rgba(255, 59, 48, 0.14); color: var(--ios-red); }}
+        .badge-source {{ background: rgba(0,0,0,0.05); color: var(--ios-text-secondary); font-size: 10px; }}
+        .badge-match {{ background: rgba(255, 149, 0, 0.14); color: #d97706; font-size: 11px; }}
+        .badge-kb {{ background: rgba(0, 122, 255, 0.1); color: var(--ios-blue); border: 0.5px solid rgba(0, 122, 255, 0.2); font-size: 12px; margin: 2px; padding: 4px 8px; font-weight: 600; }}
 
         .job-actions {{ display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }}
 
         .ios-btn {{
-            padding: 8px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; text-decoration: none;
-            display: inline-flex; align-items: center; gap: 4px; cursor: pointer; border: none; transition: background 0.2s;
+            padding: 8px 14px; border-radius: 10px; font-size: 12px; font-weight: 700; text-decoration: none;
+            display: inline-flex; align-items: center; gap: 4px; cursor: pointer; border: none;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.06); transition: transform 0.1s ease, opacity 0.1s ease;
         }}
+        .ios-btn:active {{ transform: scale(0.96); opacity: 0.85; }}
 
-        .ios-btn-primary {{ background: var(--accent-blue); color: #000; }}
-        .ios-btn-secondary {{ background: rgba(255,255,255,0.08); color: var(--text-primary); border: 1px solid var(--border-color); }}
-        .ios-btn-success {{ background: var(--accent-green); color: #000; }}
-        .ios-btn-danger {{ background: rgba(239,68,68,0.15); color: var(--accent-red); border: 1px solid rgba(239,68,68,0.3); }}
+        .ios-btn-primary {{ background: var(--ios-blue); color: #ffffff; }}
+        .ios-btn-secondary {{ background: rgba(0,0,0,0.05); color: var(--ios-text-primary); border: 0.5px solid var(--ios-border); }}
+        .ios-btn-success {{ background: var(--ios-green); color: #ffffff; }}
+        .ios-btn-danger {{ background: rgba(255,59,48,0.12); color: var(--ios-red); border: 0.5px solid rgba(255,59,48,0.25); }}
 
         .view-section {{ display: none; }}
 
-        iframe {{ border: none; width: 100%; height: 600px; border-radius: 12px; }}
+        iframe {{ border: none; width: 100%; height: 520px; border-radius: 14px; background: #ffffff; border: 0.5px solid var(--ios-border); }}
 
         .settings-card {{
-            background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 14px; padding: 20px; margin-bottom: 20px;
+            background: var(--ios-card); border: 0.5px solid var(--ios-border); border-radius: 16px; padding: 20px; margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.02);
         }}
         .settings-group {{ margin-bottom: 16px; }}
-        .settings-label {{ font-weight: 700; margin-bottom: 6px; display: block; color: var(--accent-blue); }}
+        .settings-label {{ font-weight: 700; margin-bottom: 6px; display: block; color: var(--ios-blue); font-size: 13px; }}
         .settings-input {{
-            width: 100%; padding: 10px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color);
-            border-radius: 8px; color: white; font-size: 13px;
+            width: 100%; padding: 10px; background: #ffffff; border: 0.5px solid var(--ios-border);
+            border-radius: 10px; color: var(--ios-text-primary); font-size: 13px; font-weight: 500; outline: none;
         }}
+        .settings-input:focus {{ border-color: var(--ios-blue); }}
 
         @media (max-width: 768px) {{
             body {{ padding: 8px; }}
@@ -397,6 +406,7 @@ def render_unified_dashboard_html(active_tab="flow"):
 <body>
 
 <div class="container">
+    <!-- Header -->
     <div class="header">
         <div class="brand">
             <span class="brand-icon">⚡</span>
@@ -407,38 +417,40 @@ def render_unified_dashboard_html(active_tab="flow"):
         </div>
         <div style="display:flex; gap:10px; align-items:center;">
             <div class="status-pill">● HP-STREAM ONLINE ({HP_STREAM_TAILSCALE_IP}:5000)</div>
-            <a href="/api/rescan" class="ios-btn ios-btn-primary" style="font-size:12px;">⚡ Rescan Now</a>
-            <a href="/api/sync-sheet" class="ios-btn ios-btn-secondary" style="font-size:12px;">🔄 Sync Sheet</a>
+            <a href="/api/rescan" class="ios-btn ios-btn-primary">⚡ Rescan Now</a>
+            <a href="/api/sync-sheet" class="ios-btn ios-btn-secondary">🔄 Sync Sheet</a>
         </div>
     </div>
 
+    <!-- Apple Stat Cards -->
     <div class="stats-grid">
         <div class="stat-card">
             <div class="stat-lbl">TOTAL APPLICATIONS</div>
             <div class="stat-val">{total}</div>
         </div>
         <div class="stat-card">
-            <div class="stat-lbl">ACTIVE / PENDING ROUNDS</div>
-            <div class="stat-val" style="color:var(--accent-blue);">{active}</div>
+            <div class="stat-lbl">ACTIVE ROUNDS</div>
+            <div class="stat-val" style="color:var(--ios-blue);">{active}</div>
         </div>
         <div class="stat-card">
             <div class="stat-lbl">OFFERS SECURED</div>
-            <div class="stat-val" style="color:var(--accent-green);">{offers}</div>
+            <div class="stat-val" style="color:var(--ios-green);">{offers}</div>
         </div>
         <div class="stat-card">
             <div class="stat-lbl">REJECTIONS / GHOSTED</div>
-            <div class="stat-val" style="color:var(--accent-red);">{rejections}</div>
+            <div class="stat-val" style="color:var(--ios-red);">{rejections}</div>
         </div>
         <div class="stat-card">
-            <div class="stat-lbl">FUNNEL CONVERSION RATE</div>
-            <div class="stat-val" style="color:var(--accent-purple);">{conv_rate}%</div>
+            <div class="stat-lbl">CONVERSION RATE</div>
+            <div class="stat-val" style="color:var(--ios-purple);">{conv_rate}%</div>
         </div>
         <div class="stat-card">
             <div class="stat-lbl">DISCOVERED SCHEMES</div>
-            <div class="stat-val">{discovered_count}</div>
+            <div class="stat-val" style="color:var(--ios-orange);">{discovered_count}</div>
         </div>
     </div>
 
+    <!-- Segmented Navigation Bar -->
     <div class="nav-tabs">
         <button class="tab-btn {tab_flow}" onclick="switchTab('flow')">📊 Application Flow & Sankey</button>
         <button class="tab-btn {tab_jobs}" onclick="switchTab('jobs')">💼 Discovered Schemes ({discovered_count})</button>
@@ -450,15 +462,15 @@ def render_unified_dashboard_html(active_tab="flow"):
     <!-- TAB 1: FLOW & SANKEY -->
     <div id="view-flow" class="view-section" style="{view_flow}">
         <div class="settings-card">
-            <h3 style="margin-bottom:12px; font-weight:800;">📊 Live Application Pipeline</h3>
+            <h3 style="margin-bottom:12px; font-weight:800;">📊 Live Application Pipeline Flow</h3>
             <iframe src="/sankey-embed" id="sankey-iframe"></iframe>
         </div>
 
-        <div class="settings-card" style="margin-top:20px;">
-            <h3 style="margin-bottom:12px; font-weight:800;">📋 Detailed Application Tracker</h3>
+        <div class="settings-card" style="margin-top:16px;">
+            <h3 style="margin-bottom:12px; font-weight:800;">📋 Detailed Logged Applications</h3>
             <table style="width:100%; border-collapse:collapse; text-align:left; font-size:13px;">
                 <thead>
-                    <tr style="border-bottom:1px solid var(--border-color); color:var(--text-secondary);">
+                    <tr style="border-bottom:1px solid var(--ios-border); color:var(--ios-text-secondary);">
                         <th style="padding:10px;">Company</th>
                         <th style="padding:10px;">Role</th>
                         <th style="padding:10px;">Latest Stage</th>
@@ -478,7 +490,7 @@ def render_unified_dashboard_html(active_tab="flow"):
         <div class="controls-bar">
             <div class="search-box">
                 <span class="search-icon">🔍</span>
-                <input type="text" id="job-search" class="search-input" placeholder="Search by company, role, location, or source..." onkeyup="filterJobs()">
+                <input type="text" id="job-search" class="search-input" placeholder="Search company, role, location, or source..." onkeyup="filterJobs()">
             </div>
 
             <select id="sort-select" class="sort-select" onchange="sortJobs()">
@@ -557,17 +569,17 @@ def render_unified_dashboard_html(active_tab="flow"):
     <div id="view-status" class="view-section" style="{view_status}">
         <div class="settings-card">
             <h3 style="margin-bottom:12px; font-weight:800;">🛠 System & Scraper Diagnostics</h3>
-            <div style="font-size:13px; line-height:1.6; color:var(--text-secondary);">
+            <div style="font-size:13px; line-height:1.6; color:var(--ios-text-secondary);">
                 <div><b>Last Scraper Engine Run:</b> {last_run}</div>
                 <div><b>Total Schemes Indexed:</b> {discovered_count}</div>
-                <div style="margin-top:10px; font-weight:700; color:var(--text-primary);">ATS Source Engine Statuses:</div>
+                <div style="margin-top:10px; font-weight:700; color:var(--ios-text-primary);">ATS Source Engine Statuses:</div>
                 {src_status_html}
             </div>
         </div>
 
         <div class="settings-card" style="margin-top:16px;">
             <h3 style="margin-bottom:12px; font-weight:800;">🧠 AI Self-Learning Knowledge Base ({kb_count} rules)</h3>
-            <div style="max-height:160px; overflow-y:auto; padding:10px; background:rgba(0,0,0,0.3); border-radius:8px; border:1px solid var(--border-color);">
+            <div style="max-height:160px; overflow-y:auto; padding:10px; background:#ffffff; border-radius:10px; border:0.5px solid var(--ios-border);">
                 {kb_badges_html}
             </div>
         </div>
@@ -577,7 +589,7 @@ def render_unified_dashboard_html(active_tab="flow"):
     <div id="view-closed" class="view-section" style="{view_closed}">
         <div class="settings-card">
             <h3 style="margin-bottom:12px; font-weight:800;">🛑 Reported & Inactive Schemes Directory ({closed_count})</h3>
-            <p style="font-size:12px; color:var(--text-secondary); margin-bottom:16px;">
+            <p style="font-size:12px; color:var(--ios-text-secondary); margin-bottom:16px;">
                 Schemes listed here were automatically or manually marked as closed. You can re-open any scheme if it opens again.
             </p>
             <div class="jobs-grid">
@@ -591,10 +603,10 @@ def render_unified_dashboard_html(active_tab="flow"):
     function switchTab(tabId) {{
         document.querySelectorAll('.view-section').forEach(el => el.style.display = 'none');
         document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
-        
+
         var targetView = document.getElementById('view-' + tabId);
         if (targetView) targetView.style.display = 'block';
-        
+
         var btns = document.querySelectorAll('.tab-btn');
         btns.forEach(b => {{
             if (b.getAttribute('onclick').includes(tabId)) b.classList.add('active');
@@ -611,17 +623,17 @@ def render_unified_dashboard_html(active_tab="flow"):
     }}
 
     function filterJobs() {{
-        var q = document.getElementById('job-search').value.lower().strip();
+        var q = document.getElementById('job-search').value.toLowerCase().trim();
         var cards = document.querySelectorAll('#jobs-container .job-card');
-        
+
         cards.forEach(c => {{
             var searchData = (c.getAttribute('data-search') || '').toLowerCase();
             var statusData = c.getAttribute('data-status') || '';
             var catData = c.getAttribute('data-cat') || '';
-            
+
             var matchesSearch = !q || searchData.includes(q);
             var matchesPill = true;
-            
+
             if (currentPill === 'not_applied') matchesPill = (statusData === 'not_applied');
             else if (currentPill === 'applied') matchesPill = (statusData === 'applied');
             else if (currentPill !== 'all') matchesPill = (catData === currentPill);
@@ -660,7 +672,7 @@ def render_unified_dashboard_html(active_tab="flow"):
     }}
 
     function reportClosedJob(jobId, link) {{
-        if (confirm('Report this scheme as closed/filled? This will train the AI Knowledge Base and check all open schemes.')) {{
+        if (confirm('Report this scheme as closed/filled? This will train the AI Knowledge Base and recheck all open schemes.')) {{
             fetch('/api/report-closed?id=' + encodeURIComponent(jobId) + '&link=' + encodeURIComponent(link))
                 .then(r => r.json())
                 .then(data => {{
@@ -678,7 +690,12 @@ def render_unified_dashboard_html(active_tab="flow"):
     }}
 
     function logJob(comp, title) {{
-        fetch('/api/mark-applied?company=' + encodeURIComponent(comp) + '&title=' + encodeURIComponent(title));
+        fetch('/api/mark-applied?company=' + encodeURIComponent(comp) + '&title=' + encodeURIComponent(title))
+            .then(r => r.json())
+            .then(data => {{
+                alert('✅ Marked as applied! Logged to Google Sheets.');
+                location.reload();
+            }});
     }}
 </script>
 
