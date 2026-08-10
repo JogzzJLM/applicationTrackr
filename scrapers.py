@@ -175,8 +175,12 @@ from config import (
 )
 
 def verify_live_page_applyable(url):
-
-    """Fetches the live application webpage and verifies whether the job is currently open & apply-able."""
+    """
+    Multi-Layered Live Page Verification Engine:
+    1. HTTP Status & ATS Redirect Egress Check
+    2. Punctuation-Insensitive Knowledge Base Phrase Match
+    3. High-Confidence Structural Proximity & Semantic Heuristic Rules
+    """
     if not url or not isinstance(url, str) or not url.startswith("http"):
         return False
 
@@ -191,18 +195,46 @@ def verify_live_page_applyable(url):
         if resp.status_code in [404, 410, 403, 500]:
             return False
 
-        page_text = re.sub(r'<[^>]+>', ' ', resp.text).lower()
-        page_text = ' '.join(page_text.split())
-
-        for phrase in kb_phrases:
-            if phrase in page_text:
-                print(f"  [Live Closure Check] 🛑 Page indicates role is closed ('{phrase}'): {url}")
+        # Layer 1: ATS Redirect Egress Check (Specific job post redirected to generic portal / careers root)
+        if resp.url and resp.url != url:
+            orig_path = url.split('?')[0].rstrip('/')
+            final_path = resp.url.split('?')[0].rstrip('/')
+            if len(orig_path.split('/')) > len(final_path.split('/')) and len(final_path.split('/')) <= 4:
+                print(f"  [Live Closure Check] 🛑 Redirected from specific post to generic portal: {url} -> {resp.url}")
                 return False
+
+        # Clean HTML & normalize text by replacing punctuation with spaces
+        text_raw = re.sub(r'<[^>]+>', ' ', resp.text).lower()
+        text_clean = ' '.join(re.sub(r'[^a-z0-9\s]', ' ', text_raw).split())
+
+        # Layer 2: Punctuation-Insensitive KB Phrase Match
+        for phrase in kb_phrases:
+            phrase_clean = ' '.join(re.sub(r'[^a-z0-9\s]', ' ', phrase.lower()).split())
+            if phrase_clean and phrase_clean in text_clean:
+                print(f"  [Live Closure Check] 🛑 Page indicates role is closed ('{phrase_clean}'): {url}")
+                return False
+
+        # Layer 3: High-Confidence Structural Proximity & Semantic Rules
+        closure_states = {'closed', 'filled', 'expired', 'paused', 'unavailable', 'inactive'}
+        job_nouns = {'application', 'applications', 'programme', 'program', 'role', 'position', 'vacancy', 'scheme', 'opportunity', 'posting', 'job'}
+
+        words = text_clean.split()
+        for idx, w in enumerate(words):
+            if w in closure_states:
+                window = set(words[max(0, idx-5):min(len(words), idx+6)])
+                if window & job_nouns:
+                    print(f"  [Live Closure Check] 🛑 Structural Proximity Match ('{w}' near {window & job_nouns}): {url}")
+                    return False
+
+        if 'no longer' in text_clean and any(k in text_clean for k in ['accepting', 'available', 'taking', 'open']):
+            print(f"  [Live Closure Check] 🛑 Semantic Rule Match ('no longer accepting/available'): {url}")
+            return False
 
         return True
     except Exception:
         # If timeout or connection issue, permit to avoid false negatives
         return True
+
 
 def validate_job_legitimacy(company, title, link):
     """Multi-stage pre-ingestion legitimacy check to verify a job before adding to index."""
