@@ -63,7 +63,10 @@ def load_closed_keywords_kb():
                             kb.append(item.lower())
         except Exception:
             pass
+    else:
+        save_closed_keywords_kb(kb)
     return kb
+
 
 def save_closed_keywords_kb(kb_list):
     try:
