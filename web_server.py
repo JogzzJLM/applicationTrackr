@@ -266,36 +266,41 @@ def render_unified_dashboard_html(active_tab="flow"):
         if len(display_url) > 42:
             display_url = display_url[:39] + "..."
 
-        link_js = j.get('link', '').replace("'", "\\'").replace('"', '&quot;')
+        comp_str = j.get('company', 'Unknown')
+        title_str = j.get('title', 'Role')
+        loc_str = j.get('location', 'UK')
+        link_str = j.get('link', '#')
+        date_str = j.get('date_found', 'Recently')
 
+        link_js = link_str.replace("'", "\\'").replace('"', '&quot;')
         resp_days_val = float(str(avg_resp).split('-')[0]) if '-' in str(avg_resp) else (float(avg_resp) if str(avg_resp).replace('.','',1).isdigit() else 3.0)
         report_btn_html = f'<button onclick="reportClosedJob(\'{j_id}\', \'{link_js}\')" class="ios-btn ios-btn-danger" style="font-size:12px;" title="Report this job as closed/filled to train the AI filter">🚩 Report Closed</button>' if not is_reported_closed else ''
 
+
         card_markup = f"""
-
-        <div class="job-card" data-search="{j['company'].lower()} {j['title'].lower()} {j['location'].lower()} {status_tag} {cat} {source_badge_text.lower()}" data-status="{status_tag}" data-cat="{cat}" data-date="{j.get('date_found', '')}" data-match="{match_score}" data-resp="{resp_days_val}" data-company="{j['company'].lower()}" data-title="{j['title'].lower()}">
-
+        <div class="job-card" data-search="{comp_str.lower()} {title_str.lower()} {loc_str.lower()} {status_tag} {cat} {source_badge_text.lower()}" data-status="{status_tag}" data-cat="{cat}" data-date="{date_str}" data-match="{match_score}" data-resp="{resp_days_val}" data-company="{comp_str.lower()}" data-title="{title_str.lower()}">
             <div class="job-header">
                 <div>
-                    <span class="company">{j['company']}</span> &nbsp;
+                    <span class="company">{comp_str}</span> &nbsp;
                     {status_badge}
                     <span class="badge badge-active" style="background:rgba(52,199,89,0.12); color:#278a3c; border:0.5px solid rgba(52,199,89,0.3);">🎯 {match_score}% Skill Match</span>
                 </div>
                 <span class="badge badge-source">{source_badge_text}</span>
             </div>
-            <div class="job-title">{j['title']}</div>
-            <div class="job-meta">📍 {j['location']} &nbsp;&bull;&nbsp; 🕒 Discovered: {j['date_found']} &nbsp;&bull;&nbsp; ⚡ Avg Response: {avg_resp} days</div>
+            <div class="job-title">{title_str}</div>
+            <div class="job-meta">📍 {loc_str} &nbsp;&bull;&nbsp; 🕒 Discovered: {date_str} &nbsp;&bull;&nbsp; ⚡ Avg Response: {avg_resp} days</div>
             <div class="job-source-info">
                 🔍 <b>Scraped Webpage:</b> <a href="{source_url}" target="_blank" class="source-link">{display_url} ↗</a>
             </div>
             <div class="job-actions">
-                <a href="{j['link']}" target="_blank" rel="noopener noreferrer" class="ios-btn ios-btn-primary">Apply Direct ↗</a>
+                <a href="{link_str}" target="_blank" rel="noopener noreferrer" class="ios-btn ios-btn-primary">Apply Direct ↗</a>
                 {action_btn}
-                <a href="/api/calendar.ics?summary={urllib.parse.quote('Apply: ' + j['company'] + ' - ' + j['title'])}&desc={urllib.parse.quote('Job Link: ' + j['link'])}" class="ios-btn ios-btn-secondary" style="font-size:12px;" title="Add application deadline to Apple Calendar">📅 Apple Cal</a>
+                <a href="/api/calendar.ics?summary={urllib.parse.quote('Apply: ' + comp_str + ' - ' + title_str)}&desc={urllib.parse.quote('Job Link: ' + link_str)}" class="ios-btn ios-btn-secondary" style="font-size:12px;" title="Add application deadline to Apple Calendar">📅 Apple Cal</a>
                 {report_btn_html}
             </div>
         </div>
         """
+
 
         if is_reported_closed:
             closed_cards_html += card_markup
