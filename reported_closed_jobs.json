@@ -360,5 +360,122 @@
     "company": "Dummy Closed Corp",
     "title": "Closed Software Engineer",
     "link": "https://jobs.example.com/closed/123"
+  },
+  "trackr_api_-7929598670986660768": {
+    "id": "trackr_api_-7929598670986660768",
+    "company": "KLA",
+    "title": "Summer Intern - Software Engineering",
+    "location": "UK",
+    "link": "https://kla.wd1.myworkdayjobs.com/en-US/Search/job/Newport-United-Kingdom/Summer-Intern---Software-Engineering_2531484?utm_source=Trackr&utm_medium=tracker&utm_campaign=UK_Technology_2026&source=Trackr",
+    "source": "Trackr UK Tech (2026)",
+    "sources": [
+      "Trackr UK Tech (2026)"
+    ],
+    "source_url": "https://app.the-trackr.com",
+    "match_score": 84,
+    "date_found": "2026-08-10 00:36"
+  },
+  "trackr_api_-6260590224737790604": {
+    "id": "trackr_api_-6260590224737790604",
+    "company": "Tencent",
+    "title": "Data Science Intern",
+    "location": "UK",
+    "link": "https://tencent.wd1.myworkdayjobs.com/en-US/Tencent_Careers/job/Netherlands-Amsterdam/Data-Analyst-Intern_R107228?source=Trackr&utm_source=Trackr&utm_medium=tracker&utm_campaign=UK_Technology_2026",
+    "source": "Trackr UK Tech (2026)",
+    "source_url": "https://app.the-trackr.com",
+    "date_found": "2026-08-07 20:23",
+    "sources": [
+      "Trackr UK Tech (2026)",
+      "Trackr UK Tech (2027)"
+    ],
+    "match_score": 72
+  },
+  "trackr_api_2649857592110152757": {
+    "id": "trackr_api_2649857592110152757",
+    "company": "Snyk",
+    "title": "Software Engineer Intern",
+    "location": "UK",
+    "link": "https://snyk.wd103.myworkdayjobs.com/External/job/United-Kingdom---London-Office/Software-Engineer-Intern_JR100496?utm_source=Trackr&utm_medium=tracker&utm_campaign=UK_Technology_2026&source=Trackr",
+    "source": "Trackr UK Tech (2026)",
+    "source_url": "https://app.the-trackr.com",
+    "date_found": "2026-08-07 20:23",
+    "sources": [
+      "Trackr UK Tech (2026)",
+      "Trackr UK Tech (2027)"
+    ],
+    "match_score": 84
+  },
+  "trackr_api_7974580314930983747": {
+    "id": "trackr_api_7974580314930983747",
+    "company": "Ciena",
+    "title": "Data Science/Analyst Intern",
+    "location": "UK",
+    "link": "https://ciena.wd5.myworkdayjobs.com/en-US/Careers/job/Data-Science-Analyst-Intern--Summer-2026-_R030463?utm_source=Trackr&utm_medium=tracker&utm_campaign=UK_Technology_2026&source=Trackr",
+    "source": "Trackr UK Tech (2026)",
+    "source_url": "https://app.the-trackr.com",
+    "date_found": "2026-08-07 20:23",
+    "sources": [
+      "Trackr UK Tech (2026)",
+      "Trackr UK Tech (2027)"
+    ],
+    "match_score": 72
+  },
+  "trackr_api_-8534640142143003037": {
+    "id": "trackr_api_-8534640142143003037",
+    "company": "Sports Interactive",
+    "title": "Junior Software Engineer Intern (12-month FTC)",
+    "location": "UK",
+    "link": "https://sega.wd3.myworkdayjobs.com/SEGA_Careers/job/Greater-London-E15-2GW/Junior-Software-Engineer-Intern--12-month-FTC-_JR100036?utm_source=Trackr&utm_medium=tracker&utm_campaign=UK_Technology_2026&source=Trackr",
+    "source": "Trackr UK Tech (2026)",
+    "source_url": "https://app.the-trackr.com",
+    "date_found": "2026-08-07 20:23",
+    "sources": [
+      "Trackr UK Tech (2026)",
+      "Trackr UK Tech (2027)"
+    ],
+    "match_score": 84
+  },
+  "trackr_api_-2083318998590633127": {
+    "id": "trackr_api_-2083318998590633127",
+    "company": "Nuveen",
+    "title": "Cyber Security Summer Intern 2026",
+    "location": "UK",
+    "link": "https://tiaa.wd1.myworkdayjobs.com/en-US/Search/job/Nuveen-Cyber-Security-Summer-Intern-2026---based-in-London_R260100372?utm_source=Trackr&utm_medium=tracker&utm_campaign=UK_Technology_2026&source=Trackr",
+    "source": "Trackr UK Tech (2026)",
+    "source_url": "https://app.the-trackr.com",
+    "date_found": "2026-08-07 20:23",
+    "sources": [
+      "Trackr UK Tech (2026)",
+      "Trackr UK Tech (2027)"
+    ],
+    "match_score": 72
+  },
+  "trackr_api_4464262828355736385": {
+    "id": "trackr_api_4464262828355736385",
+    "company": "Airbus",
+    "title": "Cyber Security Research Placement (12.5 months)",
+    "location": "UK",
+    "link": "https://ag.wd3.myworkdayjobs.com/Airbus/job/Newport/Cyber-Security-Research-Placement--125-months-_JR10343940?utm_source=Trackr&utm_medium=tracker&utm_campaign=UK_Technology_2026&source=Trackr",
+    "source": "Trackr UK Tech (2026)",
+    "source_url": "https://app.the-trackr.com",
+    "date_found": "2026-08-07 20:23",
+    "sources": [
+      "Trackr UK Tech (2026)"
+    ],
+    "match_score": 84
+  },
+  "trackr_api_5993479605023791466": {
+    "id": "trackr_api_5993479605023791466",
+    "company": "Ciena",
+    "title": "Network Engineer Intern (12 Months)",
+    "location": "UK",
+    "link": "https://ciena.wd5.myworkdayjobs.com/en-US/Careers/job/Network-Engineer-Intern--12-Months-_R030434?utm_source=Trackr&utm_medium=tracker&utm_campaign=UK_Technology_2026&source=Trackr",
+    "source": "Trackr UK Tech (2026)",
+    "source_url": "https://app.the-trackr.com",
+    "date_found": "2026-08-07 20:23",
+    "sources": [
+      "Trackr UK Tech (2026)"
+    ],
+    "match_score": 72
   }
 }

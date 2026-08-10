@@ -234,8 +234,17 @@ def verify_live_page_applyable(url):
             print(f"  [Live Closure Check] 🛑 Missing Page Rule Match ('doesn't exist / cannot be found'): {url}")
             return False
 
+        # Layer 4: Dynamic SPA & Workday OpenGraph Metadata Verification
+        if "myworkdayjobs.com" in url or "eightfold.ai" in url or "phenom.com" in url:
+            og_match = re.search(r'<meta\s+[^>]*property=[\"\']og:title[\"\']\s+content=[\"\']([^\"\']+)[\"\']', resp.text, re.IGNORECASE)
+            title_match = re.search(r'<title>([^<]+)</title>', resp.text, re.IGNORECASE)
+            if not og_match or not og_match.group(1).strip():
+                if not title_match or not title_match.group(1).strip():
+                    print(f"  [Live Closure Check] 🛑 Dynamic SPA Metadata Check Failed (Empty og:title & title): {url}")
+                    return False
 
         return True
+
     except Exception:
         # If timeout or connection issue, permit to avoid false negatives
         return True
