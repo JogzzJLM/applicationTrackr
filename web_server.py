@@ -202,6 +202,10 @@ def render_unified_dashboard_html(active_tab="flow"):
         title_lower = title_name.lower()
         cat = "other"
 
+        match_score = j.get('match_score') or calculate_skill_match_score(title_name, comp_name, j.get('location', ''))
+        c_info = resp_stats.get(comp_norm, {})
+        avg_resp = c_info.get("avg_days", "2-4")
+
         if is_reported_closed:
             cat = "closed"
             status_tag = "closed"
