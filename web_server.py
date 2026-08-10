@@ -10,8 +10,10 @@ from urllib.parse import parse_qs, urlparse, quote
 from config import (
     PORT, SCRAPER_STATUS, HP_STREAM_TAILSCALE_IP, load_settings, save_settings,
     normalize_company, normalize_role, load_hidden_jobs, hide_job, save_hidden_jobs,
-    get_scraper_logs, clear_scraper_logs
+    get_scraper_logs, clear_scraper_logs, load_reported_closed_jobs, save_reported_closed_jobs,
+    load_closed_keywords_kb, save_closed_keywords_kb
 )
+
 from notifications import send_notification, generate_apple_calendar_ics
 from sheets import (
     update_google_sheet_via_webhook, generate_sankey_from_google_sheets,
@@ -132,6 +134,11 @@ def render_unified_dashboard_html(active_tab="flow"):
     sw_count = 0
     ml_count = 0
     cyber_count = 0
+    closed_count = 0
+
+    reported_closed_map = load_reported_closed_jobs()
+    closed_ids = set(reported_closed_map.keys())
+    closed_links = set(cj.get('link') for cj in reported_closed_map.values() if cj.get('link'))
 
     resp_stats = calculate_company_response_stats()
 
@@ -160,16 +167,26 @@ def render_unified_dashboard_html(active_tab="flow"):
             merged_jobs_map[key] = j_copy
             ordered_merged_jobs.append(j_copy)
 
+    # Append any reported closed jobs that might not be in the active visible list
+    for c_id, c_job in reported_closed_map.items():
+        if not any(j.get('id') == c_id for j in ordered_merged_jobs):
+            ordered_merged_jobs.append(c_job)
+
     visible_jobs = ordered_merged_jobs
+
+    open_count = len([j for j in visible_jobs if j.get('id') not in closed_ids and j.get('link') not in closed_links])
 
     # Job Cards HTML
     cards_html = ""
     for j in visible_jobs:
         j_id = j.get('id', '')
+        j_link = j.get('link', '')
         comp_name = j.get('company', 'Unknown')
         title_name = j.get('title', 'Role')
         comp_norm = normalize_company(comp_name)
         title_norm = normalize_role(title_name)
+
+        is_reported_closed = (j_id in closed_ids) or (j_link in closed_links)
 
         is_applied = (comp_norm, title_norm) in applied_jobs
         if not is_applied:
@@ -184,37 +201,42 @@ def render_unified_dashboard_html(active_tab="flow"):
 
         title_lower = title_name.lower()
         cat = "other"
-        if any(k in title_lower for k in ["quant", "trader", "trading", "finance", "financial"]):
-            cat = "quant"
-            quant_count += 1
-        elif any(k in title_lower for k in ["software", "developer", "backend", "fullstack", "full-stack", "engineer"]):
-            cat = "software"
-            sw_count += 1
-        elif any(k in title_lower for k in ["machine learning", "ml", "ai", "data science"]):
-            cat = "ml"
-            ml_count += 1
-        elif any(k in title_lower for k in ["cyber", "security", "cloud", "devops"]):
-            cat = "cyber"
-            cyber_count += 1
 
-        match_score = j.get('match_score') or calculate_skill_match_score(title_name, comp_name, j.get('location', ''))
-        c_info = resp_stats.get(comp_norm, {})
-        avg_resp = c_info.get("avg_days", "2-4")
-
-        if is_applied:
-            status_badge = '<span class="badge badge-applied">✅ APPLIED</span>'
-            action_btn = '<span class="ios-btn ios-btn-secondary" style="opacity:0.65; cursor:default;">✓ Logged</span>'
-            status_tag = "applied"
-            applied_count += 1
+        if is_reported_closed:
+            cat = "closed"
+            status_tag = "closed"
+            closed_count += 1
+            status_badge = '<span class="badge badge-rejected" style="background:rgba(239,68,68,0.15); color:#ef4444; border:0.5px solid rgba(239,68,68,0.3);">🚫 CLOSED / INACTIVE</span>'
+            action_btn = f'<button onclick="reopenJob(\'{j_id}\')" class="ios-btn ios-btn-success" style="font-size:12px;">🔄 Re-Open Scheme</button>'
         else:
-            status_badge = '<span class="badge badge-not-applied">⚡ AVAILABLE</span>'
-            action_btn = f'''
-            <a href="{j['link']}" target="_blank" rel="noopener noreferrer" onclick="logJob('{comp_js}', '{title_js}')" class="ios-btn ios-btn-success">⚡ Apply & Log ↗</a>
-            <button onclick="logJob('{comp_js}', '{title_js}')" class="ios-btn ios-btn-secondary">+ Log Only</button>
-            <button onclick="hideJob('{j_id}', this)" class="ios-btn ios-btn-danger" title="Hide listing">🚫 Hide</button>
-            '''
-            status_tag = "notapplied"
-            not_applied_count += 1
+            if any(k in title_lower for k in ["quant", "trader", "trading", "finance", "financial"]):
+                cat = "quant"
+                quant_count += 1
+            elif any(k in title_lower for k in ["software", "developer", "backend", "fullstack", "full-stack", "engineer"]):
+                cat = "software"
+                sw_count += 1
+            elif any(k in title_lower for k in ["machine learning", "ml", "ai", "data science"]):
+                cat = "ml"
+                ml_count += 1
+            elif any(k in title_lower for k in ["cyber", "security", "cloud", "devops"]):
+                cat = "cyber"
+                cyber_count += 1
+
+            if is_applied:
+                status_badge = '<span class="badge badge-applied">✅ APPLIED</span>'
+                action_btn = '<span class="ios-btn ios-btn-secondary" style="opacity:0.65; cursor:default;">✓ Logged</span>'
+                status_tag = "applied"
+                applied_count += 1
+            else:
+                status_badge = '<span class="badge badge-not-applied">⚡ AVAILABLE</span>'
+                action_btn = f'''
+                <a href="{j['link']}" target="_blank" rel="noopener noreferrer" onclick="logJob('{comp_js}', '{title_js}')" class="ios-btn ios-btn-success">⚡ Apply & Log ↗</a>
+                <button onclick="logJob('{comp_js}', '{title_js}')" class="ios-btn ios-btn-secondary">+ Log Only</button>
+                <button onclick="hideJob('{j_id}', this)" class="ios-btn ios-btn-danger" title="Hide listing">🚫 Hide</button>
+                '''
+                status_tag = "notapplied"
+                not_applied_count += 1
+
 
         sources_list = j.get('sources', [j.get('source', 'Discovered API')])
         if len(sources_list) > 1:
@@ -907,35 +929,23 @@ def render_unified_dashboard_html(active_tab="flow"):
             btn.classList.add('active');
             let cards = document.querySelectorAll('.job-card');
             cards.forEach(c => {{
-                if (category === 'all') {{
-                    c.style.display = 'block';
-                }} else if (category === 'applied') {{
-                    c.style.display = c.getAttribute('data-status') === 'applied' ? 'block' : 'none';
-                }} else if (category === 'notapplied') {{
-                    c.style.display = c.getAttribute('data-status') === 'notapplied' ? 'block' : 'none';
+                let isClosedCard = c.getAttribute('data-cat') === 'closed';
+                if (category === 'closed') {{
+                    c.style.display = isClosedCard ? 'block' : 'none';
                 }} else {{
-                    c.style.display = c.getAttribute('data-cat') === category ? 'block' : 'none';
+                    if (isClosedCard) {{
+                        c.style.display = 'none';
+                    }} else if (category === 'all') {{
+                        c.style.display = 'block';
+                    }} else if (category === 'applied') {{
+                        c.style.display = c.getAttribute('data-status') === 'applied' ? 'block' : 'none';
+                    }} else if (category === 'notapplied') {{
+                        c.style.display = c.getAttribute('data-status') === 'notapplied' ? 'block' : 'none';
+                    }} else {{
+                        c.style.display = c.getAttribute('data-cat') === category ? 'block' : 'none';
+                    }}
                 }}
             }});
-        }}
-
-        function logJob(company, role) {{
-            fetch('/api/log?company=' + encodeURIComponent(company) + '&role=' + encodeURIComponent(role))
-                .then(r => r.json())
-                .then(d => {{
-                    alert('✅ Successfully logged ' + company + ' to Google Sheets!');
-                    location.reload();
-                }})
-                .catch(e => alert('❌ Error logging job: ' + e));
-        }}
-
-        function autoApply(company, role, link) {{
-            window.open(link, '_blank');
-            fetch('/api/log?company=' + encodeURIComponent(company) + '&role=' + encodeURIComponent(role))
-                .then(r => r.json())
-                .then(d => {{
-                    setTimeout(() => location.reload(), 1000);
-                }});
         }}
 
         function triggerInlineScan() {{
@@ -945,30 +955,61 @@ def render_unified_dashboard_html(active_tab="flow"):
             let tag = document.getElementById('scan-tag');
             term.style.display = 'block';
             tag.innerText = 'Running...';
-            log.innerText = '⚡ Initiating background multi-source scraper run...\\nScanning Greenhouse API, Lever API, and Trackr REST API...\\nPlease wait...';
+            log.innerText = '⚡ Initiating multi-source scraper run...\\nScanning Greenhouse, Lever, Ashby, SmartRecruiters, and Trackr APIs...\\nPlease wait...\\n';
             
             fetch('/api/trigger-scan')
                 .then(r => r.json())
                 .then(d => {{
-                    let checkInterval = setInterval(() => {{
-                        fetch('/status')
+                    let pollInterval = setInterval(() => {{
+                        fetch('/api/scraper-logs')
                             .then(sr => sr.json())
-                            .then(s => {{
-                                log.innerText = "⚡ Scraper Status: Run in progress...\\nLast Run: " + s.last_run + "\\nTotal Discovered Schemes: " + (s.total_seen_jobs || {discovered_count});
+                            .then(data => {{
+                                if (data && data.logs && data.logs.length > 0) {{
+                                    log.innerText = data.logs.join('\\n');
+                                    term.scrollTop = term.scrollHeight;
+                                    let fullText = data.logs.join(' ');
+                                    if (fullText.includes("Parallel Scraper Run Complete")) {{
+                                        clearInterval(pollInterval);
+                                        tag.innerText = 'Complete!';
+                                        log.innerText += '\\n\\n✅ Scraper run complete! Reloading active schemes...';
+                                        term.scrollTop = term.scrollHeight;
+                                        setTimeout(() => location.reload(), 2000);
+                                    }}
+                                }}
                             }});
-                    }}, 2000);
-                    
-                    setTimeout(() => {{
-                        clearInterval(checkInterval);
-                        tag.innerText = 'Complete!';
-                        log.innerText += '\\n\\n✅ Scraper run completed successfully! Reloading schemes...';
-                        setTimeout(() => location.reload(), 1500);
-                    }}, 8000);
+                    }}, 1500);
                 }})
                 .catch(e => {{
                     log.innerText += '\\n❌ Error triggering scan: ' + e;
                 }});
         }}
+
+        function refreshLiveLogs() {{
+            fetch('/api/scraper-logs')
+                .then(r => r.json())
+                .then(data => {{
+                    let container = document.getElementById('diag-logs-content');
+                    let box = document.getElementById('diag-logs-container');
+                    if (data && data.logs && data.logs.length > 0) {{
+                        container.innerText = data.logs.join('\\n');
+                        box.scrollTop = box.scrollHeight;
+                    }} else {{
+                        container.innerText = 'No log entries recorded yet.';
+                    }}
+                }});
+        }}
+
+        function reopenJob(jobId) {{
+            if (confirm("Restore this scheme back to active open listings?")) {{
+                fetch('/api/reopen-closed?id=' + encodeURIComponent(jobId))
+                    .then(r => r.json())
+                    .then(d => {{
+                        alert("✅ Scheme restored to active directory!");
+                        location.reload();
+                    }});
+            }}
+        }}
+
 
         function refreshSankey() {{
             let iframe = document.getElementById('sankey-iframe');
@@ -1151,7 +1192,7 @@ def render_unified_dashboard_html(active_tab="flow"):
                 <input type="text" id="search" onkeyup="filterJobs()" placeholder="🔍 Search by company, role, location, or status ('applied', 'quant', 'software')..." class="search-box">
 
                 <div class="filter-pills">
-                    <button class="pill active" onclick="filterPill('all', this)">All Schemes ({discovered_count})</button>
+                    <button class="pill active" onclick="filterPill('all', this)">All Open Schemes ({open_count})</button>
 
                     <button class="pill" onclick="filterPill('notapplied', this)">⚡ Not Applied ({not_applied_count})</button>
                     <button class="pill" onclick="filterPill('applied', this)">✅ Applied ({applied_count})</button>
@@ -1159,6 +1200,7 @@ def render_unified_dashboard_html(active_tab="flow"):
                     <button class="pill" onclick="filterPill('quant', this)">📈 Quant / Trading ({quant_count})</button>
                     <button class="pill" onclick="filterPill('ml', this)">🧠 ML / AI ({ml_count})</button>
                     <button class="pill" onclick="filterPill('cyber', this)">🔒 Cyber / Cloud ({cyber_count})</button>
+                    <button class="pill" onclick="filterPill('closed', this)" style="border-color:#ef4444; color:#f87171;">🚫 Closed Schemes ({closed_count})</button>
                 </div>
 
                 <div id="job-list">
@@ -1215,7 +1257,18 @@ def render_unified_dashboard_html(active_tab="flow"):
                 <p style="color:var(--text-muted); font-size:14px; margin-bottom:16px;">Live Scraper & System Status Output (`/status` JSON):</p>
                 <pre class="code-block">{status_json_formatted}</pre>
             </div>
+
+            <div class="content-card" style="margin-top:24px;">
+                <div class="card-header">
+                    <div class="card-title">📜 Live Engine Console Logs (`docker logs -f applicationtrackr`)</div>
+                    <button onclick="refreshLiveLogs()" class="btn btn-header">🔄 Refresh Logs</button>
+                </div>
+                <div id="diag-logs-container" class="terminal-box" style="display:block; max-height:450px; background:#090d16;">
+                    <pre id="diag-logs-content" class="terminal-logs" style="color:#38bdf8; font-family:monospace; font-size:12px;">Loading live engine logs...</pre>
+                </div>
+            </div>
         </div>
+
 
     </div>
 </body>
@@ -1484,15 +1537,15 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             learned_phrases = []
             job_title = "Position"
 
-            # 1. Remove job from discovered_jobs.json
+            # 1. Add job to reported_closed_jobs.json
+            closed_map = load_reported_closed_jobs()
             discovered = load_discovered_jobs()
-            updated_jobs = []
             for j in discovered:
                 if j.get("id") == job_id or (link and j.get("link") == link):
                     job_title = f"{j.get('company')} - {j.get('title')}"
-                else:
-                    updated_jobs.append(j)
-            save_discovered_jobs(updated_jobs)
+                    closed_map[j.get("id", job_id)] = j
+
+            save_reported_closed_jobs(closed_map)
 
             # 2. Fetch live page & extract newly discovered closure phrases to train knowledge base
             if link and link.startswith("http"):
@@ -1520,7 +1573,7 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
                 save_closed_keywords_kb(kb)
                 msg = f"Reported '{job_title}' as closed. AI extracted {len(learned_phrases)} new closure phrase patterns."
             else:
-                msg = f"Reported '{job_title}' as closed. Job removed & knowledge base updated."
+                msg = f"Reported '{job_title}' as closed. Moved to Closed Schemes & filter knowledge base updated."
 
             # 4. Push confirmation alert
             send_notification(
@@ -1538,6 +1591,21 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({"status": "success", "message": msg, "learned": learned_phrases}).encode("utf-8"))
             return
+
+        elif clean_path == "/api/reopen-closed":
+            params = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            job_id = params.get("id", [""])[0]
+            closed_map = load_reported_closed_jobs()
+            if job_id in closed_map:
+                del closed_map[job_id]
+                save_reported_closed_jobs(closed_map)
+            self.send_response(200)
+            self.send_cors_headers()
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "success", "message": "Scheme restored to active list"}).encode("utf-8"))
+            return
+
 
 
         elif clean_path == "/test-briefing":

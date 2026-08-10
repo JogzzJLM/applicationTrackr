@@ -78,6 +78,12 @@ def classify_email_stage(combined_text):
     5. Applied / Confirmation (Score 100)
     6. Application Update Fallback (Score 50)
     """
+    has_applied = any(k in combined_text for k in [
+        "thank you for applying", "thanks for applying", "application received",
+        "thanks for your interest", "received your application", "application submitted",
+        "successfully submitted", "received your resume", "received your cv", "application confirmation"
+    ])
+
     has_offer = any(k in combined_text for k in [
         "offer of employment", "job offer", "pleased to offer", "congratulations!",
         "offer letter", "formal offer", "delighted to offer"
@@ -92,23 +98,18 @@ def classify_email_stage(combined_text):
     has_interview = any(k in combined_text for k in [
         "invitation to interview", "interview invitation", "schedule your interview",
         "schedule a chat", "speak with our team", "technical interview", "behavioral interview",
-        "final round", "next round", "next steps", "next stage", "move forward with your application",
-        "pleased to invite you for an interview", "pleased to invite you to an interview", "progress your application", "advanced to the next stage",
+        "final round", "next round", "move forward with your application",
+        "pleased to invite you for an interview", "pleased to invite you to an interview",
+        "progress your application", "advanced to the next stage",
         "shortlisted", "book your time slot", "interview slot"
-
     ])
 
+    # Require explicit invite/action phrasing for online assessment stage
     has_assessment = any(k in combined_text for k in [
-        "online assessment", "coding test", "technical assessment", "hackerrank",
-        "codility", "hirevue", "codesignal", "pymetrics", "shl", "testgorilla",
-        "workday test", "greenhouse assessment", "assessment centre", "assessment center",
-        "superday", "take-home test", "online test"
-    ])
-
-    has_applied = any(k in combined_text for k in [
-        "thank you for applying", "thanks for applying", "application received",
-        "thanks for your interest", "received your application", "application submitted",
-        "successfully submitted", "received your resume", "received your cv", "application confirmation"
+        "invited to complete", "invitation to complete", "invited to take",
+        "complete your assessment", "start your test", "assessment link",
+        "complete the hackerrank", "complete your hirevue", "take your online test",
+        "complete the codility", "complete your codesignal", "test deadline"
     ])
 
     has_update_fallback = any(k in combined_text for k in [
@@ -129,6 +130,7 @@ def classify_email_stage(combined_text):
     elif has_update_fallback:
         return "Application Update"
     return None
+
 
 def check_email_inbox():
 

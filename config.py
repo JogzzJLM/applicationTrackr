@@ -9,8 +9,26 @@ SEEN_EMAILS_FILE = "seen_emails.json"
 DISCOVERED_JOBS_FILE = "discovered_jobs.json"
 SETTINGS_FILE = "settings.json"
 CLOSED_KB_FILE = "closed_keywords_kb.json"
+REPORTED_CLOSED_FILE = "reported_closed_jobs.json"
 PORT = 5000
 HP_STREAM_TAILSCALE_IP = "100.75.135.73"
+
+def load_reported_closed_jobs():
+    if os.path.exists(REPORTED_CLOSED_FILE):
+        try:
+            with open(REPORTED_CLOSED_FILE, "r") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+def save_reported_closed_jobs(closed_map):
+    try:
+        with open(REPORTED_CLOSED_FILE, "w") as f:
+            json.dump(closed_map, f, indent=2)
+    except Exception as e:
+        print(f"⚠️ Error saving reported_closed_jobs: {e}")
+
 
 
 DEFAULT_CLOSED_PHRASES = [
