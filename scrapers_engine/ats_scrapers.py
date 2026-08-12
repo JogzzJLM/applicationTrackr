@@ -3,7 +3,10 @@ import time
 import requests
 import concurrent.futures
 from core.normalization import normalize_company, normalize_role, normalize_url, extract_ats_post_id
-from core.storage import load_reported_closed_jobs, load_settings, save_settings
+from core.storage import (
+    load_reported_closed_jobs, load_settings, save_settings,
+    load_closed_urls_cache, mark_url_as_closed
+)
 from core.scoring import calculate_skill_match_score
 from scrapers_engine.verifier import verify_live_page_applyable
 from config import update_source_status
@@ -43,6 +46,10 @@ def add_discovered_job(discovered_list, job_id, company, title, location, link, 
     if not validate_job_legitimacy(company, title, link):
         return False
 
+    closed_urls = load_closed_urls_cache()
+    if link in closed_urls:
+        return False
+
     norm_c = normalize_company(company)
     norm_t = normalize_role(title)
     norm_u = normalize_url(link)
@@ -50,10 +57,12 @@ def add_discovered_job(discovered_list, job_id, company, title, location, link, 
 
     closed_map = load_reported_closed_jobs()
     if (job_id in closed_map) or (norm_u in set(c.get("link") for c in closed_map.values() if c.get("link"))):
+        mark_url_as_closed(link)
         return False
 
     for c_job in closed_map.values():
         if normalize_company(c_job.get("company")) == norm_c and normalize_role(c_job.get("title")) == norm_t:
+            mark_url_as_closed(link)
             return False
 
     if not verify_live_page_applyable(link):

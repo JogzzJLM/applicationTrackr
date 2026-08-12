@@ -13,6 +13,7 @@ DISCOVERED_JOBS_FILE = "discovered_jobs.json"
 SETTINGS_FILE = "settings.json"
 CLOSED_KB_FILE = "closed_keywords_kb.json"
 REPORTED_CLOSED_FILE = "reported_closed_jobs.json"
+CLOSED_URLS_CACHE_FILE = "closed_urls_cache.json"
 HIDDEN_JOBS_FILE = "hidden_jobs.json"
 SCRAPER_STATUS_FILE = "scraper_status.json"
 
@@ -86,6 +87,21 @@ def load_reported_closed_jobs():
 
 def save_reported_closed_jobs(closed_map):
     atomic_write_json(REPORTED_CLOSED_FILE, closed_map)
+
+def load_closed_urls_cache():
+    data = load_json_safe(CLOSED_URLS_CACHE_FILE, [])
+    return set(data) if isinstance(data, list) else set()
+
+def save_closed_urls_cache(closed_set):
+    atomic_write_json(CLOSED_URLS_CACHE_FILE, list(closed_set))
+
+def mark_url_as_closed(url):
+    if not url or not isinstance(url, str) or not url.startswith("http"):
+        return
+    closed = load_closed_urls_cache()
+    if url not in closed:
+        closed.add(url)
+        save_closed_urls_cache(closed)
 
 def load_hidden_jobs():
     data = load_json_safe(HIDDEN_JOBS_FILE, [])

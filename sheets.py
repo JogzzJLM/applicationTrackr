@@ -89,18 +89,23 @@ def update_google_sheet_via_webhook(company, stage, role="Software/Quant Role", 
 
     payload = {"company": company, "stage": final_stage, "role": role, "link": link}
     try:
-        resp = requests.post(GOOGLE_SHEET_WEBHOOK_URL, json=payload, timeout=10)
-        if resp.status_code == 200:
-            print(f"📊 Auto-updated Google Sheet: {company} -> {final_stage}")
+        resp = requests.post(GOOGLE_SHEET_WEBHOOK_URL, json=payload, timeout=6)
+        if resp.status_code in [200, 201]:
+            print(f"✅ Logged to Google Sheet: {company} -> {final_stage}")
             fetch_google_sheet_csv(force_refresh=True)
+            return True
+        else:
+            print(f"⚠️ Google Sheet Webhook returned HTTP {resp.status_code}")
     except Exception as e:
-        print(f"⚠️ Error sending Webhook to Google Sheet: {e}")
+        print(f"⚠️ Webhook dispatch notice ({e})")
+    return False
 
-def get_applied_jobs_set():
+def get_applied_jobs_set(csv_text=None):
     """Fetches Google Sheet and returns a set of (norm_comp, norm_role) tuples and set of normalized company names."""
     applied_jobs = set()
     applied_companies = set()
-    csv_text = fetch_google_sheet_csv()
+    if csv_text is None:
+        csv_text = fetch_google_sheet_csv()
     if csv_text:
         try:
             reader = csv.DictReader(io.StringIO(csv_text))
@@ -117,13 +122,14 @@ def get_applied_jobs_set():
             pass
     return applied_jobs, applied_companies
 
-def get_applied_companies_set():
+def get_applied_companies_set(csv_text=None):
     """Fetches Google Sheet and returns a set of lowercased company names already logged."""
-    _, applied_companies = get_applied_jobs_set()
+    _, applied_companies = get_applied_jobs_set(csv_text=csv_text)
     return applied_companies
 
-def parse_sheet_stats():
-    csv_text = fetch_google_sheet_csv()
+def parse_sheet_stats(csv_text=None):
+    if csv_text is None:
+        csv_text = fetch_google_sheet_csv()
     if not csv_text:
         return {"total": 0, "active": 0, "offers": 0, "rejections": 0}
 
@@ -155,10 +161,11 @@ def parse_sheet_stats():
         print(f"Error parsing stats for report: {e}")
         return {"total": 0, "active": 0, "offers": 0, "rejections": 0}
 
-def get_detailed_applications():
+def get_detailed_applications(csv_text=None):
     """Fetches Google Sheet CSV and returns a list of detailed application dicts."""
     apps = []
-    csv_text = fetch_google_sheet_csv()
+    if csv_text is None:
+        csv_text = fetch_google_sheet_csv()
     if csv_text:
         try:
             reader = csv.DictReader(io.StringIO(csv_text))
@@ -270,7 +277,6 @@ def generate_sankey_from_google_sheets(force_refresh=False):
             generate_default_sankey()
             return
 
-        # Sort nodes hierarchically: Applications -> Intermediate -> Terminal
         def node_rank(name):
             n = name.lower()
             if name == "Applications":
@@ -291,31 +297,29 @@ def generate_sankey_from_google_sheets(force_refresh=False):
         sorted_nodes = sorted(list(all_nodes), key=node_rank)
         node_indices = {name: idx for idx, name in enumerate(sorted_nodes)}
 
-        # Format node labels with values
         display_labels = [f"{name} ({node_counts.get(name, 1)})" for name in sorted_nodes]
 
         sources = [node_indices[src] for (src, tgt) in flow_counts.keys()]
         targets = [node_indices[tgt] for (src, tgt) in flow_counts.keys()]
         values = list(flow_counts.values())
 
-        # Apple System Color Palette
         node_colors = []
         for name in sorted_nodes:
             lower = name.lower()
             if name == "Applications" or lower == "applied":
-                node_colors.append("#0071e3")  # Apple Blue
+                node_colors.append("#0071e3")
             elif "offer" in lower or "accepted" in lower:
-                node_colors.append("#34c759")  # Apple Green
+                node_colors.append("#34c759")
             elif "reject" in lower or "fail" in lower:
-                node_colors.append("#ff3b30")  # Apple Red
+                node_colors.append("#ff3b30")
             elif "ghost" in lower:
-                node_colors.append("#8e8e93")  # Apple Gray
+                node_colors.append("#8e8e93")
             elif "interview" in lower:
-                node_colors.append("#ff9500")  # Apple Orange
+                node_colors.append("#ff9500")
             elif "assessment" in lower or "oa" in lower or "test" in lower:
-                node_colors.append("#af52de")  # Apple Purple
+                node_colors.append("#af52de")
             else:
-                node_colors.append("#5856d6")  # Apple Indigo
+                node_colors.append("#5856d6")
 
         link_colors = []
         for src, tgt in flow_counts.keys():

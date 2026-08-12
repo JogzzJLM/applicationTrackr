@@ -5,6 +5,7 @@ from config import SCRAPER_STATUS, add_scraper_log, update_scraper_status, updat
 from core.storage import (
     SEEN_JOBS_FILE, DISCOVERED_JOBS_FILE,
     load_reported_closed_jobs, save_reported_closed_jobs,
+    load_closed_urls_cache, mark_url_as_closed,
     load_json_safe, atomic_write_json, save_scraper_status
 )
 
@@ -36,6 +37,7 @@ def purge_expired_jobs():
 │ 🧹 JOB LINK HEALTH CHECK & DEAD LISTING PURGE                         │
 └────────────────────────────────────────────────────────────────────────┘""")
     discovered = load_discovered_jobs()
+    closed_urls = load_closed_urls_cache()
     initial_count = len(discovered)
     valid_jobs = []
     purged_count = 0
@@ -45,9 +47,15 @@ def purge_expired_jobs():
         link = job.get("link", "")
         if not link or not link.startswith("http"):
             return None
+
+        if link in closed_urls:
+            add_scraper_log(f"  ├── 🛑 Known Closed URL (Skipped HTTP): {job.get('company')} - {job.get('title')}")
+            return None
+
         try:
             resp = requests.head(link, timeout=4, allow_redirects=True, headers={"User-Agent": "Mozilla/5.0"})
-            if resp.status_code in [404, 410]:
+            if resp.status_code in [404, 410, 403, 500]:
+                mark_url_as_closed(link)
                 add_scraper_log(f"  ├── 🛑 Dead link ({resp.status_code}): {job.get('company')} - {job.get('title')}")
                 return None
         except Exception:
@@ -78,14 +86,15 @@ def recheck_existing_open_jobs_for_closure():
 └────────────────────────────────────────────────────────────────────────┘""")
     discovered = load_discovered_jobs()
     closed_map = load_reported_closed_jobs()
+    closed_urls = load_closed_urls_cache()
 
-    closed_links = set(c.get("link") for c in closed_map.values() if c.get("link"))
+    closed_links = set(c.get("link") for c in closed_map.values() if c.get("link")).union(closed_urls)
     closed_ids = set(closed_map.keys())
 
     existing_open = [j for j in discovered if j.get("id") not in closed_ids and j.get("link") not in closed_links]
 
     if not existing_open:
-        add_scraper_log("  └── ℹ️ No active open schemes to recheck.")
+        add_scraper_log("  └── ℹ️ No active open schemes to recheck (all up to date).")
         return 0
 
     add_scraper_log(f"  ├── 🔍 Re-evaluating {len(existing_open)} active open schemes against updated Knowledge Base...")
@@ -97,6 +106,7 @@ def recheck_existing_open_jobs_for_closure():
         if not link or not link.startswith("http"):
             return None
         if not verify_live_page_applyable(link):
+            mark_url_as_closed(link)
             return job
         return None
 
@@ -118,7 +128,7 @@ def recheck_existing_open_jobs_for_closure():
         send_notification(
             title=f"Closure Audit: {len(newly_detected_closed)} Schemes Moved to Closed",
             message=f"Re-evaluated {len(existing_open)} open schemes against updated AI patterns. Automatically moved {len(newly_detected_closed)} newly closed schemes to Closed Directory.",
-            link="http://100.75.135.73:5000/status",
+            link=f"http://{HP_STREAM_TAILSCALE_IP}:5000/status",
             tags="broom,brain",
             priority=3,
             sound="chime"
@@ -152,55 +162,27 @@ def run_all_scrapers():
         all_new_jobs.extend(f_sr.result())
         all_new_jobs.extend(f_trackr.result())
 
-    closed_map = load_reported_closed_jobs()
-    closed_ids = set(closed_map.keys())
-    closed_links = set(c.get("link") for c in closed_map.values() if c.get("link"))
-    closed_pairs = set((normalize_company(c.get("company")), normalize_role(c.get("title"))) for c in closed_map.values())
-
-    clean_discovered = []
-    for j in discovered_list:
-        j_id = j.get("id", "")
-        j_link = j.get("link", "")
-        j_c = normalize_company(j.get("company"))
-        j_t = normalize_role(j.get("title"))
-        if j_id in closed_ids or j_link in closed_links or (j_c, j_t) in closed_pairs:
-            continue
-        clean_discovered.append(j)
-
-    discovered_list = clean_discovered
-
-    elapsed = round(time.time() - start_time, 2)
     save_seen_jobs(seen_jobs)
     save_discovered_jobs(discovered_list)
 
+    purge_expired_jobs()
+
+    elapsed = round(time.time() - start_time, 2)
     SCRAPER_STATUS["last_run"] = time.strftime("%Y-%m-%d %H:%M:%S")
     SCRAPER_STATUS["total_seen_jobs"] = len(seen_jobs)
     SCRAPER_STATUS["total_discovered_jobs"] = len(discovered_list)
     SCRAPER_STATUS["last_new_jobs_found"] = len(all_new_jobs)
+
     save_scraper_status(SCRAPER_STATUS)
 
-    add_scraper_log(f"  └── 📊 Parallel Scraper Run Complete in {elapsed}s: {len(discovered_list)} total active schemes indexed ({len(all_new_jobs)} new alerts sent).")
+    add_scraper_log(f"  └── 📊 Parallel Scraper Run Complete in {elapsed}s: {len(discovered_list)} total active schemes indexed.")
 
-    if all_new_jobs and len(all_new_jobs) <= 10:
-        if len(all_new_jobs) > 3:
-            summary = "\n".join([f"• {t[0]}" for t in all_new_jobs[:3]])
-            send_notification(
-                title=f"{len(all_new_jobs)} New Active Schemes Discovered!",
-                message=f"Latest roles found:\n{summary}\nTap to view all listings.",
-                link="http://100.75.135.73:5000/jobs",
-                tags="rocket,star",
-                priority=3,
-                sound="chime"
-            )
-        else:
-            for job in all_new_jobs:
-                send_notification(
-                    title=f"New Scheme: {job[0]}",
-                    message=f"Location: {job[1]}\nSource: Active UK Search",
-                    link=job[2],
-                    tags="briefcase,sparkles",
-                    priority=4,
-                    sound="chime"
-                )
-
-    return len(all_new_jobs)
+    if all_new_jobs:
+        send_notification(
+            title=f"🚀 {len(all_new_jobs)} New UK Schemes Discovered!",
+            message="\n".join([f"• {j[0]} ({j[1]})" for j in all_new_jobs[:5]]),
+            link=f"http://{HP_STREAM_TAILSCALE_IP}:5000/discovered",
+            tags="bell,rocket",
+            priority=4,
+            sound="fanfare"
+        )

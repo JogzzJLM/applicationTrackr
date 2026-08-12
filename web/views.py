@@ -8,17 +8,18 @@ from core.kb import load_closed_keywords_kb
 from core.normalization import normalize_company, normalize_role, extract_program_type, clean_company_display_name
 from core.scoring import calculate_skill_match_score
 from sheets import (
-    parse_sheet_stats, get_detailed_applications,
+    fetch_google_sheet_csv, parse_sheet_stats, get_detailed_applications,
     get_applied_jobs_set
 )
 from scrapers_engine.audit import load_discovered_jobs
 from web.components import render_job_card
 
 def render_unified_dashboard_html(active_tab="flow"):
-    stats = parse_sheet_stats()
-    apps = get_detailed_applications()
+    csv_text = fetch_google_sheet_csv()
+    stats = parse_sheet_stats(csv_text=csv_text)
+    apps = get_detailed_applications(csv_text=csv_text)
     all_jobs = load_discovered_jobs()
-    applied_jobs, applied_companies = get_applied_jobs_set()
+    applied_jobs, applied_companies = get_applied_jobs_set(csv_text=csv_text)
     settings = load_settings()
     hidden_jobs = load_hidden_jobs()
 
