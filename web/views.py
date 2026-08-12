@@ -14,6 +14,26 @@ from sheets import (
 from scrapers_engine.audit import load_discovered_jobs
 from web.components import render_job_card
 
+def get_company_initials_and_gradient(comp_name):
+    clean = clean_company_display_name(comp_name).strip()
+    words = clean.split()
+    if len(words) >= 2:
+        initials = (words[0][0] + words[1][0]).upper()
+    elif len(clean) >= 2:
+        initials = clean[:2].upper()
+    else:
+        initials = (clean[0] if clean else "AP").upper()
+
+    h = hash(clean) % 5
+    gradients = [
+        "linear-gradient(135deg, #0071e3, #42a5f5)",
+        "linear-gradient(135deg, #af52de, #7e57c2)",
+        "linear-gradient(135deg, #ff9500, #ffb74d)",
+        "linear-gradient(135deg, #34c759, #66bb6a)",
+        "linear-gradient(135deg, #5856d6, #ab47bc)"
+    ]
+    return initials, gradients[h]
+
 def render_unified_dashboard_html(active_tab="flow"):
     stats = parse_sheet_stats()
     apps = get_detailed_applications()
@@ -107,17 +127,24 @@ def render_unified_dashboard_html(active_tab="flow"):
 
             comp_clean = clean_company_display_name(a['company'])
             comp_js = comp_clean.replace("'", "\\'").replace('"', '&quot;')
+            initials, grad = get_company_initials_and_gradient(comp_clean)
 
             action_html = f"""
-            <div style="display:flex; gap:4px;">
-                <button onclick="quickUpdateStage('{comp_js}', 'Interview')" class="btn btn-tinted" style="font-size:11px; padding:3px 8px;" title="Promote to Interview">+ Interview</button>
-                <button onclick="quickUpdateStage('{comp_js}', 'Rejected')" class="btn btn-ghost btn-danger-text" style="font-size:11px; padding:3px 8px;" title="Mark Rejected">Reject</button>
+            <div style="display:flex; gap:6px;">
+                <button onclick="quickUpdateStage('{comp_js}', 'Interview')" class="btn btn-tinted" style="font-size:11px; padding:4px 10px;" title="Promote to Interview">+ Interview</button>
+                <button onclick="quickUpdateStage('{comp_js}', 'Online Assessment')" class="btn btn-ghost" style="font-size:11px; padding:4px 10px;" title="Promote to OA">+ OA</button>
+                <button onclick="quickUpdateStage('{comp_js}', 'Rejected')" class="btn btn-ghost btn-danger-text" style="font-size:11px; padding:4px 10px;" title="Mark Rejected">Reject</button>
             </div>
             """
 
             apps_table_rows += f"""
             <tr>
-                <td class="td-company">{comp_clean}</td>
+                <td class="td-company">
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <div style="width:32px; height:32px; border-radius:8px; background:{grad}; color:#fff; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; flex-shrink:0;">{initials}</div>
+                        <span>{comp_clean}</span>
+                    </div>
+                </td>
                 <td class="td-role">{a['role']}</td>
                 <td><span class="badge {badge_cls}">{latest_stage}</span></td>
                 <td><span class="badge {badge_cls}">{a['status']}</span></td>
@@ -240,18 +267,18 @@ def render_unified_dashboard_html(active_tab="flow"):
 
                 deadline_raw = str(j.get('deadline') or j.get('closeDate') or '').lower()
                 if deadline_raw and not any(kw in deadline_raw for kw in ['rolling', 'asap', 'none']):
-                    if action_items_count < 4:
+                    if action_items_count < 6:
                         action_items_count += 1
                         comp_js = comp_name.replace("'", "\\'").replace('"', '&quot;')
                         title_js = title_name.replace("'", "\\'").replace('"', '&quot;')
                         action_items_html += f"""
                         <div class="action-item-chip">
                             <div style="font-weight:700; color:var(--text-primary);">{comp_name}</div>
-                            <div style="font-size:12px; color:var(--blue); font-weight:600;">{title_name}</div>
+                            <div style="font-size:12px; color:var(--blue); font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:180px;">{title_name}</div>
                             <div style="font-size:11px; color:var(--orange); font-weight:600; margin-top:2px;">Closing: {j.get('deadline')}</div>
-                            <div style="margin-top:6px; display:flex; gap:6px;">
-                                <a href="{j_link}" target="_blank" rel="noopener" class="btn btn-filled" style="font-size:11px; padding:3px 8px;">Apply ↗</a>
-                                <button onclick="logJob('{comp_js}', '{title_js}')" class="btn btn-tinted" style="font-size:11px; padding:3px 8px;">+ Log</button>
+                            <div style="margin-top:8px; display:flex; gap:6px;">
+                                <a href="{j_link}" target="_blank" rel="noopener" class="btn btn-filled" style="font-size:11px; padding:3px 10px;">Apply ↗</a>
+                                <button onclick="logJob('{comp_js}', '{title_js}')" class="btn btn-tinted" style="font-size:11px; padding:3px 10px;">+ Log</button>
                             </div>
                         </div>
                         """
@@ -293,19 +320,18 @@ def render_unified_dashboard_html(active_tab="flow"):
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>ApplicationTrackr</title>
+    <title>ApplicationTrackr - UK Career Command Center</title>
     <meta name="description" content="UK graduate scheme application tracker and job discovery engine">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 
     <style>
         :root {{
-            --bg: #f5f5f7;
-            --bg-secondary: #ededf0;
+            --bg: #f4f5f8;
             --border: #d2d2d7;
-            --border-light: rgba(0, 0, 0, 0.06);
+            --border-light: rgba(0, 0, 0, 0.07);
             --text-primary: #1d1d1f;
             --text-secondary: #6e6e73;
             --text-tertiary: #86868b;
@@ -321,12 +347,12 @@ def render_unified_dashboard_html(active_tab="flow"):
             --purple: #af52de;
             --purple-bg: rgba(175, 82, 222, 0.1);
             --gray-bg: rgba(142, 142, 147, 0.12);
-            --card-bg: rgba(255, 255, 255, 0.76);
-            --card-border: rgba(255, 255, 255, 0.85);
-            --card-shadow: 0 1px 4px rgba(0,0,0,0.04), 0 2px 12px rgba(0,0,0,0.03);
-            --card-shadow-hover: 0 8px 30px rgba(0,0,0,0.08), 0 2px 8px rgba(0,0,0,0.04);
-            --radius: 14px;
-            --radius-lg: 18px;
+            --card-bg: rgba(255, 255, 255, 0.82);
+            --card-border: rgba(255, 255, 255, 0.9);
+            --card-shadow: 0 4px 20px rgba(0,0,0,0.03), 0 1px 3px rgba(0,0,0,0.02);
+            --card-shadow-hover: 0 12px 36px rgba(0,0,0,0.08), 0 2px 8px rgba(0,0,0,0.04);
+            --radius: 16px;
+            --radius-lg: 20px;
             --font: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
             --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
         }}
@@ -336,38 +362,38 @@ def render_unified_dashboard_html(active_tab="flow"):
         body {{
             background: var(--bg);
             background-image:
-                radial-gradient(ellipse at 20% 0%, rgba(0, 113, 227, 0.045) 0%, transparent 50%),
-                radial-gradient(ellipse at 80% 100%, rgba(52, 199, 89, 0.035) 0%, transparent 50%);
+                radial-gradient(ellipse at 15% 0%, rgba(0, 113, 227, 0.06) 0%, transparent 60%),
+                radial-gradient(ellipse at 85% 100%, rgba(175, 82, 222, 0.05) 0%, transparent 60%);
             background-attachment: fixed;
             color: var(--text-primary);
             font-family: var(--font);
             -webkit-font-smoothing: antialiased;
-            -moz-osx-font-smoothing: grayscale;
-            line-height: 1.47059;
+            line-height: 1.47;
+            padding-bottom: 40px;
         }}
 
-        /* ─── Layout ─── */
-        .shell {{ max-width: 1200px; margin: 0 auto; padding: 0 24px; }}
+        .shell {{ max-width: 1360px; margin: 0 auto; padding: 0 28px; }}
 
-        /* ─── Top bar ─── */
+        /* ─── Topbar ─── */
         .topbar {{
             display: flex; align-items: center; justify-content: space-between;
-            padding: 12px 24px;
+            padding: 14px 32px;
             border-bottom: 1px solid var(--border-light);
-            background: rgba(255,255,255,0.82);
-            backdrop-filter: saturate(180%) blur(20px);
-            -webkit-backdrop-filter: saturate(180%) blur(20px);
+            background: rgba(255,255,255,0.85);
+            backdrop-filter: saturate(180%) blur(24px);
+            -webkit-backdrop-filter: saturate(180%) blur(24px);
             position: sticky; top: 0; z-index: 100;
         }}
         .topbar-brand {{
-            font-size: 17px; font-weight: 700; color: var(--text-primary);
-            letter-spacing: -0.022em;
+            font-size: 18px; font-weight: 800; color: var(--text-primary);
+            letter-spacing: -0.03em; display: flex; align-items: center; gap: 8px;
         }}
-        .topbar-right {{ display: flex; align-items: center; gap: 8px; }}
+        .topbar-right {{ display: flex; align-items: center; gap: 10px; }}
+
         .status-pill {{
             display: inline-flex; align-items: center; gap: 6px;
-            font-size: 12px; font-weight: 500; color: var(--green);
-            padding: 5px 12px; background: var(--green-bg);
+            font-size: 12px; font-weight: 600; color: var(--green);
+            padding: 6px 14px; background: var(--green-bg);
             border-radius: 100px;
         }}
         .status-pill .dot {{
@@ -375,16 +401,66 @@ def render_unified_dashboard_html(active_tab="flow"):
             background: var(--green);
             animation: blink 2s ease-in-out infinite;
         }}
-        @keyframes blink {{
-            0%, 100% {{ opacity: 1; }}
-            50% {{ opacity: 0.4; }}
+        @keyframes blink {{ 0%, 100% {{ opacity: 1; }} 50% {{ opacity: 0.4; }} }}
+
+        /* ─── Hero Dashboard Banner ─── */
+        .hero-banner {{
+            margin: 24px 0 20px 0;
+            display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 16px;
+        }}
+        .hero-title {{
+            font-size: 26px; font-weight: 800; color: var(--text-primary); letter-spacing: -0.03em;
+        }}
+        .hero-subtitle {{
+            font-size: 13px; font-weight: 500; color: var(--text-secondary); margin-top: 4px;
+        }}
+
+        /* ─── Hero KPI Cards Grid (4-Column Elevated) ─── */
+        .kpi-grid {{
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px; margin-bottom: 24px;
+        }}
+        @media (max-width: 1024px) {{ .kpi-grid {{ grid-template-columns: repeat(2, 1fr); }} }}
+        @media (max-width: 560px) {{ .kpi-grid {{ grid-template-columns: 1fr; }} }}
+
+        .kpi-card {{
+            background: var(--card-bg);
+            backdrop-filter: blur(20px) saturate(180%);
+            -webkit-backdrop-filter: blur(20px) saturate(180%);
+            border: 1px solid var(--card-border);
+            border-radius: var(--radius-lg);
+            padding: 20px 22px;
+            box-shadow: var(--card-shadow);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }}
+        .kpi-card:hover {{
+            transform: translateY(-2px);
+            box-shadow: var(--card-shadow-hover);
+        }}
+        .kpi-header {{
+            display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;
+        }}
+        .kpi-label {{
+            font-size: 12px; font-weight: 700; color: var(--text-tertiary);
+            text-transform: uppercase; letter-spacing: 0.03em;
+        }}
+        .kpi-badge {{
+            font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 980px;
+        }}
+        .kpi-val {{
+            font-size: 32px; font-weight: 800; color: var(--text-primary);
+            letter-spacing: -0.04em; line-height: 1; margin-bottom: 6px;
+        }}
+        .kpi-sub {{
+            font-size: 12px; font-weight: 500; color: var(--text-secondary);
         }}
 
         /* ─── Buttons ─── */
         .btn {{
-            display: inline-flex; align-items: center; gap: 4px;
-            padding: 7px 14px; border-radius: 980px;
-            font-size: 12px; font-weight: 600; font-family: var(--font);
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 8px 16px; border-radius: 980px;
+            font-size: 12.5px; font-weight: 600; font-family: var(--font);
             cursor: pointer; border: none; text-decoration: none;
             transition: all 0.18s cubic-bezier(0.25, 0.46, 0.45, 0.94);
         }}
@@ -394,50 +470,29 @@ def render_unified_dashboard_html(active_tab="flow"):
         .btn-tinted {{ background: var(--blue-bg); color: var(--blue); }}
         .btn-tinted:hover {{ background: rgba(0, 113, 227, 0.14); }}
         .btn-ghost {{ background: transparent; color: var(--text-secondary); }}
-        .btn-ghost:hover {{ background: rgba(0,0,0,0.04); }}
+        .btn-ghost:hover {{ background: rgba(0,0,0,0.05); }}
         .btn-danger-text {{ color: var(--red); }}
-
-        /* ─── Compact Glass Pill Stat Strip ─── */
-        .compact-stats-bar {{
-            display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
-            background: rgba(255, 255, 255, 0.65);
-            backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
-            border: 1px solid var(--card-border);
-            border-radius: 980px;
-            padding: 6px 14px; margin: 16px 0 16px 0;
-            box-shadow: 0 1px 4px rgba(0,0,0,0.03);
-        }}
-        .c-stat {{
-            display: inline-flex; align-items: center; gap: 6px;
-            font-size: 12px; font-weight: 500; color: var(--text-secondary);
-            padding: 4px 10px; border-radius: 980px; background: rgba(0,0,0,0.025);
-        }}
-        .c-label {{ font-weight: 600; color: var(--text-tertiary); font-size: 11px; text-transform: uppercase; letter-spacing: 0.02em; }}
-        .c-val {{ font-weight: 700; color: var(--text-primary); font-size: 13px; }}
-        .c-val.blue {{ color: var(--blue); }}
-        .c-val.green {{ color: var(--green); }}
-        .c-val.red {{ color: var(--red); }}
 
         /* ─── Action Items Strip ─── */
         .action-items-wrap {{
-            margin-bottom: 20px; display: flex; gap: 12px; overflow-x: auto; padding-bottom: 4px;
+            margin-bottom: 24px; display: flex; gap: 14px; overflow-x: auto; padding-bottom: 6px;
         }}
         .action-item-chip {{
             background: var(--card-bg); border: 1px solid var(--card-border);
-            border-radius: var(--radius); padding: 12px 16px; min-width: 220px;
+            border-radius: var(--radius); padding: 14px 18px; min-width: 240px;
             box-shadow: var(--card-shadow); flex-shrink: 0;
         }}
 
         /* ─── Tab bar ─── */
         .tab-bar {{
-            display: flex; gap: 4px;
+            display: flex; gap: 6px;
             border-bottom: 1px solid var(--border-light);
-            margin-bottom: 20px;
+            margin-bottom: 24px;
             overflow-x: auto;
         }}
         .tab {{
-            padding: 10px 16px;
-            font-size: 13px; font-weight: 600;
+            padding: 12px 20px;
+            font-size: 13.5px; font-weight: 600;
             color: var(--text-secondary);
             background: transparent; border: none;
             cursor: pointer; font-family: var(--font);
@@ -451,39 +506,49 @@ def render_unified_dashboard_html(active_tab="flow"):
             border-bottom-color: var(--blue);
         }}
 
-        /* ─── Section panel ─── */
-        .panel {{ display: none; }}
+        /* ─── Section Card ─── */
+        .section-card {{
+            background: var(--card-bg);
+            backdrop-filter: blur(24px) saturate(180%);
+            -webkit-backdrop-filter: blur(24px) saturate(180%);
+            border: 1px solid var(--card-border);
+            border-radius: var(--radius-lg);
+            padding: 24px 28px; margin-bottom: 24px;
+            box-shadow: var(--card-shadow);
+        }}
+        .section-title {{
+            font-size: 17px; font-weight: 700; color: var(--text-primary);
+            letter-spacing: -0.022em; margin-bottom: 18px;
+            display: flex; align-items: center; justify-content: space-between;
+        }}
 
         /* ─── Pipeline Split Grid ─── */
         .pipeline-grid {{
             display: grid;
-            grid-template-columns: 1.35fr 1fr;
-            gap: 20px;
+            grid-template-columns: 1.4fr 1fr;
+            gap: 24px;
             align-items: start;
         }}
-        @media (max-width: 960px) {{
+        @media (max-width: 1080px) {{
             .pipeline-grid {{ grid-template-columns: 1fr; }}
         }}
 
-        /* ─── Search & filters ─── */
+        /* ─── Search & Toolbar ─── */
         .toolbar {{
-            display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap;
-            align-items: center;
+            display: flex; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; align-items: center;
         }}
-        .search-wrap {{ flex: 1; min-width: 240px; position: relative; }}
+        .search-wrap {{ flex: 1; min-width: 260px; position: relative; }}
         .search-wrap svg {{
-            position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
-            width: 14px; height: 14px; color: var(--text-tertiary);
+            position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+            width: 15px; height: 15px; color: var(--text-tertiary);
         }}
         .search-input {{
-            width: 100%; padding: 10px 14px 10px 36px;
+            width: 100%; padding: 11px 16px 11px 38px;
             border: 1px solid var(--border-light);
             border-radius: var(--radius);
-            font-size: 13px; font-weight: 500;
+            font-size: 13.5px; font-weight: 500;
             color: var(--text-primary);
-            background: rgba(255,255,255,0.8);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
+            background: rgba(255,255,255,0.85);
             outline: none; font-family: var(--font);
             box-shadow: var(--card-shadow);
             transition: border-color 0.2s ease, box-shadow 0.2s ease;
@@ -494,93 +559,75 @@ def render_unified_dashboard_html(active_tab="flow"):
         }}
 
         .sort-select {{
-            padding: 10px 14px;
+            padding: 11px 16px;
             border: 1px solid var(--border-light);
             border-radius: var(--radius);
             font-size: 13px; font-weight: 500;
             color: var(--text-primary);
-            background: rgba(255,255,255,0.8);
-            outline: none; font-family: var(--font);
-            cursor: pointer;
+            background: rgba(255,255,255,0.85);
+            outline: none; font-family: var(--font); cursor: pointer;
         }}
 
         .filter-group-label {{
             font-size: 11px; font-weight: 700; color: var(--text-tertiary);
             text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px;
         }}
-
-        .filter-chips-wrap {{ margin-bottom: 20px; display: flex; flex-direction: column; gap: 8px; }}
-        .filter-chips {{ display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; }}
+        .filter-chips-wrap {{ margin-bottom: 22px; display: flex; flex-direction: column; gap: 10px; }}
+        .filter-chips {{ display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }}
         .chip {{
-            padding: 7px 16px;
-            border-radius: 980px;
+            padding: 8px 18px; border-radius: 980px;
             font-size: 12px; font-weight: 600;
             color: var(--text-secondary);
-            background: rgba(255,255,255,0.65);
+            background: rgba(255,255,255,0.7);
             border: 1px solid var(--border-light);
-            cursor: pointer;
-            white-space: nowrap;
-            font-family: var(--font);
-            backdrop-filter: blur(8px);
-            -webkit-backdrop-filter: blur(8px);
-            transition: all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            cursor: pointer; white-space: nowrap; font-family: var(--font);
+            transition: all 0.2s ease;
         }}
-        .chip:hover {{ background: rgba(255,255,255,0.9); border-color: var(--border); }}
+        .chip:hover {{ background: rgba(255,255,255,0.95); border-color: var(--border); }}
         .chip.active {{
-            background: var(--blue);
-            color: #fff;
-            border-color: var(--blue);
-            box-shadow: 0 2px 10px var(--blue-glow);
+            background: var(--blue); color: #fff;
+            border-color: var(--blue); box-shadow: 0 2px 10px var(--blue-glow);
         }}
 
-        /* ─── Job cards ─── */
+        /* ─── Grid & Cards ─── */
         .grid {{
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-            gap: 14px;
+            grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+            gap: 16px;
         }}
         .card {{
             background: var(--card-bg);
-            backdrop-filter: blur(20px) saturate(180%);
-            -webkit-backdrop-filter: blur(20px) saturate(180%);
+            backdrop-filter: blur(24px) saturate(180%);
+            -webkit-backdrop-filter: blur(24px) saturate(180%);
             border: 1px solid var(--card-border);
             border-radius: var(--radius);
-            padding: 18px;
-            display: flex; flex-direction: column; gap: 8px;
+            padding: 20px; display: flex; flex-direction: column; gap: 10px;
             box-shadow: var(--card-shadow);
-            transition: transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94), box-shadow 0.25s ease;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
         }}
         .card:hover {{
-            transform: translateY(-3px);
-            box-shadow: var(--card-shadow-hover);
+            transform: translateY(-3px); box-shadow: var(--card-shadow-hover);
         }}
         .card-top {{ display: flex; justify-content: space-between; align-items: center; }}
-        .card-status {{
-            display: inline-flex; align-items: center; gap: 5px;
-            font-size: 11px; font-weight: 600; color: var(--text-tertiary);
-        }}
-        .status-dot {{ width: 6px; height: 6px; border-radius: 50%; }}
+        .card-status {{ display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; color: var(--text-tertiary); }}
+        .status-dot {{ width: 7px; height: 7px; border-radius: 50%; }}
         .dot-green {{ background: var(--green); }}
         .dot-blue {{ background: var(--blue); }}
         .dot-red {{ background: var(--red); }}
         .card-match {{
             font-size: 12px; font-weight: 700; color: var(--blue);
-            background: var(--blue-bg);
-            padding: 3px 10px; border-radius: 980px;
+            background: var(--blue-bg); padding: 4px 11px; border-radius: 980px;
         }}
-        .card-company {{ font-size: 15px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.01em; }}
-        .card-role {{ font-size: 13.5px; font-weight: 600; color: var(--blue); line-height: 1.4; }}
+        .card-company {{ font-size: 16px; font-weight: 800; color: var(--text-primary); letter-spacing: -0.015em; }}
+        .card-role {{ font-size: 14px; font-weight: 600; color: var(--blue); line-height: 1.4; }}
         .card-meta {{ font-size: 12px; color: var(--text-tertiary); font-weight: 500; }}
-        .card-source {{ font-size: 11px; color: var(--text-tertiary); }}
+        .card-source {{ font-size: 11.5px; color: var(--text-tertiary); }}
         .link-muted {{ color: var(--blue); text-decoration: none; font-weight: 500; }}
         .link-muted:hover {{ text-decoration: underline; }}
-        .card-actions {{ display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }}
+        .card-actions {{ display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }}
 
         /* ─── Badges ─── */
-        .badge {{
-            display: inline-block; padding: 3px 8px;
-            border-radius: 6px; font-size: 11px; font-weight: 600;
-        }}
+        .badge {{ display: inline-block; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; }}
         .badge-blue {{ background: var(--blue-bg); color: var(--blue); }}
         .badge-green {{ background: var(--green-bg); color: #248a3d; }}
         .badge-red {{ background: var(--red-bg); color: var(--red); }}
@@ -589,138 +636,130 @@ def render_unified_dashboard_html(active_tab="flow"):
         .badge-gray {{ background: var(--gray-bg); color: var(--text-secondary); }}
 
         /* ─── Table ─── */
-        .data-table {{
-            width: 100%; border-collapse: collapse; font-size: 13px;
-        }}
+        .data-table {{ width: 100%; border-collapse: collapse; font-size: 13.5px; }}
         .data-table th {{
-            text-align: left; padding: 10px 12px;
-            font-size: 11px; font-weight: 600; color: var(--text-tertiary);
-            text-transform: uppercase; letter-spacing: 0.02em;
+            text-align: left; padding: 12px 14px;
+            font-size: 11px; font-weight: 700; color: var(--text-tertiary);
+            text-transform: uppercase; letter-spacing: 0.03em;
             border-bottom: 1px solid var(--border-light);
         }}
         .data-table td {{
-            padding: 10px 12px;
-            border-bottom: 1px solid var(--border-light);
-            vertical-align: middle;
+            padding: 12px 14px; border-bottom: 1px solid var(--border-light); vertical-align: middle;
         }}
-        .td-company {{ font-weight: 600; color: var(--text-primary); }}
-        .td-role {{ color: var(--text-secondary); }}
-        .td-pipeline {{ color: var(--text-tertiary); font-size: 12px; }}
+        .td-company {{ font-weight: 700; color: var(--text-primary); }}
+        .td-role {{ color: var(--text-secondary); font-weight: 500; }}
         .empty-state {{ text-align: center; padding: 40px; color: var(--text-tertiary); }}
-
-        /* ─── Section card ─── */
-        .section-card {{
-            background: var(--card-bg);
-            backdrop-filter: blur(20px) saturate(180%);
-            -webkit-backdrop-filter: blur(20px) saturate(180%);
-            border: 1px solid var(--card-border);
-            border-radius: var(--radius-lg);
-            padding: 24px; margin-bottom: 20px;
-            box-shadow: var(--card-shadow);
-        }}
-        .section-title {{
-            font-size: 16px; font-weight: 700; color: var(--text-primary);
-            letter-spacing: -0.022em; margin-bottom: 16px;
-            display: flex; align-items: center; justify-content: space-between;
-        }}
 
         /* ─── Modal ─── */
         .modal-backdrop {{
             position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-            background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(8px);
-            z-index: 1000; display: flex; align-items: center; justify-content: center;
-            padding: 20px;
+            background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(12px);
+            z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 20px;
         }}
         .modal-card {{
-            background: #ffffff; border-radius: 20px; width: 100%; max-width: 440px;
-            padding: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.15);
+            background: #ffffff; border-radius: 24px; width: 100%; max-width: 460px;
+            padding: 28px; box-shadow: 0 24px 60px rgba(0,0,0,0.2);
         }}
 
-        /* ─── Settings form ─── */
+        /* ─── Form Controls ─── */
         .form-group {{ margin-bottom: 16px; }}
-        .form-label {{
-            font-size: 13px; font-weight: 600; color: var(--text-primary);
-            margin-bottom: 6px; display: block;
-        }}
+        .form-label {{ font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 6px; display: block; }}
         .form-input {{
-            width: 100%; padding: 10px 14px;
-            border: 1px solid var(--border-light);
-            border-radius: 10px;
-            font-size: 14px; font-weight: 500;
-            color: var(--text-primary);
-            background: rgba(255,255,255,0.85);
-            outline: none; font-family: var(--font);
+            width: 100%; padding: 11px 16px; border: 1px solid var(--border-light);
+            border-radius: 12px; font-size: 14px; font-weight: 500; color: var(--text-primary);
+            background: rgba(255,255,255,0.9); outline: none; font-family: var(--font);
             transition: border-color 0.2s ease, box-shadow 0.2s ease;
         }}
-        .form-input:focus {{
-            border-color: var(--blue);
-            box-shadow: 0 0 0 4px var(--blue-glow);
-        }}
-        textarea.form-input {{ resize: vertical; }}
+        .form-input:focus {{ border-color: var(--blue); box-shadow: 0 0 0 4px var(--blue-glow); }}
 
         /* ─── Diagnostics ─── */
         .diag-row {{
             display: flex; justify-content: space-between; align-items: center;
-            padding: 10px 0;
-            border-bottom: 1px solid var(--border-light);
-            font-size: 13px;
+            padding: 12px 0; border-bottom: 1px solid var(--border-light); font-size: 13px;
         }}
         .diag-label {{ font-weight: 600; color: var(--text-primary); }}
         .diag-value {{ color: var(--green); font-weight: 600; font-family: var(--font-mono); font-size: 12px; }}
         .kb-tag {{
-            display: inline-block; padding: 4px 10px;
-            background: rgba(255,255,255,0.7); border: 1px solid var(--border-light);
-            border-radius: 6px; font-size: 12px; font-weight: 500;
+            display: inline-block; padding: 5px 12px; background: rgba(255,255,255,0.8);
+            border: 1px solid var(--border-light); border-radius: 8px; font-size: 12px; font-weight: 500;
             color: var(--text-secondary); margin: 3px;
         }}
         .live-dot {{
-            display: inline-block; width: 8px; height: 8px; border-radius: 50%;
-            background: var(--green); margin-right: 6px;
-            animation: pulse 1.8s ease-in-out infinite;
+            display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--green);
+            margin-right: 6px; animation: pulse 1.8s ease-in-out infinite;
         }}
-        @keyframes pulse {{
-            0%, 100% {{ transform: scale(1); opacity: 1; }}
-            50% {{ transform: scale(1.3); opacity: 0.5; }}
-        }}
+        @keyframes pulse {{ 0%, 100% {{ transform: scale(1); opacity: 1; }} 50% {{ transform: scale(1.3); opacity: 0.5; }} }}
 
-        /* ─── Sankey iframe ─── */
+        /* ─── Sankey Frame ─── */
         .sankey-frame {{
-            width: 100%; height: 380px; border: none;
-            border-radius: var(--radius);
-            background: transparent;
-        }}
-
-        /* ─── Responsive ─── */
-        @media (max-width: 768px) {{
-            .topbar {{ padding: 12px 16px; }}
-            .shell {{ padding: 0 16px; }}
-            .grid {{ grid-template-columns: 1fr; }}
-            .topbar-right {{ gap: 4px; }}
+            width: 100%; height: 420px; border: none; border-radius: var(--radius); background: transparent;
         }}
     </style>
 </head>
 <body>
 
-<!-- Top bar -->
+<!-- Topbar -->
 <div class="topbar">
-    <div class="topbar-brand">ApplicationTrackr</div>
+    <div class="topbar-brand">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        ApplicationTrackr
+    </div>
     <div class="topbar-right">
         <div class="status-pill"><span class="dot"></span> Online</div>
-        <button onclick="openLogModal()" class="btn btn-filled">+ Log App</button>
-        <a href="/api/rescan" class="btn btn-tinted">Rescan</a>
+        <button onclick="openLogModal()" class="btn btn-filled">+ Log Application</button>
+        <button onclick="syncSheetsAndSankey()" class="btn btn-tinted">Sync Sheet</button>
+        <a href="/api/rescan" class="btn btn-ghost">Rescan</a>
     </div>
 </div>
 
 <div class="shell">
 
-    <!-- Compact Glass Pill Stat Strip -->
-    <div class="compact-stats-bar">
-        <div class="c-stat"><span class="c-label">Applications</span><span class="c-val">{total}</span></div>
-        <div class="c-stat"><span class="c-label">Active</span><span class="c-val blue">{active}</span></div>
-        <div class="c-stat"><span class="c-label">Offers</span><span class="c-val green">{offers}</span></div>
-        <div class="c-stat"><span class="c-label">Rejected</span><span class="c-val red">{rejections}</span></div>
-        <div class="c-stat"><span class="c-label">Conversion</span><span class="c-val">{conv_rate}%</span></div>
-        <div class="c-stat"><span class="c-label">Discovered</span><span class="c-val">{discovered_count}</span></div>
+    <!-- Hero Title Banner -->
+    <div class="hero-banner">
+        <div>
+            <div class="hero-title">Pipeline Command Center</div>
+            <div class="hero-subtitle">Real-time UK Early-Career Applications & Target Scheme Discovery</div>
+        </div>
+        <div style="display:flex; gap:8px;">
+            <button onclick="openLogModal()" class="btn btn-filled">+ Log New Application</button>
+            <button onclick="syncSheetsAndSankey()" class="btn btn-tinted">🔄 Sync Sankey Flow</button>
+        </div>
+    </div>
+
+    <!-- Hero KPI Cards Grid (4-Column) -->
+    <div class="kpi-grid">
+        <div class="kpi-card">
+            <div class="kpi-header">
+                <span class="kpi-label">Logged Applications</span>
+                <span class="kpi-badge badge-blue">Google Sheet</span>
+            </div>
+            <div class="kpi-val">{total}</div>
+            <div class="kpi-sub">Targeting UK Early Career</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-header">
+                <span class="kpi-label">Active Pipelines</span>
+                <span class="kpi-badge badge-purple">{cnt_interview} Int · {cnt_assessment} OA</span>
+            </div>
+            <div class="kpi-val" style="color:var(--blue);">{active}</div>
+            <div class="kpi-sub">In active interview/test rounds</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-header">
+                <span class="kpi-label">Offers Received</span>
+                <span class="kpi-badge badge-green">{conv_rate}% Conv</span>
+            </div>
+            <div class="kpi-val" style="color:var(--green);">{offers}</div>
+            <div class="kpi-sub">Job offers confirmed</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-header">
+                <span class="kpi-label">Discovered Schemes</span>
+                <span class="kpi-badge badge-gray">Maths & CS</span>
+            </div>
+            <div class="kpi-val">{discovered_count}</div>
+            <div class="kpi-sub">Live UK schemes indexed</div>
+        </div>
     </div>
 
     <!-- Tabs -->
@@ -734,25 +773,29 @@ def render_unified_dashboard_html(active_tab="flow"):
 
     <!-- Panel: Pipeline & Sankey (Side-by-Side Split View) -->
     <div id="view-flow" class="panel" style="{view_flow}">
-        {"<div class='filter-group-label' style='margin-bottom:8px;'>⚠️ Schemes Closing Soon (Action Items)</div><div class='action-items-wrap'>" + action_items_html + "</div>" if action_items_html else ""}
+        {"<div class='filter-group-label' style='margin-bottom:10px;'>⚠️ Urgent Action Items (Schemes Closing Soon)</div><div class='action-items-wrap'>" + action_items_html + "</div>" if action_items_html else ""}
 
         <div class="pipeline-grid">
-            <div class="section-card" style="margin-bottom:0;">
-                <div class="section-title">Application Flow Pipeline</div>
+            <div class="section-card">
+                <div class="section-title">
+                    <span>Sankey Application Flow</span>
+                    <button onclick="syncSheetsAndSankey()" class="btn btn-ghost" style="font-size:11px;">Refresh Diagram</button>
+                </div>
                 <iframe src="/sankey-embed" class="sankey-frame" id="sankey-iframe"></iframe>
             </div>
-            <div class="section-card" style="margin-bottom:0;">
+
+            <div class="section-card">
                 <div class="section-title">
-                    <span>Logged Applications ({total})</span>
+                    <span>Stage Funnel Breakdown</span>
                     <button onclick="openLogModal()" class="btn btn-filled" style="font-size:11px;">+ Log App</button>
                 </div>
 
-                <div style="margin-bottom:12px;">
-                    <div style="display:flex; justify-content:space-between; font-size:11px; font-weight:600; color:var(--text-tertiary); margin-bottom:4px;">
+                <div style="margin-bottom:20px;">
+                    <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:600; color:var(--text-tertiary); margin-bottom:6px;">
                         <span>Stage Distribution</span>
                         <span>{cnt_applied} Applied · {cnt_assessment} OA · {cnt_interview} Int · {cnt_offer} Offer</span>
                     </div>
-                    <div style="background:rgba(0,0,0,0.05); border-radius:100px; height:6px; display:flex; overflow:hidden;">
+                    <div style="background:rgba(0,0,0,0.06); border-radius:100px; height:8px; display:flex; overflow:hidden;">
                         <div style="width:{pct_applied}%; background:var(--blue);" title="Applied"></div>
                         <div style="width:{pct_assessment}%; background:var(--purple);" title="Assessment"></div>
                         <div style="width:{pct_interview}%; background:var(--orange);" title="Interview"></div>
@@ -761,22 +804,50 @@ def render_unified_dashboard_html(active_tab="flow"):
                     </div>
                 </div>
 
-                <div style="overflow-x:auto;">
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Company</th>
-                                <th>Role</th>
-                                <th>Stage</th>
-                                <th>Status</th>
-                                <th>Action</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {apps_table_rows}
-                        </tbody>
-                    </table>
+                <div class="diag-row">
+                    <span class="diag-label">1. Applied Stage</span>
+                    <span class="diag-value" style="color:var(--blue);">{cnt_applied} roles</span>
                 </div>
+                <div class="diag-row">
+                    <span class="diag-label">2. Online Assessment (OA)</span>
+                    <span class="diag-value" style="color:var(--purple);">{cnt_assessment} roles</span>
+                </div>
+                <div class="diag-row">
+                    <span class="diag-label">3. Interview Rounds</span>
+                    <span class="diag-value" style="color:var(--orange);">{cnt_interview} roles</span>
+                </div>
+                <div class="diag-row">
+                    <span class="diag-label">4. Job Offers 🎉</span>
+                    <span class="diag-value" style="color:var(--green);">{cnt_offer} offers</span>
+                </div>
+                <div class="diag-row" style="border:none;">
+                    <span class="diag-label">5. Rejections</span>
+                    <span class="diag-value" style="color:var(--red);">{cnt_rejected} roles</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Full-Width Logged Applications Command Center Table -->
+        <div class="section-card">
+            <div class="section-title">
+                <span>Logged Applications Command Center ({total})</span>
+                <button onclick="openLogModal()" class="btn btn-filled">+ Log New Application</button>
+            </div>
+            <div style="overflow-x:auto;">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Company</th>
+                            <th>Role Title</th>
+                            <th>Current Stage</th>
+                            <th>Status</th>
+                            <th>Fast Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {apps_table_rows}
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
@@ -864,7 +935,7 @@ def render_unified_dashboard_html(active_tab="flow"):
                         Hide other listings from applied companies
                     </label>
                 </div>
-                <button type="submit" class="btn btn-filled">Save</button>
+                <button type="submit" class="btn btn-filled">Save Configuration</button>
             </form>
         </div>
     </div>
@@ -929,13 +1000,13 @@ def render_unified_dashboard_html(active_tab="flow"):
 <!-- Modal: Log New Application -->
 <div id="log-modal" class="modal-backdrop" style="display:none;">
     <div class="modal-card">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-            <div style="font-size:16px; font-weight:700; color:var(--text-primary);">Log Application to Google Sheets</div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px;">
+            <div style="font-size:17px; font-weight:800; color:var(--text-primary);">Log Application to Google Sheets</div>
             <button onclick="closeLogModal()" class="btn btn-ghost">✕</button>
         </div>
         <div class="form-group">
             <label class="form-label">Company Name</label>
-            <input type="text" id="modal-company" class="form-input" placeholder="e.g. Marshall Wace, Palantir">
+            <input type="text" id="modal-company" class="form-input" placeholder="e.g. Marshall Wace, Palantir, Goldman Sachs">
         </div>
         <div class="form-group">
             <label class="form-label">Role Title</label>
@@ -952,8 +1023,8 @@ def render_unified_dashboard_html(active_tab="flow"):
                 <option value="Rejected">Rejected</option>
             </select>
         </div>
-        <div style="display:flex; gap:8px; margin-top:20px;">
-            <button onclick="submitModalLog()" class="btn btn-filled" style="flex:1;">Save to Google Sheets</button>
+        <div style="display:flex; gap:10px; margin-top:24px;">
+            <button onclick="submitModalLog()" class="btn btn-filled" style="flex:1;">Save to Google Sheets & Pipeline</button>
             <button onclick="closeLogModal()" class="btn btn-ghost">Cancel</button>
         </div>
     </div>
@@ -971,6 +1042,19 @@ def render_unified_dashboard_html(active_tab="flow"):
 
     function closeLogModal() {{
         document.getElementById('log-modal').style.display = 'none';
+    }}
+
+    function syncSheetsAndSankey() {{
+        var iframe = document.getElementById('sankey-iframe');
+        if (iframe) {{
+            iframe.src = '/sankey-embed?_t=' + Date.now();
+        }}
+        fetch('/api/sync-sheet')
+            .then(() => {{
+                setTimeout(() => {{
+                    if (iframe) iframe.src = '/sankey-embed?_t=' + Date.now();
+                }}, 600);
+            }});
     }}
 
     function submitModalLog() {{
@@ -992,7 +1076,8 @@ def render_unified_dashboard_html(active_tab="flow"):
         fetch('/api/mark-applied?company=' + encodeURIComponent(comp) + '&title=' + encodeURIComponent(title) + '&stage=' + encodeURIComponent(stage || 'Applied'))
             .then(r => r.json())
             .then(() => {{
-                location.reload();
+                syncSheetsAndSankey();
+                setTimeout(() => {{ location.reload(); }}, 300);
             }});
     }}
 
@@ -1079,7 +1164,9 @@ def render_unified_dashboard_html(active_tab="flow"):
         var activeBtn = document.querySelector('.tab[data-tab="' + tabId + '"]');
         if (activeBtn) activeBtn.classList.add('active');
 
-        if (tabId === 'diagnostics') {{
+        if (tabId === 'flow') {{
+            syncSheetsAndSankey();
+        }} else if (tabId === 'diagnostics') {{
             startLivePolling();
         }} else {{
             stopLivePolling();
@@ -1130,13 +1217,11 @@ def render_unified_dashboard_html(active_tab="flow"):
             c.style.display = isVisible ? 'flex' : 'none';
             if (isVisible) visibleCount++;
 
-            // Calculate live counts for Programme Chips (matching search + active domain)
             if (matchesSearch && matchesDomain) {{
                 progCounts.all++;
                 if (progData in progCounts) progCounts[progData]++;
             }}
 
-            // Calculate live counts for Domain Chips (matching search + active programme)
             if (matchesSearch && matchesProgram) {{
                 domainCounts.all++;
                 if (statusData in domainCounts) domainCounts[statusData]++;
@@ -1144,13 +1229,11 @@ def render_unified_dashboard_html(active_tab="flow"):
             }}
         }});
 
-        // Update Programme Chips LIVE
         updateChipText('data-prog-chip="all"', 'All Programmes (' + progCounts.all + ')');
         updateChipText('data-prog-chip="graduate"', 'Graduate Schemes (Yr 3+) (' + progCounts.graduate + ')');
         updateChipText('data-prog-chip="internship"', 'Internships (Yr 2 / Summer) (' + progCounts.internship + ')');
         updateChipText('data-prog-chip="placement"', 'Industrial Placements (Yr 2 / 12-Mo) (' + progCounts.placement + ')');
 
-        // Update Domain Chips LIVE
         updateChipText('data-dom-chip="all"', 'All Focuses (' + domainCounts.all + ')');
         updateChipText('data-dom-chip="not_applied"', 'Not Applied (' + domainCounts.not_applied + ')');
         updateChipText('data-dom-chip="applied"', 'Applied (' + domainCounts.applied + ')');
@@ -1159,7 +1242,6 @@ def render_unified_dashboard_html(active_tab="flow"):
         updateChipText('data-dom-chip="ml"', 'ML & AI (' + domainCounts.ml + ')');
         updateChipText('data-dom-chip="cyber"', 'Cyber (' + domainCounts.cyber + ')');
 
-        // Update Tab Label LIVE
         var tabBtn = document.getElementById('tab-jobs-btn');
         if (tabBtn) {{
             tabBtn.innerText = 'Discovered Schemes (' + visibleCount + ')';
@@ -1233,8 +1315,8 @@ def render_unified_dashboard_html(active_tab="flow"):
         fetch('/api/mark-applied?company=' + encodeURIComponent(comp) + '&title=' + encodeURIComponent(title))
             .then(r => r.json())
             .then(() => {{
-                alert('Marked as applied.');
-                location.reload();
+                syncSheetsAndSankey();
+                setTimeout(() => {{ location.reload(); }}, 300);
             }});
     }}
 </script>
