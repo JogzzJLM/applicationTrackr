@@ -76,7 +76,7 @@ def render_unified_dashboard_html(active_tab="flow"):
 
     apps_table_rows = ""
     if not apps:
-        apps_table_rows = '<tr><td colspan="5" class="empty-state">No applications logged yet.</td></tr>'
+        apps_table_rows = '<tr><td colspan="4" class="empty-state">No applications logged yet.</td></tr>'
     else:
         for a in apps:
             st = a.get("status_type", "active")
@@ -96,7 +96,6 @@ def render_unified_dashboard_html(active_tab="flow"):
                 <td class="td-company">{clean_company_display_name(a['company'])}</td>
                 <td class="td-role">{a['role']}</td>
                 <td><span class="badge {badge_cls}">{a['latest_stage']}</span></td>
-                <td class="td-pipeline">{pipeline_str}</td>
                 <td><span class="badge {badge_cls}">{a['status']}</span></td>
             </tr>
             """
@@ -270,7 +269,7 @@ def render_unified_dashboard_html(active_tab="flow"):
             --purple: #af52de;
             --purple-bg: rgba(175, 82, 222, 0.1);
             --gray-bg: rgba(142, 142, 147, 0.12);
-            --card-bg: rgba(255, 255, 255, 0.72);
+            --card-bg: rgba(255, 255, 255, 0.76);
             --card-border: rgba(255, 255, 255, 0.85);
             --card-shadow: 0 1px 4px rgba(0,0,0,0.04), 0 2px 12px rgba(0,0,0,0.03);
             --card-shadow-hover: 0 8px 30px rgba(0,0,0,0.08), 0 2px 8px rgba(0,0,0,0.04);
@@ -296,7 +295,7 @@ def render_unified_dashboard_html(active_tab="flow"):
         }}
 
         /* ─── Layout ─── */
-        .shell {{ max-width: 1120px; margin: 0 auto; padding: 0 24px; }}
+        .shell {{ max-width: 1200px; margin: 0 auto; padding: 0 24px; }}
 
         /* ─── Top bar ─── */
         .topbar {{
@@ -351,7 +350,7 @@ def render_unified_dashboard_html(active_tab="flow"):
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
             gap: 14px;
-            margin: 32px 0 28px 0;
+            margin: 28px 0 24px 0;
         }}
         .stat-cell {{
             background: var(--card-bg);
@@ -359,7 +358,7 @@ def render_unified_dashboard_html(active_tab="flow"):
             -webkit-backdrop-filter: blur(20px) saturate(180%);
             border: 1px solid var(--card-border);
             border-radius: var(--radius);
-            padding: 20px 16px;
+            padding: 18px 16px;
             text-align: center;
             box-shadow: var(--card-shadow);
             transition: transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94), box-shadow 0.2s ease;
@@ -369,13 +368,13 @@ def render_unified_dashboard_html(active_tab="flow"):
             box-shadow: var(--card-shadow-hover);
         }}
         .stat-label {{ font-size: 11px; font-weight: 600; color: var(--text-tertiary); letter-spacing: 0.02em; text-transform: uppercase; }}
-        .stat-value {{ font-size: 28px; font-weight: 700; color: var(--text-primary); margin-top: 4px; letter-spacing: -0.02em; }}
+        .stat-value {{ font-size: 26px; font-weight: 700; color: var(--text-primary); margin-top: 4px; letter-spacing: -0.02em; }}
 
         /* ─── Tab bar ─── */
         .tab-bar {{
             display: flex; gap: 4px;
             border-bottom: 1px solid var(--border-light);
-            margin-bottom: 28px;
+            margin-bottom: 24px;
             overflow-x: auto;
         }}
         .tab {{
@@ -396,6 +395,17 @@ def render_unified_dashboard_html(active_tab="flow"):
 
         /* ─── Section panel ─── */
         .panel {{ display: none; }}
+
+        /* ─── Pipeline Split Grid ─── */
+        .pipeline-grid {{
+            display: grid;
+            grid-template-columns: 1.35fr 1fr;
+            gap: 20px;
+            align-items: start;
+        }}
+        @media (max-width: 960px) {{
+            .pipeline-grid {{ grid-template-columns: 1fr; }}
+        }}
 
         /* ─── Search & filters ─── */
         .toolbar {{
@@ -547,11 +557,11 @@ def render_unified_dashboard_html(active_tab="flow"):
             -webkit-backdrop-filter: blur(20px) saturate(180%);
             border: 1px solid var(--card-border);
             border-radius: var(--radius-lg);
-            padding: 26px; margin-bottom: 20px;
+            padding: 24px; margin-bottom: 20px;
             box-shadow: var(--card-shadow);
         }}
         .section-title {{
-            font-size: 17px; font-weight: 700; color: var(--text-primary);
+            font-size: 16px; font-weight: 700; color: var(--text-primary);
             letter-spacing: -0.022em; margin-bottom: 16px;
         }}
 
@@ -595,7 +605,7 @@ def render_unified_dashboard_html(active_tab="flow"):
 
         /* ─── Sankey iframe ─── */
         .sankey-frame {{
-            width: 100%; height: 440px; border: none;
+            width: 100%; height: 380px; border: none;
             border-radius: var(--radius);
             background: transparent;
         }}
@@ -659,36 +669,37 @@ def render_unified_dashboard_html(active_tab="flow"):
 
     <!-- Tabs -->
     <div class="tab-bar">
-        <button class="tab {tab_flow}" onclick="switchTab('flow')">Pipeline</button>
-        <button class="tab {tab_jobs}" onclick="switchTab('jobs')">Schemes ({discovered_count})</button>
-        <button class="tab {tab_settings}" onclick="switchTab('settings')">Settings</button>
-        <button class="tab {tab_status}" onclick="switchTab('diagnostics')">Diagnostics & Logs</button>
-        <button class="tab {tab_closed}" onclick="switchTab('closed')">Closed ({closed_count})</button>
+        <button class="tab {tab_flow}" data-tab="flow" onclick="switchTab('flow')">Pipeline Flow</button>
+        <button class="tab {tab_jobs}" data-tab="jobs" onclick="switchTab('jobs')">Discovered Schemes ({discovered_count})</button>
+        <button class="tab {tab_settings}" data-tab="settings" onclick="switchTab('settings')">Filter Settings</button>
+        <button class="tab {tab_status}" data-tab="diagnostics" onclick="switchTab('diagnostics')">Diagnostics & Logs</button>
+        <button class="tab {tab_closed}" data-tab="closed" onclick="switchTab('closed')">Closed Schemes ({closed_count})</button>
     </div>
 
-    <!-- Panel: Pipeline & Sankey -->
+    <!-- Panel: Pipeline & Sankey (Side-by-Side Split View) -->
     <div id="view-flow" class="panel" style="{view_flow}">
-        <div class="section-card">
-            <div class="section-title">Application Flow</div>
-            <iframe src="/sankey-embed" class="sankey-frame" id="sankey-iframe"></iframe>
-        </div>
-        <div class="section-card">
-            <div class="section-title">Logged Applications</div>
-            <div style="overflow-x:auto;">
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th>Company</th>
-                            <th>Role</th>
-                            <th>Stage</th>
-                            <th>Pipeline</th>
-                            <th>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {apps_table_rows}
-                    </tbody>
-                </table>
+        <div class="pipeline-grid">
+            <div class="section-card" style="margin-bottom:0;">
+                <div class="section-title">Application Flow Pipeline</div>
+                <iframe src="/sankey-embed" class="sankey-frame" id="sankey-iframe"></iframe>
+            </div>
+            <div class="section-card" style="margin-bottom:0;">
+                <div class="section-title">Logged Applications ({total})</div>
+                <div style="overflow-x:auto;">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Company</th>
+                                <th>Role</th>
+                                <th>Stage</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {apps_table_rows}
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
@@ -841,10 +852,8 @@ def render_unified_dashboard_html(active_tab="flow"):
         var targetView = document.getElementById('view-' + tabId);
         if (targetView) targetView.style.display = 'block';
 
-        var btns = document.querySelectorAll('.tab');
-        btns.forEach(b => {{
-            if (b.getAttribute('onclick') && b.getAttribute('onclick').includes(tabId)) b.classList.add('active');
-        }});
+        var activeBtn = document.querySelector('.tab[data-tab="' + tabId + '"]');
+        if (activeBtn) activeBtn.classList.add('active');
 
         if (tabId === 'diagnostics') {{
             fetchLiveLogs();
