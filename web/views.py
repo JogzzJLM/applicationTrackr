@@ -681,7 +681,7 @@ def render_unified_dashboard_html(active_tab="flow"):
         <div class="pipeline-grid">
             <div class="section-card" style="margin-bottom:0;">
                 <div class="section-title">Application Flow Pipeline</div>
-                <iframe src="/sankey-embed" class="sankey-frame" id="sankey-iframe" allowtransparency="true" style="background:transparent;"></iframe>
+                <iframe src="/sankey-embed" class="sankey-frame" id="sankey-iframe"></iframe>
             </div>
             <div class="section-card" style="margin-bottom:0;">
                 <div class="section-title">Logged Applications ({total})</div>

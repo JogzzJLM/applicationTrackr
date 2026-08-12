@@ -1,8 +1,8 @@
 import csv
 import time
 import io
-import re
 import requests
+import plotly.graph_objects as go
 from config import GOOGLE_SHEET_WEBHOOK_URL, GOOGLE_SHEET_CSV_URL, normalize_company, normalize_role
 
 _SHEET_CSV_CACHE = {"timestamp": 0, "content": ""}
@@ -223,23 +223,6 @@ def generate_default_sankey():
     with open("sankey_diagram.html", "w", encoding="utf-8") as f:
         f.write(html_content)
 
-def get_node_color(name):
-    lower = name.lower()
-    if name == "Applications" or lower == "applied":
-        return "#0071e3"
-    elif "offer" in lower or "accepted" in lower:
-        return "#34c759"
-    elif "reject" in lower or "fail" in lower:
-        return "#ff3b30"
-    elif "ghost" in lower:
-        return "#8e8e93"
-    elif "interview" in lower:
-        return "#ff9500"
-    elif "assessment" in lower or "oa" in lower or "test" in lower:
-        return "#af52de"
-    else:
-        return "#5856d6"
-
 def generate_sankey_from_google_sheets(force_refresh=False):
     try:
         csv_text = fetch_google_sheet_csv(force_refresh)
@@ -266,8 +249,8 @@ def generate_sankey_from_google_sheets(force_refresh=False):
 
             if stages:
                 row_count += 1
-                p0 = ("Applications", stages[0])
-                flow_counts[p0] = flow_counts.get(p0, 0) + 1
+                pair0 = ("Applications", stages[0])
+                flow_counts[pair0] = flow_counts.get(pair0, 0) + 1
                 node_counts["Applications"] = node_counts.get("Applications", 0) + 1
                 node_counts[stages[0]] = node_counts.get(stages[0], 0) + 1
                 all_nodes.add("Applications")
@@ -287,177 +270,98 @@ def generate_sankey_from_google_sheets(force_refresh=False):
             generate_default_sankey()
             return
 
-        # Group nodes into columns (layers)
-        layer_map = {}
-        for name in all_nodes:
+        # Sort nodes hierarchically: Applications -> Intermediate -> Terminal
+        def node_rank(name):
             n = name.lower()
             if name == "Applications":
-                layer_map[name] = 0
-            elif "applied" in n:
-                layer_map[name] = 1
-            elif "assessment" in n or "oa" in n or "test" in n:
-                layer_map[name] = 1 if "1" in n or name == "Assessment" else 2
+                return (0, name)
+            elif any(k in n for k in ["offer", "accepted"]):
+                return (4, name)
+            elif any(k in n for k in ["reject", "fail"]):
+                return (3, name)
+            elif any(k in n for k in ["ghost"]):
+                return (3, name)
             elif "interview" in n:
-                layer_map[name] = 2 if "2" in n else (1 if "1" in n else 2)
-            elif any(k in n for k in ["offer", "accepted", "reject", "fail", "ghost"]):
-                layer_map[name] = 3
+                return (2, name)
+            elif "assessment" in n or "oa" in n or "test" in n:
+                return (1.5, name)
             else:
-                layer_map[name] = 1
+                return (1, name)
 
-        layers = {0: [], 1: [], 2: [], 3: []}
-        for name, layer_idx in layer_map.items():
-            layers[layer_idx].append(name)
+        sorted_nodes = sorted(list(all_nodes), key=node_rank)
+        node_indices = {name: idx for idx, name in enumerate(sorted_nodes)}
 
-        # Sort layers for clean layout
-        for l_idx in layers:
-            layers[l_idx].sort(key=lambda n: (0 if "offer" in n.lower() else (1 if "interview" in n.lower() else (2 if "assessment" in n.lower() else (3 if "applied" in n.lower() else 4)))), reverse=False)
+        # Format node labels with values
+        display_labels = [f"{name} ({node_counts.get(name, 1)})" for name in sorted_nodes]
 
-        # Remove empty layers
-        active_layers = [l for l in sorted(layers.keys()) if len(layers[l]) > 0]
+        sources = [node_indices[src] for (src, tgt) in flow_counts.keys()]
+        targets = [node_indices[tgt] for (src, tgt) in flow_counts.keys()]
+        values = list(flow_counts.values())
 
-        # Geometry calculations
-        view_width = 680
-        view_height = 360
-
-        layer_x_positions = {}
-        num_layers = len(active_layers)
-        for i, l_idx in enumerate(active_layers):
-            if num_layers == 1:
-                layer_x_positions[l_idx] = view_width / 2
+        # Apple System Color Palette
+        node_colors = []
+        for name in sorted_nodes:
+            lower = name.lower()
+            if name == "Applications" or lower == "applied":
+                node_colors.append("#0071e3")  # Apple Blue
+            elif "offer" in lower or "accepted" in lower:
+                node_colors.append("#34c759")  # Apple Green
+            elif "reject" in lower or "fail" in lower:
+                node_colors.append("#ff3b30")  # Apple Red
+            elif "ghost" in lower:
+                node_colors.append("#8e8e93")  # Apple Gray
+            elif "interview" in lower:
+                node_colors.append("#ff9500")  # Apple Orange
+            elif "assessment" in lower or "oa" in lower or "test" in lower:
+                node_colors.append("#af52de")  # Apple Purple
             else:
-                margin = 80
-                layer_x_positions[l_idx] = margin + i * ((view_width - 2 * margin) / (num_layers - 1))
+                node_colors.append("#5856d6")  # Apple Indigo
 
-        node_positions = {}
-        gradients_svg = ""
-        paths_svg = ""
-        nodes_html = ""
+        link_colors = []
+        for src, tgt in flow_counts.keys():
+            tgt_lower = tgt.lower()
+            if "offer" in tgt_lower or "accepted" in tgt_lower:
+                link_colors.append("rgba(52, 199, 89, 0.35)")
+            elif "reject" in tgt_lower or "fail" in tgt_lower:
+                link_colors.append("rgba(255, 59, 48, 0.22)")
+            elif "interview" in tgt_lower or "assessment" in tgt_lower or "oa" in tgt_lower:
+                link_colors.append("rgba(255, 149, 0, 0.28)")
+            else:
+                link_colors.append("rgba(0, 113, 227, 0.25)")
 
-        # Calculate node Y positions
-        for l_idx in active_layers:
-            nodes_in_l = layers[l_idx]
-            count_l = len(nodes_in_l)
-            x_pos = layer_x_positions[l_idx]
+        fig = go.Figure(data=[go.Sankey(
+            arrangement="snap",
+            node=dict(
+                pad=24,
+                thickness=20,
+                line=dict(color="rgba(0, 0, 0, 0.08)", width=1),
+                label=display_labels,
+                color=node_colors
+            ),
+            link=dict(
+                source=sources,
+                target=targets,
+                value=values,
+                color=link_colors
+            )
+        )])
 
-            available_h = view_height - 60
-            step_y = available_h / max(count_l, 1)
-            start_y = 40 + (step_y / 2 if count_l > 1 else available_h / 2)
+        fig.update_layout(
+            font_size=13,
+            font_color="#1d1d1f",
+            font_family="Inter, -apple-system, BlinkMacSystemFont, sans-serif",
+            autosize=True,
+            height=380,
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            margin=dict(l=15, r=15, t=15, b=15)
+        )
 
-            for idx, node in enumerate(nodes_in_l):
-                y_pos = start_y + idx * (step_y * 0.7) if count_l > 1 else start_y
-                node_positions[node] = (x_pos, y_pos)
-
-        # Generate SVG Gradients and Bezier Flow Paths
-        path_id_counter = 0
-        for (src, tgt), count in flow_counts.items():
-            if src in node_positions and tgt in node_positions:
-                path_id_counter += 1
-                x1, y1 = node_positions[src]
-                x2, y2 = node_positions[tgt]
-
-                c_src = get_node_color(src)
-                c_tgt = get_node_color(tgt)
-                grad_id = f"flow-grad-{path_id_counter}"
-
-                gradients_svg += f"""
-                <linearGradient id="{grad_id}" x1="0%" y1="0%" x2="100%" y2="0%">
-                    <stop offset="0%" stop-color="{c_src}" stop-opacity="0.65"/>
-                    <stop offset="100%" stop-color="{c_tgt}" stop-opacity="0.65"/>
-                </linearGradient>"""
-
-                stroke_w = max(4, min(int((count / row_count) * 36), 28))
-                cx1 = x1 + (x2 - x1) * 0.45
-                cx2 = x1 + (x2 - x1) * 0.55
-
-                path_d = f"M {x1+40} {y1} C {cx1} {y1}, {cx2} {y2}, {x2-40} {y2}"
-                paths_svg += f'<path d="{path_d}" fill="none" stroke="url(#{grad_id})" stroke-width="{stroke_w}" stroke-linecap="round" class="flow-path"><title>{src} → {tgt}: {count} application(s)</title></path>'
-
-        # Generate HTML Node Pills
-        for node, (x_pos, y_pos) in node_positions.items():
-            c_node = get_node_color(node)
-            cnt = node_counts.get(node, 1)
-            percent = round((cnt / row_count) * 100) if row_count > 0 else 100
-
-            nodes_html += f"""
-            <div class="sankey-node" style="left:{x_pos}px; top:{y_pos}px; background:{c_node};">
-                <span class="node-title">{node}</span>
-                <span class="node-badge">{cnt}</span>
-            </div>"""
-
-        svg_content = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700&display=swap" rel="stylesheet">
-    <style>
-        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-        body {{
-            font-family: 'Inter', -apple-system, sans-serif;
-            background: transparent;
-            width: 100%; height: 100%;
-            overflow: hidden;
-            user-select: none;
-        }}
-        .sankey-wrap {{
-            position: relative;
-            width: 100%; height: 380px;
-            display: flex; align-items: center; justify-content: center;
-        }}
-        svg {{
-            width: 100%; height: 100%;
-            overflow: visible;
-        }}
-        .flow-path {{
-            transition: stroke-width 0.2s ease, opacity 0.2s ease;
-            cursor: pointer;
-        }}
-        .flow-path:hover {{
-            stroke-opacity: 0.95;
-            filter: drop-shadow(0 2px 8px rgba(0,113,227,0.3));
-        }}
-        .sankey-node {{
-            position: absolute;
-            transform: translate(-50%, -50%);
-            padding: 8px 14px;
-            border-radius: 980px;
-            color: #ffffff;
-            font-size: 12px; font-weight: 700;
-            display: inline-flex; align-items: center; gap: 8px;
-            box-shadow: 0 4px 14px rgba(0,0,0,0.12);
-            border: 1.5px solid rgba(255,255,255,0.4);
-            backdrop-filter: blur(12px);
-            white-space: nowrap;
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
-            cursor: pointer;
-        }}
-        .sankey-node:hover {{
-            transform: translate(-50%, -50%) scale(1.06);
-            box-shadow: 0 8px 24px rgba(0,0,0,0.2);
-        }}
-        .node-badge {{
-            background: rgba(255,255,255,0.28);
-            color: #ffffff;
-            padding: 2px 7px;
-            border-radius: 100px;
-            font-size: 11px; font-weight: 800;
-        }}
-    </style>
-</head>
-<body>
-    <div class="sankey-wrap">
-        <svg viewBox="0 0 {view_width} {view_height}" preserveAspectRatio="xMidYMid meet">
-            <defs>
-                {gradients_svg}
-            </defs>
-            {paths_svg}
-        </svg>
-        {nodes_html}
-    </div>
-</body>
-</html>"""
-
-        with open("sankey_diagram.html", "w", encoding="utf-8") as f:
-            f.write(svg_content)
+        fig.write_html(
+            "sankey_diagram.html",
+            include_plotlyjs="cdn",
+            config={'displayModeBar': False, 'responsive': True, 'scrollZoom': False}
+        )
 
     except Exception as e:
         print(f"Error generating Sankey diagram: {e}")
