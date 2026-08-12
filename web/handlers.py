@@ -53,6 +53,7 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
         if path == "/":
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
             self.send_cors_headers()
             self.end_headers()
             self.wfile.write(render_unified_dashboard_html("flow").encode("utf-8"))
@@ -86,17 +87,12 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(render_unified_dashboard_html("closed").encode("utf-8"))
 
         elif path == "/sankey-embed":
-            try:
-                generate_sankey_from_google_sheets(force_refresh=True)
-            except Exception as e:
-                print(f"⚠️ Sankey generation error on embed fetch: {e}")
-
+            generate_sankey_from_google_sheets(force_refresh=True)
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
             self.send_cors_headers()
             self.end_headers()
-
             try:
                 with open("sankey_diagram.html", "r", encoding="utf-8") as f:
                     html = f.read()
