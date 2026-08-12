@@ -107,6 +107,24 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps(SCRAPER_STATUS, indent=2).encode("utf-8"))
 
+        elif path == "/api/logs":
+            from config import get_scraper_logs
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_cors_headers()
+            self.end_headers()
+            logs = get_scraper_logs()
+            self.wfile.write(json.dumps({"logs": logs}, indent=2).encode("utf-8"))
+
+        elif path == "/api/clear-logs":
+            from config import clear_scraper_logs
+            clear_scraper_logs()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_cors_headers()
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "ok"}).encode("utf-8"))
+
         elif path == "/api/rescan":
             add_scraper_log("⚡ Triggered Scraper Rescan from Dashboard UI")
             threading.Thread(target=run_all_scrapers, daemon=True).start()

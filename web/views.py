@@ -5,11 +5,11 @@ from core.storage import (
     load_reported_closed_jobs, load_json_safe
 )
 from core.kb import load_closed_keywords_kb
-from core.normalization import normalize_company, normalize_role
+from core.normalization import normalize_company, normalize_role, extract_program_type, clean_company_display_name
 from core.scoring import calculate_skill_match_score
 from sheets import (
     parse_sheet_stats, get_detailed_applications,
-    get_applied_jobs_set, calculate_company_response_stats
+    get_applied_jobs_set
 )
 from scrapers_engine.audit import load_discovered_jobs
 from web.components import render_job_card
@@ -37,7 +37,7 @@ def render_unified_dashboard_html(active_tab="flow"):
         if ac_norm and (ac_norm, ar_norm) not in existing_keys:
             synthetic_job = {
                 "id": f"applied_{ac_norm}_{hash(ar_norm)}",
-                "company": a['company'],
+                "company": clean_company_display_name(a['company']),
                 "title": a['role'],
                 "location": "UK / Remote",
                 "link": "#",
@@ -93,7 +93,7 @@ def render_unified_dashboard_html(active_tab="flow"):
 
             apps_table_rows += f"""
             <tr>
-                <td class="td-company">{a['company']}</td>
+                <td class="td-company">{clean_company_display_name(a['company'])}</td>
                 <td class="td-role">{a['role']}</td>
                 <td><span class="badge {badge_cls}">{a['latest_stage']}</span></td>
                 <td class="td-pipeline">{pipeline_str}</td>
@@ -109,6 +109,10 @@ def render_unified_dashboard_html(active_tab="flow"):
     cyber_count = 0
     closed_count = 0
 
+    grad_count = 0
+    intern_count = 0
+    placement_count = 0
+
     reported_closed_map = load_reported_closed_jobs()
     closed_ids = set(reported_closed_map.keys())
     closed_links = set(j.get('link') for j in reported_closed_map.values() if j.get('link'))
@@ -116,8 +120,6 @@ def render_unified_dashboard_html(active_tab="flow"):
     kb_phrases = load_closed_keywords_kb()
     kb_count = len(kb_phrases)
     kb_badges_html = " ".join([f'<span class="kb-tag">{p}</span>' for p in kb_phrases])
-
-    resp_stats = calculate_company_response_stats()
 
     merged_jobs_map = {}
     ordered_merged_jobs = []
@@ -135,17 +137,20 @@ def render_unified_dashboard_html(active_tab="flow"):
             if any(ats in j.get("link", "").lower() for ats in ["greenhouse", "lever", "ashby", "smartrecruiters"]):
                 existing["link"] = j["link"]
                 if j.get("company") and len(j.get("company")) > 2:
-                    existing["company"] = j.get("company")
+                    existing["company"] = clean_company_display_name(j.get("company"))
                 existing["title"] = j.get("title")
         else:
             j_copy = dict(j)
+            j_copy["company"] = clean_company_display_name(j.get("company"))
             j_copy["sources"] = [j.get("source", "Discovered API")]
             merged_jobs_map[key] = j_copy
             ordered_merged_jobs.append(j_copy)
 
     for c_id, c_job in reported_closed_map.items():
         if not any(j.get('id') == c_id for j in ordered_merged_jobs):
-            ordered_merged_jobs.append(c_job)
+            c_job_copy = dict(c_job)
+            c_job_copy["company"] = clean_company_display_name(c_job.get("company"))
+            ordered_merged_jobs.append(c_job_copy)
 
     visible_jobs = ordered_merged_jobs
 
@@ -158,7 +163,7 @@ def render_unified_dashboard_html(active_tab="flow"):
     for j in visible_jobs:
         j_id = j.get('id', '')
         j_link = j.get('link', '')
-        comp_name = j.get('company', 'Unknown')
+        comp_name = clean_company_display_name(j.get('company', 'Unknown'))
         title_name = j.get('title', 'Role')
         comp_norm = normalize_company(comp_name)
         title_norm = normalize_role(title_name)
@@ -174,9 +179,18 @@ def render_unified_dashboard_html(active_tab="flow"):
                         break
 
         title_lower = title_name.lower()
+        prog_type = j.get('program_type') or extract_program_type(title_name)
+
         if is_reported_closed:
             closed_count += 1
         else:
+            if prog_type == "placement":
+                placement_count += 1
+            elif prog_type == "internship":
+                intern_count += 1
+            else:
+                grad_count += 1
+
             if any(k in title_lower for k in ["quant", "trader", "trading", "finance", "financial"]):
                 quant_count += 1
             elif any(k in title_lower for k in ["software", "developer", "backend", "fullstack", "full-stack", "engineer"]):
@@ -191,7 +205,7 @@ def render_unified_dashboard_html(active_tab="flow"):
             else:
                 not_applied_count += 1
 
-        card_markup = render_job_card(j, is_reported_closed=is_reported_closed, is_applied=is_applied, is_hidden=(j_id in hidden_jobs), company_resp_map=resp_stats)
+        card_markup = render_job_card(j, is_reported_closed=is_reported_closed, is_applied=is_applied, is_hidden=(j_id in hidden_jobs))
 
         if is_reported_closed:
             closed_cards_html += card_markup
@@ -233,7 +247,7 @@ def render_unified_dashboard_html(active_tab="flow"):
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 
     <style>
         :root {{
@@ -253,6 +267,8 @@ def render_unified_dashboard_html(active_tab="flow"):
             --red-bg: rgba(255, 59, 48, 0.1);
             --orange: #ff9500;
             --orange-bg: rgba(255, 149, 0, 0.1);
+            --purple: #af52de;
+            --purple-bg: rgba(175, 82, 222, 0.1);
             --gray-bg: rgba(142, 142, 147, 0.12);
             --card-bg: rgba(255, 255, 255, 0.72);
             --card-border: rgba(255, 255, 255, 0.85);
@@ -261,6 +277,7 @@ def render_unified_dashboard_html(active_tab="flow"):
             --radius: 14px;
             --radius-lg: 18px;
             --font: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+            --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
         }}
 
         * {{ margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }}
@@ -382,7 +399,7 @@ def render_unified_dashboard_html(active_tab="flow"):
 
         /* ─── Search & filters ─── */
         .toolbar {{
-            display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap;
+            display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap;
             align-items: center;
         }}
         .search-wrap {{ flex: 1; min-width: 240px; position: relative; }}
@@ -409,17 +426,23 @@ def render_unified_dashboard_html(active_tab="flow"):
         }}
 
         .sort-select {{
-            padding: 9px 14px;
-            border: 1px solid var(--border);
+            padding: 10px 14px;
+            border: 1px solid var(--border-light);
             border-radius: var(--radius);
             font-size: 13px; font-weight: 500;
             color: var(--text-primary);
-            background: var(--card-bg);
+            background: rgba(255,255,255,0.8);
             outline: none; font-family: var(--font);
             cursor: pointer;
         }}
 
-        .filter-chips {{ display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 20px; }}
+        .filter-group-label {{
+            font-size: 11px; font-weight: 700; color: var(--text-tertiary);
+            text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px;
+        }}
+
+        .filter-chips-wrap {{ margin-bottom: 20px; display: flex; flex-direction: column; gap: 8px; }}
+        .filter-chips {{ display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; }}
         .chip {{
             padding: 7px 16px;
             border-radius: 980px;
@@ -446,7 +469,7 @@ def render_unified_dashboard_html(active_tab="flow"):
         .grid {{
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-            gap: 12px;
+            gap: 14px;
         }}
         .card {{
             background: var(--card-bg);
@@ -473,15 +496,15 @@ def render_unified_dashboard_html(active_tab="flow"):
         .dot-blue {{ background: var(--blue); }}
         .dot-red {{ background: var(--red); }}
         .card-match {{
-            font-size: 12px; font-weight: 700; color: var(--text-tertiary);
-            background: var(--bg-secondary);
-            padding: 2px 8px; border-radius: 6px;
+            font-size: 12px; font-weight: 700; color: var(--blue);
+            background: var(--blue-bg);
+            padding: 3px 10px; border-radius: 980px;
         }}
-        .card-company {{ font-size: 15px; font-weight: 700; color: var(--text-primary); }}
-        .card-role {{ font-size: 13px; font-weight: 600; color: var(--blue); line-height: 1.4; }}
+        .card-company {{ font-size: 15px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.01em; }}
+        .card-role {{ font-size: 13.5px; font-weight: 600; color: var(--blue); line-height: 1.4; }}
         .card-meta {{ font-size: 12px; color: var(--text-tertiary); font-weight: 500; }}
         .card-source {{ font-size: 11px; color: var(--text-tertiary); }}
-        .link-muted {{ color: var(--blue); text-decoration: none; }}
+        .link-muted {{ color: var(--blue); text-decoration: none; font-weight: 500; }}
         .link-muted:hover {{ text-decoration: underline; }}
         .card-actions {{ display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }}
 
@@ -493,6 +516,8 @@ def render_unified_dashboard_html(active_tab="flow"):
         .badge-blue {{ background: var(--blue-bg); color: var(--blue); }}
         .badge-green {{ background: var(--green-bg); color: #248a3d; }}
         .badge-red {{ background: var(--red-bg); color: var(--red); }}
+        .badge-purple {{ background: var(--purple-bg); color: var(--purple); }}
+        .badge-orange {{ background: var(--orange-bg); color: #d97706; }}
         .badge-gray {{ background: var(--gray-bg); color: var(--text-secondary); }}
 
         /* ─── Table ─── */
@@ -563,16 +588,16 @@ def render_unified_dashboard_html(active_tab="flow"):
         .diag-value {{ color: var(--green); font-weight: 600; }}
         .kb-tag {{
             display: inline-block; padding: 4px 10px;
-            background: var(--bg-secondary); border: 1px solid var(--border-light);
+            background: rgba(255,255,255,0.7); border: 1px solid var(--border-light);
             border-radius: 6px; font-size: 12px; font-weight: 500;
-            color: var(--text-secondary); margin: 2px;
+            color: var(--text-secondary); margin: 3px;
         }}
 
         /* ─── Sankey iframe ─── */
         .sankey-frame {{
             width: 100%; height: 440px; border: none;
             border-radius: var(--radius);
-            background: var(--card-bg);
+            background: transparent;
         }}
 
         /* ─── Responsive ─── */
@@ -637,7 +662,7 @@ def render_unified_dashboard_html(active_tab="flow"):
         <button class="tab {tab_flow}" onclick="switchTab('flow')">Pipeline</button>
         <button class="tab {tab_jobs}" onclick="switchTab('jobs')">Schemes ({discovered_count})</button>
         <button class="tab {tab_settings}" onclick="switchTab('settings')">Settings</button>
-        <button class="tab {tab_status}" onclick="switchTab('diagnostics')">Diagnostics</button>
+        <button class="tab {tab_status}" onclick="switchTab('diagnostics')">Diagnostics & Logs</button>
         <button class="tab {tab_closed}" onclick="switchTab('closed')">Closed ({closed_count})</button>
     </div>
 
@@ -673,26 +698,38 @@ def render_unified_dashboard_html(active_tab="flow"):
         <div class="toolbar">
             <div class="search-wrap">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" /></svg>
-                <input type="text" id="job-search" class="search-input" placeholder="Search schemes..." onkeyup="filterJobs()">
+                <input type="text" id="job-search" class="search-input" placeholder="Search company, role, or location..." onkeyup="filterJobs()">
             </div>
             <select id="sort-select" class="sort-select" onchange="sortJobs()">
                 <option value="newest">Newest first</option>
                 <option value="oldest">Oldest first</option>
                 <option value="match_desc">Best match</option>
-                <option value="resp_asc">Fastest response</option>
+                <option value="deadline_asc">Closing soonest</option>
+                <option value="deadline_desc">Closing latest</option>
                 <option value="company_asc">Company A-Z</option>
                 <option value="title_asc">Role A-Z</option>
             </select>
         </div>
 
-        <div class="filter-chips">
-            <button class="chip active" onclick="filterPill('all', this)">All ({discovered_count})</button>
-            <button class="chip" onclick="filterPill('not_applied', this)">Not Applied ({not_applied_count})</button>
-            <button class="chip" onclick="filterPill('applied', this)">Applied ({applied_count})</button>
-            <button class="chip" onclick="filterPill('quant', this)">Quant ({quant_count})</button>
-            <button class="chip" onclick="filterPill('software', this)">Software ({sw_count})</button>
-            <button class="chip" onclick="filterPill('ml', this)">ML & AI ({ml_count})</button>
-            <button class="chip" onclick="filterPill('cyber', this)">Cyber ({cyber_count})</button>
+        <div class="filter-chips-wrap">
+            <div class="filter-group-label">Programme Type (Year Target)</div>
+            <div class="filter-chips">
+                <button class="chip active" onclick="filterProgram('all', this)">All Programmes ({discovered_count})</button>
+                <button class="chip" onclick="filterProgram('graduate', this)">Graduate Schemes (Yr 3+) ({grad_count})</button>
+                <button class="chip" onclick="filterProgram('internship', this)">Internships (Yr 2 / Summer) ({intern_count})</button>
+                <button class="chip" onclick="filterProgram('placement', this)">Industrial Placements (Yr 2 / 12-Mo) ({placement_count})</button>
+            </div>
+
+            <div class="filter-group-label" style="margin-top:4px;">Domain Focus & Status</div>
+            <div class="filter-chips">
+                <button class="chip active" onclick="filterDomain('all', this)">All Focuses</button>
+                <button class="chip" onclick="filterDomain('not_applied', this)">Not Applied ({not_applied_count})</button>
+                <button class="chip" onclick="filterDomain('applied', this)">Applied ({applied_count})</button>
+                <button class="chip" onclick="filterDomain('quant', this)">Quant ({quant_count})</button>
+                <button class="chip" onclick="filterDomain('software', this)">Software ({sw_count})</button>
+                <button class="chip" onclick="filterDomain('ml', this)">ML & AI ({ml_count})</button>
+                <button class="chip" onclick="filterDomain('cyber', this)">Cyber ({cyber_count})</button>
+            </div>
         </div>
 
         <div id="jobs-container" class="grid">
@@ -747,6 +784,19 @@ def render_unified_dashboard_html(active_tab="flow"):
     <!-- Panel: Diagnostics -->
     <div id="view-status" class="panel" style="{view_status}">
         <div class="section-card">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                <div class="section-title" style="margin-bottom:0;">Live Engine Log Console (HP Stream Docker)</div>
+                <div style="display:flex; gap:8px;">
+                    <button onclick="fetchLiveLogs()" class="btn btn-tinted">Refresh Logs</button>
+                    <button onclick="clearLiveLogs()" class="btn btn-ghost btn-danger-text">Clear Logs</button>
+                </div>
+            </div>
+            <div id="live-log-container" style="background:#1c1c1e; color:#34c759; font-family:var(--font-mono); font-size:12px; line-height:1.6; height:380px; overflow-y:auto; padding:16px; border-radius:12px; border:1px solid rgba(255,255,255,0.1);">
+                Loading live container activity logs...
+            </div>
+        </div>
+
+        <div class="section-card">
             <div class="section-title">System Status</div>
             <div class="diag-row">
                 <span class="diag-label">Last scraper run</span>
@@ -759,6 +809,7 @@ def render_unified_dashboard_html(active_tab="flow"):
             <div style="margin-top:16px; font-size:13px; font-weight:600; color:var(--text-primary); margin-bottom:8px;">Source status</div>
             {src_status_html}
         </div>
+
         <div class="section-card">
             <div class="section-title">Knowledge Base ({kb_count} rules)</div>
             <div style="max-height:200px; overflow-y:auto;">
@@ -794,13 +845,25 @@ def render_unified_dashboard_html(active_tab="flow"):
         btns.forEach(b => {{
             if (b.getAttribute('onclick') && b.getAttribute('onclick').includes(tabId)) b.classList.add('active');
         }});
+
+        if (tabId === 'diagnostics') {{
+            fetchLiveLogs();
+        }}
     }}
 
-    var currentPill = 'all';
+    var currentProgramPill = 'all';
+    var currentDomainPill = 'all';
 
-    function filterPill(cat, btn) {{
-        currentPill = cat;
-        document.querySelectorAll('.chip').forEach(p => p.classList.remove('active'));
+    function filterProgram(prog, btn) {{
+        currentProgramPill = prog;
+        btn.parentElement.querySelectorAll('.chip').forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        filterJobs();
+    }}
+
+    function filterDomain(dom, btn) {{
+        currentDomainPill = dom;
+        btn.parentElement.querySelectorAll('.chip').forEach(p => p.classList.remove('active'));
         btn.classList.add('active');
         filterJobs();
     }}
@@ -813,15 +876,21 @@ def render_unified_dashboard_html(active_tab="flow"):
             var searchData = (c.getAttribute('data-search') || '').toLowerCase();
             var statusData = c.getAttribute('data-status') || '';
             var catData = c.getAttribute('data-cat') || '';
+            var progData = c.getAttribute('data-program') || '';
 
             var matchesSearch = !q || searchData.includes(q);
-            var matchesPill = true;
 
-            if (currentPill === 'not_applied') matchesPill = (statusData === 'not_applied');
-            else if (currentPill === 'applied') matchesPill = (statusData === 'applied');
-            else if (currentPill !== 'all') matchesPill = (catData === currentPill);
+            var matchesProgram = true;
+            if (currentProgramPill !== 'all') {{
+                matchesProgram = (progData === currentProgramPill);
+            }}
 
-            c.style.display = (matchesSearch && matchesPill) ? 'flex' : 'none';
+            var matchesDomain = true;
+            if (currentDomainPill === 'not_applied') matchesDomain = (statusData === 'not_applied');
+            else if (currentDomainPill === 'applied') matchesDomain = (statusData === 'applied');
+            else if (currentDomainPill !== 'all') matchesDomain = (catData === currentDomainPill);
+
+            c.style.display = (matchesSearch && matchesProgram && matchesDomain) ? 'flex' : 'none';
         }});
     }}
 
@@ -834,13 +903,41 @@ def render_unified_dashboard_html(active_tab="flow"):
             if (mode === 'newest') return (b.getAttribute('data-date') || '').localeCompare(a.getAttribute('data-date') || '');
             if (mode === 'oldest') return (a.getAttribute('data-date') || '').localeCompare(b.getAttribute('data-date') || '');
             if (mode === 'match_desc') return (parseFloat(b.getAttribute('data-match')) || 0) - (parseFloat(a.getAttribute('data-match')) || 0);
-            if (mode === 'resp_asc') return (parseFloat(a.getAttribute('data-resp')) || 99) - (parseFloat(b.getAttribute('data-resp')) || 99);
+            if (mode === 'deadline_asc') return (a.getAttribute('data-deadline') || 'z').localeCompare(b.getAttribute('data-deadline') || 'z');
+            if (mode === 'deadline_desc') return (b.getAttribute('data-deadline') || 'a').localeCompare(a.getAttribute('data-deadline') || 'a');
             if (mode === 'company_asc') return (a.getAttribute('data-company') || '').localeCompare(b.getAttribute('data-company') || '');
             if (mode === 'title_asc') return (a.getAttribute('data-title') || '').localeCompare(b.getAttribute('data-title') || '');
             return 0;
         }});
 
         cards.forEach(card => container.appendChild(card));
+    }}
+
+    function escapeHtml(str) {{
+        return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }}
+
+    function fetchLiveLogs() {{
+        fetch('/api/logs')
+            .then(r => r.json())
+            .then(data => {{
+                var container = document.getElementById('live-log-container');
+                if (container && data.logs) {{
+                    if (data.logs.length === 0) {{
+                        container.innerHTML = '<span style="color:#8e8e93;">No log entries recorded yet. Trigger a Rescan or Sheet Sync to view live logs.</span>';
+                    }} else {{
+                        container.innerHTML = data.logs.map(l => '<div>' + escapeHtml(l) + '</div>').join('');
+                        container.scrollTop = container.scrollHeight;
+                    }}
+                }}
+            }})
+            .catch(() => {{}});
+    }}
+
+    function clearLiveLogs() {{
+        fetch('/api/clear-logs')
+            .then(r => r.json())
+            .then(() => fetchLiveLogs());
     }}
 
     document.addEventListener('keydown', function(e) {{

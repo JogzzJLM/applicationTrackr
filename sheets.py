@@ -63,15 +63,15 @@ def resolve_smart_stage(company, stage):
 
     elif "applied" in stage_lower:
         if any("applied" in s.lower() for s in existing_stages):
-            return None  # Skip duplicate Applied
+            return None
 
     elif "reject" in stage_lower or "fail" in stage_lower:
         if any("reject" in s.lower() for s in existing_stages):
-            return None  # Skip duplicate Rejected
+            return None
 
     elif "offer" in stage_lower:
         if any("offer" in s.lower() for s in existing_stages):
-            return None  # Skip duplicate Offer
+            return None
 
     return stage
 
@@ -96,7 +96,6 @@ def update_google_sheet_via_webhook(company, stage, role="Software/Quant Role", 
     except Exception as e:
         print(f"⚠️ Error sending Webhook to Google Sheet: {e}")
 
-
 def get_applied_jobs_set():
     """Fetches Google Sheet and returns a set of (norm_comp, norm_role) tuples and set of normalized company names."""
     applied_jobs = set()
@@ -117,7 +116,6 @@ def get_applied_jobs_set():
         except Exception:
             pass
     return applied_jobs, applied_companies
-
 
 def get_applied_companies_set():
     """Fetches Google Sheet and returns a set of lowercased company names already logged."""
@@ -157,46 +155,7 @@ def parse_sheet_stats():
         print(f"Error parsing stats for report: {e}")
         return {"total": 0, "active": 0, "offers": 0, "rejections": 0}
 
-def calculate_company_response_stats():
-    """
-    Analyzes historical application data from Google Sheet to calculate average response times
-    and ghosting probability per company.
-    """
-    apps = get_detailed_applications()
-    company_stats = {}
-
-    for app in apps:
-        norm_c = normalize_company(app["company"])
-        if not norm_c:
-            continue
-
-        stages = app.get("stages", [])
-        status_type = app.get("status_type", "active")
-        
-        num_stages = len(stages)
-        est_days = max(1.8, num_stages * 2.5)
-
-        if norm_c not in company_stats:
-            company_stats[norm_c] = {
-                "name": app["company"],
-                "apps_count": 0,
-                "avg_days": est_days,
-                "ghost_risk": "Low"
-            }
-
-        stats = company_stats[norm_c]
-        stats["apps_count"] += 1
-        stats["avg_days"] = round((stats["avg_days"] + est_days) / 2, 1)
-
-        if status_type == "ghosted" or (status_type == "active" and num_stages == 1):
-            stats["ghost_risk"] = "Medium" if num_stages > 1 else "High"
-        else:
-            stats["ghost_risk"] = "Low"
-
-    return company_stats
-
 def get_detailed_applications():
-
     """Fetches Google Sheet CSV and returns a list of detailed application dicts."""
     apps = []
     csv_text = fetch_google_sheet_csv()
@@ -248,14 +207,14 @@ def generate_default_sankey():
     <meta charset="UTF-8">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Inter', -apple-system, sans-serif; background: #fff; color: #1d1d1f; text-align: center; padding: 60px 20px; margin: 0; }
-        h2 { font-size: 17px; font-weight: 700; letter-spacing: -0.022em; margin-bottom: 8px; }
+        body { font-family: 'Inter', -apple-system, sans-serif; background: #ffffff; color: #1d1d1f; text-align: center; padding: 50px 20px; margin: 0; }
+        h2 { font-size: 16px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 6px; }
         p { color: #86868b; font-size: 13px; line-height: 1.5; max-width: 360px; margin: 0 auto; }
     </style>
 </head>
 <body>
-    <h2>No applications yet</h2>
-    <p>Log your first application to see the pipeline flow.</p>
+    <h2>No applications logged yet</h2>
+    <p>Log your applications via the Discovered Schemes tab to see your pipeline flow.</p>
 </body>
 </html>"""
     with open("sankey_diagram.html", "w", encoding="utf-8") as f:
@@ -286,14 +245,11 @@ def generate_sankey_from_google_sheets(force_refresh=False):
 
             if stages:
                 row_count += 1
-
-                # Root flow: Applications -> First Stage
                 pair0 = ("Applications", stages[0])
                 flow_counts[pair0] = flow_counts.get(pair0, 0) + 1
                 all_nodes.add("Applications")
                 all_nodes.add(stages[0])
 
-                # Subsequent stage flows: stages[i] -> stages[i+1]
                 for i in range(len(stages) - 1):
                     src = stages[i]
                     tgt = stages[i + 1]
@@ -307,15 +263,33 @@ def generate_sankey_from_google_sheets(force_refresh=False):
             generate_default_sankey()
             return
 
-        # Ensure "Applications" is the first node
-        node_list = ["Applications"] + [n for n in sorted(list(all_nodes)) if n != "Applications"]
+        # Sort nodes hierarchically to prevent crossing lines:
+        # Applications (start) -> Intermediate stages -> Terminal stages (Offer, Rejected, Ghosted)
+        def node_rank(name):
+            n = name.lower()
+            if name == "Applications":
+                return (0, name)
+            elif any(k in n for k in ["offer", "accepted"]):
+                return (4, name)
+            elif any(k in n for k in ["reject", "fail"]):
+                return (3, name)
+            elif any(k in n for k in ["ghost"]):
+                return (3, name)
+            elif "interview" in n:
+                return (2, name)
+            elif "assessment" in n or "oa" in n or "test" in n:
+                return (1.5, name)
+            else:
+                return (1, name)
+
+        node_list = sorted(list(all_nodes), key=node_rank)
         node_indices = {name: idx for idx, name in enumerate(node_list)}
 
         sources = [node_indices[src] for (src, tgt) in flow_counts.keys()]
         targets = [node_indices[tgt] for (src, tgt) in flow_counts.keys()]
         values = list(flow_counts.values())
 
-        # Muted color palette that integrates with the white dashboard
+        # Clean Apple System color palette
         colors = []
         for name in node_list:
             lower = name.lower()
@@ -338,18 +312,18 @@ def generate_sankey_from_google_sheets(force_refresh=False):
             if "offer" in tgt_lower or "accepted" in tgt_lower:
                 link_colors.append("rgba(52, 199, 89, 0.25)")
             elif "reject" in tgt_lower or "fail" in tgt_lower:
-                link_colors.append("rgba(255, 59, 48, 0.15)")
+                link_colors.append("rgba(255, 59, 48, 0.18)")
             elif "interview" in tgt_lower or "assessment" in tgt_lower or "oa" in tgt_lower:
-                link_colors.append("rgba(255, 149, 0, 0.2)")
+                link_colors.append("rgba(255, 149, 0, 0.22)")
             else:
-                link_colors.append("rgba(0, 113, 227, 0.15)")
+                link_colors.append("rgba(0, 113, 227, 0.18)")
 
         fig = go.Figure(data=[go.Sankey(
             arrangement="snap",
             node=dict(
-                pad=24,
-                thickness=18,
-                line=dict(color="rgba(0, 0, 0, 0.06)", width=0.5),
+                pad=28,
+                thickness=16,
+                line=dict(color="rgba(0, 0, 0, 0.08)", width=0.5),
                 label=node_list,
                 color=colors
             ),
@@ -364,15 +338,19 @@ def generate_sankey_from_google_sheets(force_refresh=False):
         fig.update_layout(
             font_size=12,
             font_color="#1d1d1f",
-            font_family="Inter, -apple-system, BlinkMacSystemFont, sans-serif",
+            font_family="Inter, -apple-system, sans-serif",
             autosize=True,
             height=420,
-            paper_bgcolor="#ffffff",
-            plot_bgcolor="#ffffff",
-            margin=dict(l=10, r=10, t=10, b=10)
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            margin=dict(l=15, r=15, t=15, b=15)
         )
-        fig.write_html("sankey_diagram.html")
 
+        # Output clean HTML with Plotly floating toolbar DISABLED
+        fig.write_html(
+            "sankey_diagram.html",
+            config={'displayModeBar': False, 'responsive': True, 'scrollZoom': False}
+        )
 
     except Exception as e:
         print(f"Error generating Sankey diagram: {e}")

@@ -1,9 +1,11 @@
 import urllib.parse
 from core.scoring import calculate_skill_match_score
+from core.normalization import clean_company_display_name, extract_program_type
 
 def render_job_card(j, is_reported_closed=False, is_applied=False, is_hidden=False, company_resp_map=None):
     j_id = j.get('id', '')
-    comp_str = j.get('company', 'Unknown')
+    raw_comp = j.get('company', 'Unknown')
+    comp_str = clean_company_display_name(raw_comp)
     title_str = j.get('title', 'Role')
     loc_str = j.get('location', 'UK')
     link_str = j.get('link', '#')
@@ -11,9 +13,15 @@ def render_job_card(j, is_reported_closed=False, is_applied=False, is_hidden=Fal
 
     match_score = j.get('match_score') or calculate_skill_match_score(title_str, comp_str, loc_str)
 
-    avg_resp = "3"
-    if company_resp_map and comp_str.lower() in company_resp_map:
-        avg_resp = str(company_resp_map[comp_str.lower()])
+    prog_type = j.get('program_type') or extract_program_type(title_str)
+    if prog_type == "placement":
+        prog_badge = '<span class="badge badge-purple">Placement (Yr 2 / 12-Mo)</span>'
+    elif prog_type == "internship":
+        prog_badge = '<span class="badge badge-orange">Internship (Yr 2 / Summer)</span>'
+    else:
+        prog_badge = '<span class="badge badge-blue">Graduate Scheme (Yr 3+)</span>'
+
+    deadline_str = j.get('deadline') or j.get('closeDate') or j.get('closing_date') or 'Rolling / ASAP'
 
     status_tag = "applied" if is_applied else ("closed" if is_reported_closed else "not_applied")
 
@@ -51,23 +59,21 @@ def render_job_card(j, is_reported_closed=False, is_applied=False, is_hidden=Fal
         display_url = display_url[:37] + "..."
 
     link_js = link_str.replace("'", "\\'").replace('"', '&quot;')
-    resp_days_val = float(str(avg_resp).split('-')[0]) if '-' in str(avg_resp) else (float(avg_resp) if str(avg_resp).replace('.','',1).isdigit() else 3.0)
     report_btn_html = f'<button onclick="reportClosedJob(\'{j_id}\', \'{link_js}\')" class="btn btn-ghost btn-danger-text">Report Closed</button>' if not is_reported_closed else ''
 
     return f"""
-    <div class="card" data-search="{comp_str.lower()} {title_str.lower()} {loc_str.lower()} {status_tag} {cat} {source_text.lower()}" data-status="{status_tag}" data-cat="{cat}" data-date="{date_str}" data-match="{match_score}" data-resp="{resp_days_val}" data-company="{comp_str.lower()}" data-title="{title_str.lower()}">
+    <div class="card" data-search="{comp_str.lower()} {title_str.lower()} {loc_str.lower()} {status_tag} {cat} {prog_type} {source_text.lower()}" data-status="{status_tag}" data-cat="{cat}" data-program="{prog_type}" data-date="{date_str}" data-deadline="{deadline_str.lower()}" data-match="{match_score}" data-company="{comp_str.lower()}" data-title="{title_str.lower()}">
         <div class="card-top">
-            <div class="card-status">{status_dot} {status_label}</div>
-            <div class="card-match">{match_score}%</div>
+            <div class="card-status">{status_dot} {status_label} &nbsp;·&nbsp; {prog_badge}</div>
+            <div class="card-match">{match_score}% Match</div>
         </div>
         <div class="card-company">{comp_str}</div>
         <div class="card-role">{title_str}</div>
-        <div class="card-meta">{loc_str}  ·  {date_str}  ·  ~{avg_resp}d response</div>
+        <div class="card-meta">{loc_str}  ·  Discovered: {date_str}  ·  <span style="color:var(--orange); font-weight:600;">Deadline: {deadline_str}</span></div>
         <div class="card-source"><a href="{source_url}" target="_blank" rel="noopener" class="link-muted">{display_url}</a> · {source_text}</div>
         <div class="card-actions">
-            <a href="{link_str}" target="_blank" rel="noopener noreferrer" class="btn btn-filled">Apply</a>
+            <a href="{link_str}" target="_blank" rel="noopener noreferrer" class="btn btn-filled">Apply ↗</a>
             {action_btn}
-            <a href="/api/calendar.ics?summary={urllib.parse.quote('Apply: ' + comp_str + ' - ' + title_str)}&desc={urllib.parse.quote('Job Link: ' + link_str)}" class="btn btn-ghost">Add to Cal</a>
             {report_btn_html}
         </div>
     </div>
