@@ -18,7 +18,9 @@ from core.normalization import (
     COMPANY_ALIASES, normalize_company, normalize_role, normalize_url, extract_ats_post_id
 )
 import os
+import sys
 import time
+import threading
 
 NTFY_TOPIC = os.getenv("NTFY_TOPIC", "jog_applicationtrackr_alerts")
 GMAIL_USER = os.getenv("GMAIL_USER", "")
@@ -34,22 +36,64 @@ SCRAPER_STATUS = {
     "source_status": {}
 }
 
+_LOG_LOCK = threading.Lock()
 SCRAPER_LOGS = []
+_in_tee = threading.local()
+
+class TerminalStreamTee:
+    """Tee stream capturing sys.stdout & sys.stderr for rolling web terminal console (docker logs -f output)."""
+    def __init__(self, original_stream):
+        self.original_stream = original_stream
+        self.line_buffer = ""
+
+    def write(self, buf):
+        if getattr(_in_tee, 'active', False):
+            self.original_stream.write(buf)
+            return
+
+        try:
+            _in_tee.active = True
+            self.original_stream.write(buf)
+            self.original_stream.flush()
+
+            self.line_buffer += str(buf)
+            while "\n" in self.line_buffer:
+                line, self.line_buffer = self.line_buffer.split("\n", 1)
+                clean_line = line.strip()
+                if clean_line:
+                    with _LOG_LOCK:
+                        timestamp = time.strftime("%H:%M:%S")
+                        formatted = f"[{timestamp}] {clean_line}" if not clean_line.startswith("[") else clean_line
+                        SCRAPER_LOGS.append(formatted)
+                        if len(SCRAPER_LOGS) > 600:
+                            SCRAPER_LOGS.pop(0)
+        except Exception:
+            pass
+        finally:
+            _in_tee.active = False
+
+    def flush(self):
+        try:
+            self.original_stream.flush()
+        except Exception:
+            pass
+
+if not getattr(sys, '_terminal_tee_installed', False):
+    sys.stdout = TerminalStreamTee(sys.stdout)
+    sys.stderr = TerminalStreamTee(sys.stderr)
+    sys._terminal_tee_installed = True
 
 def add_scraper_log(msg):
-    timestamp = time.strftime("%H:%M:%S")
-    formatted = f"[{timestamp}] {msg}"
-    print(formatted)
-    SCRAPER_LOGS.append(formatted)
-    if len(SCRAPER_LOGS) > 300:
-        SCRAPER_LOGS.pop(0)
+    print(msg)
 
 def get_scraper_logs():
-    return list(SCRAPER_LOGS)
+    with _LOG_LOCK:
+        return list(SCRAPER_LOGS)
 
 def clear_scraper_logs():
     global SCRAPER_LOGS
-    SCRAPER_LOGS = []
+    with _LOG_LOCK:
+        SCRAPER_LOGS = []
 
 # Dynamic ATS lists re-exported from settings for backward compatibility
 _settings = load_settings()

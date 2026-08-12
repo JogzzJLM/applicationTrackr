@@ -796,14 +796,14 @@ def render_unified_dashboard_html(active_tab="flow"):
     <div id="view-status" class="panel" style="{view_status}">
         <div class="section-card">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-                <div class="section-title" style="margin-bottom:0;">Live Engine Log Console (HP Stream Docker)</div>
+                <div class="section-title" style="margin-bottom:0;">Live Terminal Output (docker logs -f applicationtrackr)</div>
                 <div style="display:flex; gap:8px;">
-                    <button onclick="fetchLiveLogs()" class="btn btn-tinted">Refresh Logs</button>
-                    <button onclick="clearLiveLogs()" class="btn btn-ghost btn-danger-text">Clear Logs</button>
+                    <button onclick="fetchLiveLogs()" class="btn btn-tinted">Refresh</button>
+                    <button onclick="clearLiveLogs()" class="btn btn-ghost btn-danger-text">Clear</button>
                 </div>
             </div>
-            <div id="live-log-container" style="background:#1c1c1e; color:#34c759; font-family:var(--font-mono); font-size:12px; line-height:1.6; height:380px; overflow-y:auto; padding:16px; border-radius:12px; border:1px solid rgba(255,255,255,0.1);">
-                Loading live container activity logs...
+            <div id="live-log-container" style="background:#1c1c1e; color:#34c759; font-family:var(--font-mono); font-size:12px; line-height:1.6; height:420px; overflow-y:auto; padding:16px; border-radius:12px; border:1px solid rgba(255,255,255,0.1); white-space:pre-wrap; word-break:break-word;">
+                Loading live container stream...
             </div>
         </div>
 
@@ -845,6 +845,22 @@ def render_unified_dashboard_html(active_tab="flow"):
 </div>
 
 <script>
+    var logInterval = null;
+
+    function startLiveLogPolling() {{
+        fetchLiveLogs();
+        if (!logInterval) {{
+            logInterval = setInterval(fetchLiveLogs, 2000);
+        }}
+    }}
+
+    function stopLiveLogPolling() {{
+        if (logInterval) {{
+            clearInterval(logInterval);
+            logInterval = null;
+        }}
+    }}
+
     function switchTab(tabId) {{
         document.querySelectorAll('.panel').forEach(el => el.style.display = 'none');
         document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
@@ -856,7 +872,9 @@ def render_unified_dashboard_html(active_tab="flow"):
         if (activeBtn) activeBtn.classList.add('active');
 
         if (tabId === 'diagnostics') {{
-            fetchLiveLogs();
+            startLiveLogPolling();
+        }} else {{
+            stopLiveLogPolling();
         }}
     }}
 
@@ -975,10 +993,13 @@ def render_unified_dashboard_html(active_tab="flow"):
                 var container = document.getElementById('live-log-container');
                 if (container && data.logs) {{
                     if (data.logs.length === 0) {{
-                        container.innerHTML = '<span style="color:#8e8e93;">No log entries recorded yet. Trigger a Rescan or Sheet Sync to view live logs.</span>';
+                        container.innerHTML = '<span style="color:#8e8e93;">No terminal output recorded yet. Trigger a Rescan or Sheet Sync to stream live output.</span>';
                     }} else {{
+                        var isAtBottom = (container.scrollHeight - container.scrollTop <= container.clientHeight + 50);
                         container.innerHTML = data.logs.map(l => '<div>' + escapeHtml(l) + '</div>').join('');
-                        container.scrollTop = container.scrollHeight;
+                        if (isAtBottom) {{
+                            container.scrollTop = container.scrollHeight;
+                        }}
                     }}
                 }}
             }})
@@ -993,6 +1014,9 @@ def render_unified_dashboard_html(active_tab="flow"):
 
     document.addEventListener('DOMContentLoaded', function() {{
         filterJobs();
+        if ('{active_tab}' === 'diagnostics') {{
+            startLiveLogPolling();
+        }}
     }});
 
     document.addEventListener('keydown', function(e) {{
