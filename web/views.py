@@ -670,7 +670,7 @@ def render_unified_dashboard_html(active_tab="flow"):
     <!-- Tabs -->
     <div class="tab-bar">
         <button class="tab {tab_flow}" data-tab="flow" onclick="switchTab('flow')">Pipeline Flow</button>
-        <button class="tab {tab_jobs}" data-tab="jobs" onclick="switchTab('jobs')">Discovered Schemes ({discovered_count})</button>
+        <button class="tab {tab_jobs}" data-tab="jobs" id="tab-jobs-btn" onclick="switchTab('jobs')">Discovered Schemes ({discovered_count})</button>
         <button class="tab {tab_settings}" data-tab="settings" onclick="switchTab('settings')">Filter Settings</button>
         <button class="tab {tab_status}" data-tab="diagnostics" onclick="switchTab('diagnostics')">Diagnostics & Logs</button>
         <button class="tab {tab_closed}" data-tab="closed" onclick="switchTab('closed')">Closed Schemes ({closed_count})</button>
@@ -725,21 +725,21 @@ def render_unified_dashboard_html(active_tab="flow"):
         <div class="filter-chips-wrap">
             <div class="filter-group-label">Programme Type (Year Target)</div>
             <div class="filter-chips">
-                <button class="chip active" onclick="filterProgram('all', this)">All Programmes ({discovered_count})</button>
-                <button class="chip" onclick="filterProgram('graduate', this)">Graduate Schemes (Yr 3+) ({grad_count})</button>
-                <button class="chip" onclick="filterProgram('internship', this)">Internships (Yr 2 / Summer) ({intern_count})</button>
-                <button class="chip" onclick="filterProgram('placement', this)">Industrial Placements (Yr 2 / 12-Mo) ({placement_count})</button>
+                <button class="chip active" data-prog-chip="all" onclick="filterProgram('all', this)">All Programmes ({discovered_count})</button>
+                <button class="chip" data-prog-chip="graduate" onclick="filterProgram('graduate', this)">Graduate Schemes (Yr 3+) ({grad_count})</button>
+                <button class="chip" data-prog-chip="internship" onclick="filterProgram('internship', this)">Internships (Yr 2 / Summer) ({intern_count})</button>
+                <button class="chip" data-prog-chip="placement" onclick="filterProgram('placement', this)">Industrial Placements (Yr 2 / 12-Mo) ({placement_count})</button>
             </div>
 
             <div class="filter-group-label" style="margin-top:4px;">Domain Focus & Status</div>
             <div class="filter-chips">
-                <button class="chip active" onclick="filterDomain('all', this)">All Focuses</button>
-                <button class="chip" onclick="filterDomain('not_applied', this)">Not Applied ({not_applied_count})</button>
-                <button class="chip" onclick="filterDomain('applied', this)">Applied ({applied_count})</button>
-                <button class="chip" onclick="filterDomain('quant', this)">Quant ({quant_count})</button>
-                <button class="chip" onclick="filterDomain('software', this)">Software ({sw_count})</button>
-                <button class="chip" onclick="filterDomain('ml', this)">ML & AI ({ml_count})</button>
-                <button class="chip" onclick="filterDomain('cyber', this)">Cyber ({cyber_count})</button>
+                <button class="chip active" data-dom-chip="all" onclick="filterDomain('all', this)">All Focuses ({discovered_count})</button>
+                <button class="chip" data-dom-chip="not_applied" onclick="filterDomain('not_applied', this)">Not Applied ({not_applied_count})</button>
+                <button class="chip" data-dom-chip="applied" onclick="filterDomain('applied', this)">Applied ({applied_count})</button>
+                <button class="chip" data-dom-chip="quant" onclick="filterDomain('quant', this)">Quant ({quant_count})</button>
+                <button class="chip" data-dom-chip="software" onclick="filterDomain('software', this)">Software ({sw_count})</button>
+                <button class="chip" data-dom-chip="ml" onclick="filterDomain('ml', this)">ML & AI ({ml_count})</button>
+                <button class="chip" data-dom-chip="cyber" onclick="filterDomain('cyber', this)">Cyber ({cyber_count})</button>
             </div>
         </div>
 
@@ -881,26 +881,68 @@ def render_unified_dashboard_html(active_tab="flow"):
         var q = document.getElementById('job-search').value.toLowerCase().trim();
         var cards = document.querySelectorAll('#jobs-container .card');
 
+        var visibleCount = 0;
+
+        var progCounts = {{ all: 0, graduate: 0, internship: 0, placement: 0 }};
+        var domainCounts = {{ all: 0, not_applied: 0, applied: 0, quant: 0, software: 0, ml: 0, cyber: 0 }};
+
         cards.forEach(c => {{
             var searchData = (c.getAttribute('data-search') || '').toLowerCase();
             var statusData = c.getAttribute('data-status') || '';
             var catData = c.getAttribute('data-cat') || '';
-            var progData = c.getAttribute('data-program') || '';
+            var progData = c.getAttribute('data-program') || 'graduate';
 
             var matchesSearch = !q || searchData.includes(q);
-
-            var matchesProgram = true;
-            if (currentProgramPill !== 'all') {{
-                matchesProgram = (progData === currentProgramPill);
-            }}
+            var matchesProgram = (currentProgramPill === 'all') || (progData === currentProgramPill);
 
             var matchesDomain = true;
             if (currentDomainPill === 'not_applied') matchesDomain = (statusData === 'not_applied');
             else if (currentDomainPill === 'applied') matchesDomain = (statusData === 'applied');
             else if (currentDomainPill !== 'all') matchesDomain = (catData === currentDomainPill);
 
-            c.style.display = (matchesSearch && matchesProgram && matchesDomain) ? 'flex' : 'none';
+            var isVisible = matchesSearch && matchesProgram && matchesDomain;
+            c.style.display = isVisible ? 'flex' : 'none';
+            if (isVisible) visibleCount++;
+
+            // Calculate live counts for Programme Chips (matching search + active domain)
+            if (matchesSearch && matchesDomain) {{
+                progCounts.all++;
+                if (progData in progCounts) progCounts[progData]++;
+            }}
+
+            // Calculate live counts for Domain Chips (matching search + active programme)
+            if (matchesSearch && matchesProgram) {{
+                domainCounts.all++;
+                if (statusData in domainCounts) domainCounts[statusData]++;
+                if (catData in domainCounts) domainCounts[catData]++;
+            }}
         }});
+
+        // Update Programme Chips LIVE
+        updateChipText('data-prog-chip="all"', 'All Programmes (' + progCounts.all + ')');
+        updateChipText('data-prog-chip="graduate"', 'Graduate Schemes (Yr 3+) (' + progCounts.graduate + ')');
+        updateChipText('data-prog-chip="internship"', 'Internships (Yr 2 / Summer) (' + progCounts.internship + ')');
+        updateChipText('data-prog-chip="placement"', 'Industrial Placements (Yr 2 / 12-Mo) (' + progCounts.placement + ')');
+
+        // Update Domain Chips LIVE
+        updateChipText('data-dom-chip="all"', 'All Focuses (' + domainCounts.all + ')');
+        updateChipText('data-dom-chip="not_applied"', 'Not Applied (' + domainCounts.not_applied + ')');
+        updateChipText('data-dom-chip="applied"', 'Applied (' + domainCounts.applied + ')');
+        updateChipText('data-dom-chip="quant"', 'Quant (' + domainCounts.quant + ')');
+        updateChipText('data-dom-chip="software"', 'Software (' + domainCounts.software + ')');
+        updateChipText('data-dom-chip="ml"', 'ML & AI (' + domainCounts.ml + ')');
+        updateChipText('data-dom-chip="cyber"', 'Cyber (' + domainCounts.cyber + ')');
+
+        // Update Tab Label LIVE
+        var tabBtn = document.getElementById('tab-jobs-btn');
+        if (tabBtn) {{
+            tabBtn.innerText = 'Discovered Schemes (' + visibleCount + ')';
+        }}
+    }}
+
+    function updateChipText(attr, text) {{
+        var el = document.querySelector('.chip[' + attr + ']');
+        if (el) el.innerText = text;
     }}
 
     function sortJobs() {{
@@ -948,6 +990,10 @@ def render_unified_dashboard_html(active_tab="flow"):
             .then(r => r.json())
             .then(() => fetchLiveLogs());
     }}
+
+    document.addEventListener('DOMContentLoaded', function() {{
+        filterJobs();
+    }});
 
     document.addEventListener('keydown', function(e) {{
         if (e.key === '/' && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {{
