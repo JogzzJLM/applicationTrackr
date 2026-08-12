@@ -133,6 +133,23 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({"status": "ok"}).encode("utf-8"))
 
+        elif path == "/api/mark-applied":
+            comp = qs.get("company", [""])[0]
+            title = qs.get("title", ["Software/Quant Role"])[0]
+            stage = qs.get("stage", ["Applied"])[0]
+            if comp:
+                update_google_sheet_via_webhook(comp, stage, role=title, resolve_sequential=True)
+                add_scraper_log(f"📊 Web UI logged application: {comp} -> {stage}")
+                try:
+                    generate_sankey_from_google_sheets(force_refresh=True)
+                except Exception:
+                    pass
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_cors_headers()
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "ok", "company": comp, "stage": stage}).encode("utf-8"))
+
         elif path == "/api/rescan":
             add_scraper_log("⚡ Triggered Scraper Rescan from Dashboard UI")
             threading.Thread(target=run_all_scrapers, daemon=True).start()

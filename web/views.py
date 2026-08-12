@@ -74,31 +74,63 @@ def render_unified_dashboard_html(active_tab="flow"):
 
         visible_jobs.append(j)
 
+    cnt_applied = 0
+    cnt_assessment = 0
+    cnt_interview = 0
+    cnt_offer = 0
+    cnt_rejected = 0
+
     apps_table_rows = ""
     if not apps:
-        apps_table_rows = '<tr><td colspan="4" class="empty-state">No applications logged yet.</td></tr>'
+        apps_table_rows = '<tr><td colspan="5" class="empty-state">No applications logged yet. Click "+ Log Application" to track your first role!</td></tr>'
     else:
         for a in apps:
             st = a.get("status_type", "active")
-            if st == "offer":
+            latest_stage = a.get("latest_stage", "Applied")
+            latest_lower = latest_stage.lower()
+
+            if "offer" in latest_lower:
+                cnt_offer += 1
                 badge_cls = "badge-green"
-            elif st == "rejected":
+            elif "reject" in latest_lower or "fail" in latest_lower:
+                cnt_rejected += 1
                 badge_cls = "badge-red"
-            elif st == "ghosted":
-                badge_cls = "badge-gray"
+            elif "interview" in latest_lower:
+                cnt_interview += 1
+                badge_cls = "badge-orange"
+            elif "assessment" in latest_lower or "oa" in latest_lower or "test" in latest_lower:
+                cnt_assessment += 1
+                badge_cls = "badge-purple"
             else:
+                cnt_applied += 1
                 badge_cls = "badge-blue"
 
-            pipeline_str = " → ".join(a.get("stages", [])) if a.get("stages") else a.get("latest_stage", "Applied")
+            comp_clean = clean_company_display_name(a['company'])
+            comp_js = comp_clean.replace("'", "\\'").replace('"', '&quot;')
+
+            action_html = f"""
+            <div style="display:flex; gap:4px;">
+                <button onclick="quickUpdateStage('{comp_js}', 'Interview')" class="btn btn-tinted" style="font-size:11px; padding:3px 8px;" title="Promote to Interview">+ Interview</button>
+                <button onclick="quickUpdateStage('{comp_js}', 'Rejected')" class="btn btn-ghost btn-danger-text" style="font-size:11px; padding:3px 8px;" title="Mark Rejected">Reject</button>
+            </div>
+            """
 
             apps_table_rows += f"""
             <tr>
-                <td class="td-company">{clean_company_display_name(a['company'])}</td>
+                <td class="td-company">{comp_clean}</td>
                 <td class="td-role">{a['role']}</td>
-                <td><span class="badge {badge_cls}">{a['latest_stage']}</span></td>
+                <td><span class="badge {badge_cls}">{latest_stage}</span></td>
                 <td><span class="badge {badge_cls}">{a['status']}</span></td>
+                <td>{action_html}</td>
             </tr>
             """
+
+    tot_apps = len(apps) if apps else 1
+    pct_applied = round((cnt_applied / tot_apps) * 100, 1)
+    pct_assessment = round((cnt_assessment / tot_apps) * 100, 1)
+    pct_interview = round((cnt_interview / tot_apps) * 100, 1)
+    pct_offer = round((cnt_offer / tot_apps) * 100, 1)
+    pct_rejected = round((cnt_rejected / tot_apps) * 100, 1)
 
     applied_count = 0
     not_applied_count = 0
@@ -158,6 +190,8 @@ def render_unified_dashboard_html(active_tab="flow"):
 
     cards_html = ""
     closed_cards_html = ""
+    action_items_html = ""
+    action_items_count = 0
 
     for j in visible_jobs:
         j_id = j.get('id', '')
@@ -203,6 +237,24 @@ def render_unified_dashboard_html(active_tab="flow"):
                 applied_count += 1
             else:
                 not_applied_count += 1
+
+                deadline_raw = str(j.get('deadline') or j.get('closeDate') or '').lower()
+                if deadline_raw and not any(kw in deadline_raw for kw in ['rolling', 'asap', 'none']):
+                    if action_items_count < 4:
+                        action_items_count += 1
+                        comp_js = comp_name.replace("'", "\\'").replace('"', '&quot;')
+                        title_js = title_name.replace("'", "\\'").replace('"', '&quot;')
+                        action_items_html += f"""
+                        <div class="action-item-chip">
+                            <div style="font-weight:700; color:var(--text-primary);">{comp_name}</div>
+                            <div style="font-size:12px; color:var(--blue); font-weight:600;">{title_name}</div>
+                            <div style="font-size:11px; color:var(--orange); font-weight:600; margin-top:2px;">Closing: {j.get('deadline')}</div>
+                            <div style="margin-top:6px; display:flex; gap:6px;">
+                                <a href="{j_link}" target="_blank" rel="noopener" class="btn btn-filled" style="font-size:11px; padding:3px 8px;">Apply ↗</a>
+                                <button onclick="logJob('{comp_js}', '{title_js}')" class="btn btn-tinted" style="font-size:11px; padding:3px 8px;">+ Log</button>
+                            </div>
+                        </div>
+                        """
 
         card_markup = render_job_card(j, is_reported_closed=is_reported_closed, is_applied=is_applied, is_hidden=(j_id in hidden_jobs))
 
@@ -365,6 +417,16 @@ def render_unified_dashboard_html(active_tab="flow"):
         .c-val.blue {{ color: var(--blue); }}
         .c-val.green {{ color: var(--green); }}
         .c-val.red {{ color: var(--red); }}
+
+        /* ─── Action Items Strip ─── */
+        .action-items-wrap {{
+            margin-bottom: 20px; display: flex; gap: 12px; overflow-x: auto; padding-bottom: 4px;
+        }}
+        .action-item-chip {{
+            background: var(--card-bg); border: 1px solid var(--card-border);
+            border-radius: var(--radius); padding: 12px 16px; min-width: 220px;
+            box-shadow: var(--card-shadow); flex-shrink: 0;
+        }}
 
         /* ─── Tab bar ─── */
         .tab-bar {{
@@ -562,6 +624,18 @@ def render_unified_dashboard_html(active_tab="flow"):
             display: flex; align-items: center; justify-content: space-between;
         }}
 
+        /* ─── Modal ─── */
+        .modal-backdrop {{
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(8px);
+            z-index: 1000; display: flex; align-items: center; justify-content: center;
+            padding: 20px;
+        }}
+        .modal-card {{
+            background: #ffffff; border-radius: 20px; width: 100%; max-width: 440px;
+            padding: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.15);
+        }}
+
         /* ─── Settings form ─── */
         .form-group {{ margin-bottom: 16px; }}
         .form-label {{
@@ -632,8 +706,8 @@ def render_unified_dashboard_html(active_tab="flow"):
     <div class="topbar-brand">ApplicationTrackr</div>
     <div class="topbar-right">
         <div class="status-pill"><span class="dot"></span> Online</div>
-        <a href="/api/rescan" class="btn btn-filled">Rescan</a>
-        <a href="/api/sync-sheet" class="btn btn-tinted">Sync Sheet</a>
+        <button onclick="openLogModal()" class="btn btn-filled">+ Log App</button>
+        <a href="/api/rescan" class="btn btn-tinted">Rescan</a>
     </div>
 </div>
 
@@ -660,13 +734,33 @@ def render_unified_dashboard_html(active_tab="flow"):
 
     <!-- Panel: Pipeline & Sankey (Side-by-Side Split View) -->
     <div id="view-flow" class="panel" style="{view_flow}">
+        {"<div class='filter-group-label' style='margin-bottom:8px;'>⚠️ Schemes Closing Soon (Action Items)</div><div class='action-items-wrap'>" + action_items_html + "</div>" if action_items_html else ""}
+
         <div class="pipeline-grid">
             <div class="section-card" style="margin-bottom:0;">
                 <div class="section-title">Application Flow Pipeline</div>
                 <iframe src="/sankey-embed" class="sankey-frame" id="sankey-iframe"></iframe>
             </div>
             <div class="section-card" style="margin-bottom:0;">
-                <div class="section-title">Logged Applications ({total})</div>
+                <div class="section-title">
+                    <span>Logged Applications ({total})</span>
+                    <button onclick="openLogModal()" class="btn btn-filled" style="font-size:11px;">+ Log App</button>
+                </div>
+
+                <div style="margin-bottom:12px;">
+                    <div style="display:flex; justify-content:space-between; font-size:11px; font-weight:600; color:var(--text-tertiary); margin-bottom:4px;">
+                        <span>Stage Distribution</span>
+                        <span>{cnt_applied} Applied · {cnt_assessment} OA · {cnt_interview} Int · {cnt_offer} Offer</span>
+                    </div>
+                    <div style="background:rgba(0,0,0,0.05); border-radius:100px; height:6px; display:flex; overflow:hidden;">
+                        <div style="width:{pct_applied}%; background:var(--blue);" title="Applied"></div>
+                        <div style="width:{pct_assessment}%; background:var(--purple);" title="Assessment"></div>
+                        <div style="width:{pct_interview}%; background:var(--orange);" title="Interview"></div>
+                        <div style="width:{pct_offer}%; background:var(--green);" title="Offer"></div>
+                        <div style="width:{pct_rejected}%; background:var(--red);" title="Rejected"></div>
+                    </div>
+                </div>
+
                 <div style="overflow-x:auto;">
                     <table class="data-table">
                         <thead>
@@ -675,6 +769,7 @@ def render_unified_dashboard_html(active_tab="flow"):
                                 <th>Role</th>
                                 <th>Stage</th>
                                 <th>Status</th>
+                                <th>Action</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -776,7 +871,6 @@ def render_unified_dashboard_html(active_tab="flow"):
 
     <!-- Panel: Diagnostics -->
     <div id="view-diagnostics" class="panel" style="{view_status}">
-        <!-- Section 1: Independent Live Terminal Stream -->
         <div class="section-card">
             <div class="section-title">
                 <span><span class="live-dot"></span> Live Terminal Stream (docker logs -f applicationtrackr)</span>
@@ -787,7 +881,6 @@ def render_unified_dashboard_html(active_tab="flow"):
             </div>
         </div>
 
-        <!-- Section 2: Independent Real-Time Source Status Grid -->
         <div class="section-card">
             <div class="section-title">
                 <span><span class="live-dot"></span> System Status & Source Health</span>
@@ -807,7 +900,6 @@ def render_unified_dashboard_html(active_tab="flow"):
             </div>
         </div>
 
-        <!-- Section 3: Independent Real-Time Knowledge Base Rules -->
         <div class="section-card">
             <div class="section-title">
                 <span id="diag-kb-title">Knowledge Base ({kb_count} rules)</span>
@@ -834,10 +926,75 @@ def render_unified_dashboard_html(active_tab="flow"):
 
 </div>
 
+<!-- Modal: Log New Application -->
+<div id="log-modal" class="modal-backdrop" style="display:none;">
+    <div class="modal-card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+            <div style="font-size:16px; font-weight:700; color:var(--text-primary);">Log Application to Google Sheets</div>
+            <button onclick="closeLogModal()" class="btn btn-ghost">✕</button>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Company Name</label>
+            <input type="text" id="modal-company" class="form-input" placeholder="e.g. Marshall Wace, Palantir">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Role Title</label>
+            <input type="text" id="modal-role" class="form-input" placeholder="e.g. Software Engineering Intern 2027" value="Software Engineering Intern">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Application Stage</label>
+            <select id="modal-stage" class="form-input">
+                <option value="Applied">Applied</option>
+                <option value="Online Assessment">Online Assessment (OA)</option>
+                <option value="Interview 1">Interview 1</option>
+                <option value="Interview 2">Interview 2 / Final</option>
+                <option value="Offer">Offer 🎉</option>
+                <option value="Rejected">Rejected</option>
+            </select>
+        </div>
+        <div style="display:flex; gap:8px; margin-top:20px;">
+            <button onclick="submitModalLog()" class="btn btn-filled" style="flex:1;">Save to Google Sheets</button>
+            <button onclick="closeLogModal()" class="btn btn-ghost">Cancel</button>
+        </div>
+    </div>
+</div>
+
 <script>
     var logInterval = null;
     var statusInterval = null;
     var kbInterval = null;
+
+    function openLogModal() {{
+        document.getElementById('log-modal').style.display = 'flex';
+        document.getElementById('modal-company').focus();
+    }}
+
+    function closeLogModal() {{
+        document.getElementById('log-modal').style.display = 'none';
+    }}
+
+    function submitModalLog() {{
+        var comp = document.getElementById('modal-company').value.trim();
+        var title = document.getElementById('modal-role').value.trim();
+        var stage = document.getElementById('modal-stage').value;
+        if (!comp) {{
+            alert('Please enter a company name.');
+            return;
+        }}
+        logJobWithStage(comp, title, stage);
+    }}
+
+    function quickUpdateStage(comp, stage) {{
+        logJobWithStage(comp, 'Software/Quant Role', stage);
+    }}
+
+    function logJobWithStage(comp, title, stage) {{
+        fetch('/api/mark-applied?company=' + encodeURIComponent(comp) + '&title=' + encodeURIComponent(title) + '&stage=' + encodeURIComponent(stage || 'Applied'))
+            .then(r => r.json())
+            .then(() => {{
+                location.reload();
+            }});
+    }}
 
     function fetchLiveLogs() {{
         fetch('/api/logs')
