@@ -21,7 +21,6 @@ import os
 import sys
 import time
 import threading
-import subprocess
 
 NTFY_TOPIC = os.getenv("NTFY_TOPIC", "jog_applicationtrackr_alerts")
 GMAIL_USER = os.getenv("GMAIL_USER", "")
@@ -83,15 +82,6 @@ if not getattr(sys, '_terminal_tee_installed', False):
     sys.stdout = TerminalStreamTee(sys.stdout)
     sys.stderr = TerminalStreamTee(sys.stderr)
     sys._terminal_tee_installed = True
-
-def get_git_commit():
-    """Returns active Git commit hash and branch name."""
-    try:
-        commit = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], stderr=subprocess.DEVNULL).decode("utf-8").strip()
-        branch = subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"], stderr=subprocess.DEVNULL).decode("utf-8").strip()
-        return f"{commit} ({branch})"
-    except Exception:
-        return "Unknown"
 
 def add_scraper_log(msg):
     print(msg)

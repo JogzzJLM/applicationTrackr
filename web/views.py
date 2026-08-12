@@ -1,5 +1,5 @@
 import urllib.parse
-from config import SCRAPER_STATUS, HP_STREAM_TAILSCALE_IP, get_git_commit
+from config import SCRAPER_STATUS, HP_STREAM_TAILSCALE_IP
 from core.storage import (
     load_settings, load_hidden_jobs,
     load_reported_closed_jobs, load_json_safe
@@ -29,7 +29,6 @@ def render_unified_dashboard_html(active_tab="flow"):
     conv_rate = round((offers / total * 100), 1) if total > 0 else 0.0
 
     last_run = SCRAPER_STATUS.get("last_run", "Never")
-    git_commit = get_git_commit()
 
     existing_keys = set((normalize_company(j.get('company')), normalize_role(j.get('title'))) for j in all_jobs)
     for a in apps:
@@ -301,9 +300,9 @@ def render_unified_dashboard_html(active_tab="flow"):
         /* ─── Top bar ─── */
         .topbar {{
             display: flex; align-items: center; justify-content: space-between;
-            padding: 14px 24px;
+            padding: 12px 24px;
             border-bottom: 1px solid var(--border-light);
-            background: rgba(255,255,255,0.78);
+            background: rgba(255,255,255,0.82);
             backdrop-filter: saturate(180%) blur(20px);
             -webkit-backdrop-filter: saturate(180%) blur(20px);
             position: sticky; top: 0; z-index: 100;
@@ -346,36 +345,32 @@ def render_unified_dashboard_html(active_tab="flow"):
         .btn-ghost:hover {{ background: rgba(0,0,0,0.04); }}
         .btn-danger-text {{ color: var(--red); }}
 
-        /* ─── Stats row ─── */
-        .stats-row {{
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 14px;
-            margin: 28px 0 24px 0;
-        }}
-        .stat-cell {{
-            background: var(--card-bg);
-            backdrop-filter: blur(20px) saturate(180%);
-            -webkit-backdrop-filter: blur(20px) saturate(180%);
+        /* ─── Compact Glass Pill Stat Strip ─── */
+        .compact-stats-bar {{
+            display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+            background: rgba(255, 255, 255, 0.65);
+            backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
             border: 1px solid var(--card-border);
-            border-radius: var(--radius);
-            padding: 18px 16px;
-            text-align: center;
-            box-shadow: var(--card-shadow);
-            transition: transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94), box-shadow 0.2s ease;
+            border-radius: 980px;
+            padding: 6px 14px; margin: 16px 0 16px 0;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.03);
         }}
-        .stat-cell:hover {{
-            transform: translateY(-2px);
-            box-shadow: var(--card-shadow-hover);
+        .c-stat {{
+            display: inline-flex; align-items: center; gap: 6px;
+            font-size: 12px; font-weight: 500; color: var(--text-secondary);
+            padding: 4px 10px; border-radius: 980px; background: rgba(0,0,0,0.025);
         }}
-        .stat-label {{ font-size: 11px; font-weight: 600; color: var(--text-tertiary); letter-spacing: 0.02em; text-transform: uppercase; }}
-        .stat-value {{ font-size: 26px; font-weight: 700; color: var(--text-primary); margin-top: 4px; letter-spacing: -0.02em; }}
+        .c-label {{ font-weight: 600; color: var(--text-tertiary); font-size: 11px; text-transform: uppercase; letter-spacing: 0.02em; }}
+        .c-val {{ font-weight: 700; color: var(--text-primary); font-size: 13px; }}
+        .c-val.blue {{ color: var(--blue); }}
+        .c-val.green {{ color: var(--green); }}
+        .c-val.red {{ color: var(--red); }}
 
         /* ─── Tab bar ─── */
         .tab-bar {{
             display: flex; gap: 4px;
             border-bottom: 1px solid var(--border-light);
-            margin-bottom: 24px;
+            margin-bottom: 20px;
             overflow-x: auto;
         }}
         .tab {{
@@ -615,14 +610,8 @@ def render_unified_dashboard_html(active_tab="flow"):
         @media (max-width: 768px) {{
             .topbar {{ padding: 12px 16px; }}
             .shell {{ padding: 0 16px; }}
-            .stats-row {{ grid-template-columns: repeat(3, 1fr); }}
-            .stat-cell {{ padding: 14px 10px; }}
-            .stat-value {{ font-size: 22px; }}
             .grid {{ grid-template-columns: 1fr; }}
             .topbar-right {{ gap: 4px; }}
-        }}
-        @media (max-width: 480px) {{
-            .stats-row {{ grid-template-columns: repeat(2, 1fr); }}
         }}
     </style>
 </head>
@@ -640,32 +629,14 @@ def render_unified_dashboard_html(active_tab="flow"):
 
 <div class="shell">
 
-    <!-- Stats -->
-    <div class="stats-row">
-        <div class="stat-cell">
-            <div class="stat-label">Applications</div>
-            <div class="stat-value">{total}</div>
-        </div>
-        <div class="stat-cell">
-            <div class="stat-label">Active</div>
-            <div class="stat-value" style="color:var(--blue);">{active}</div>
-        </div>
-        <div class="stat-cell">
-            <div class="stat-label">Offers</div>
-            <div class="stat-value" style="color:var(--green);">{offers}</div>
-        </div>
-        <div class="stat-cell">
-            <div class="stat-label">Rejected</div>
-            <div class="stat-value" style="color:var(--red);">{rejections}</div>
-        </div>
-        <div class="stat-cell">
-            <div class="stat-label">Conversion</div>
-            <div class="stat-value">{conv_rate}%</div>
-        </div>
-        <div class="stat-cell">
-            <div class="stat-label">Discovered</div>
-            <div class="stat-value">{discovered_count}</div>
-        </div>
+    <!-- Compact Glass Pill Stat Strip (Saves vertical space & reduces scrolling) -->
+    <div class="compact-stats-bar">
+        <div class="c-stat"><span class="c-label">Applications</span><span class="c-val">{total}</span></div>
+        <div class="c-stat"><span class="c-label">Active</span><span class="c-val blue">{active}</span></div>
+        <div class="c-stat"><span class="c-label">Offers</span><span class="c-val green">{offers}</span></div>
+        <div class="c-stat"><span class="c-label">Rejected</span><span class="c-val red">{rejections}</span></div>
+        <div class="c-stat"><span class="c-label">Conversion</span><span class="c-val">{conv_rate}%</span></div>
+        <div class="c-stat"><span class="c-label">Discovered</span><span class="c-val">{discovered_count}</span></div>
     </div>
 
     <!-- Tabs -->
@@ -794,7 +765,7 @@ def render_unified_dashboard_html(active_tab="flow"):
     </div>
 
     <!-- Panel: Diagnostics -->
-    <div id="view-status" class="panel" style="{view_status}">
+    <div id="view-diagnostics" class="panel" style="{view_status}">
         <div class="section-card">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
                 <div class="section-title" style="margin-bottom:0;">Live Terminal Output (docker logs -f applicationtrackr)</div>
@@ -810,10 +781,6 @@ def render_unified_dashboard_html(active_tab="flow"):
 
         <div class="section-card">
             <div class="section-title">System Status</div>
-            <div class="diag-row">
-                <span class="diag-label">Active Git Commit</span>
-                <span class="diag-value" style="color:var(--blue); font-family:var(--font-mono);">{git_commit}</span>
-            </div>
             <div class="diag-row">
                 <span class="diag-label">Last scraper run</span>
                 <span class="diag-value" style="color:var(--text-secondary);">{last_run}</span>
@@ -975,7 +942,7 @@ def render_unified_dashboard_html(active_tab="flow"):
 
         cards.sort((a, b) => {{
             if (mode === 'newest') return (b.getAttribute('data-date') || '').localeCompare(a.getAttribute('data-date') || '');
-            if (mode === 'oldest') return (a.getAttribute('data-date') || '').localeCompare(b.getAttribute('data-date') || '');
+            if (mode === 'oldest') return (a.getAttribute('data-date') || '').localeCompare(a.getAttribute('data-date') || '');
             if (mode === 'match_desc') return (parseFloat(b.getAttribute('data-match')) || 0) - (parseFloat(a.getAttribute('data-match')) || 0);
             if (mode === 'deadline_asc') return (a.getAttribute('data-deadline') || 'z').localeCompare(b.getAttribute('data-deadline') || 'z');
             if (mode === 'deadline_desc') return (b.getAttribute('data-deadline') || 'a').localeCompare(a.getAttribute('data-deadline') || 'a');
