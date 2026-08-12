@@ -4,9 +4,10 @@ import urllib.parse
 import http.server
 import socketserver
 import threading
+import requests
 from urllib.parse import parse_qs, urlparse, quote
 
-from config import PORT, SCRAPER_STATUS, add_scraper_log
+from config import PORT, SCRAPER_STATUS, add_scraper_log, get_git_commit
 from core.storage import (
     load_settings, save_settings,
     load_hidden_jobs, hide_job, save_hidden_jobs,
@@ -99,13 +100,26 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
                 html = "<html><body><h3>Sankey Diagram Loading...</h3></body></html>"
             self.wfile.write(html.encode("utf-8"))
 
-
         elif path == "/api/status":
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_cors_headers()
             self.end_headers()
-            self.wfile.write(json.dumps(SCRAPER_STATUS, indent=2).encode("utf-8"))
+            status_data = dict(SCRAPER_STATUS)
+            status_data["commit"] = get_git_commit()
+            self.wfile.write(json.dumps(status_data, indent=2).encode("utf-8"))
+
+        elif path in ["/api/version", "/version"]:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_cors_headers()
+            self.end_headers()
+            version_data = {
+                "commit": get_git_commit(),
+                "last_run": SCRAPER_STATUS.get("last_run", "Never"),
+                "status": "online"
+            }
+            self.wfile.write(json.dumps(version_data, indent=2).encode("utf-8"))
 
         elif path == "/api/logs":
             from config import get_scraper_logs
@@ -159,31 +173,26 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
                 closed_map[j_id] = {
                     "id": j_id,
                     "link": target_link,
-                    "company": "Reported Company",
-                    "title": "Reported Position",
-                    "date_reported": "Recently"
+                    "company": qs.get("company", [""])[0],
+                    "title": qs.get("title", [""])[0]
                 }
                 save_reported_closed_jobs(closed_map)
 
                 if target_link and target_link.startswith("http"):
                     try:
-                        import requests
-                        r = requests.get(target_link, timeout=4, headers={"User-Agent": "Mozilla/5.0"})
-                        phrases = extract_generic_closure_phrases(r.text)
-                        if phrases:
-                            kb = load_closed_keywords_kb()
-                            kb.extend(phrases)
-                            save_closed_keywords_kb(kb)
-                    except Exception:
-                        pass
+                        r = requests.get(target_link, timeout=5, headers={"User-Agent": "Mozilla/5.0"})
+                        if r.status_code == 200:
+                            extracted = extract_generic_closure_phrases(r.text)
+                            if extracted:
+                                save_closed_keywords_kb(extracted)
+                                add_scraper_log(f"🧠 ML Knowledge Base learned {len(extracted)} closure patterns from {target_link}")
+                    except Exception as ex:
+                        add_scraper_log(f"⚠️ Failed to learn from link {target_link}: {ex}")
 
-                threading.Thread(target=recheck_existing_open_jobs_for_closure, daemon=True).start()
-
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_cors_headers()
+                add_scraper_log(f"🚫 Reported scheme as CLOSED: {j_id}")
+            self.send_response(302)
+            self.send_header("Location", "/jobs")
             self.end_headers()
-            self.wfile.write(json.dumps({"status": "ok", "reported_id": j_id}).encode("utf-8"))
 
         elif path == "/api/reopen-job":
             j_id = qs.get("id", [""])[0]
@@ -193,34 +202,19 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
                     del closed_map[j_id]
                     save_reported_closed_jobs(closed_map)
                     add_scraper_log(f"🔓 Re-opened scheme ID: {j_id}")
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_cors_headers()
+            self.send_response(302)
+            self.send_header("Location", "/closed")
             self.end_headers()
-            self.wfile.write(json.dumps({"status": "ok", "reopened_id": j_id}).encode("utf-8"))
 
         elif path == "/api/mark-applied":
             comp = qs.get("company", [""])[0]
             title = qs.get("title", [""])[0]
-            if comp and title:
-                update_google_sheet_via_webhook(comp, title, "Applied", "Direct Apply")
-                add_scraper_log(f"✅ Marked applied via Web UI: {comp} - {title}")
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_cors_headers()
+            if comp:
+                update_google_sheet_via_webhook(comp, "Applied", title)
+                add_scraper_log(f"✅ Marked application logged for {comp} ({title})")
+            self.send_response(302)
+            self.send_header("Location", "/jobs")
             self.end_headers()
-            self.wfile.write(json.dumps({"status": "ok", "company": comp, "title": title}).encode("utf-8"))
-
-        elif path == "/api/calendar.ics":
-            summary = qs.get("summary", ["Application Deadline"])[0]
-            desc = qs.get("desc", ["Logged via ApplicationTrackr"])[0]
-            ics_content = generate_apple_calendar_ics(summary, desc)
-            self.send_response(200)
-            self.send_header("Content-Type", "text/calendar; charset=utf-8")
-            self.send_header("Content-Disposition", 'attachment; filename="application_deadline.ics"')
-            self.send_cors_headers()
-            self.end_headers()
-            self.wfile.write(ics_content.encode("utf-8"))
 
         else:
             self.send_response(404)
@@ -232,34 +226,41 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
 
-        content_len = int(self.headers.get('Content-Length', 0))
-        body = self.rfile.read(content_len).decode('utf-8')
-        params = parse_qs(body)
-
         if path == "/api/settings":
-            settings = load_settings()
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length).decode('utf-8')
+            parsed_data = parse_qs(post_data)
 
-            def parse_list(val_str):
-                return [x.strip() for x in val_str.split(",") if x.strip()]
+            current_settings = load_settings()
 
-            if "my_skills" in params:
-                settings["my_skills"] = parse_list(params["my_skills"][0])
-            if "exclude_keywords" in params:
-                settings["exclude_keywords"] = parse_list(params["exclude_keywords"][0])
-            if "exclude_locations" in params:
-                settings["exclude_locations"] = parse_list(params["exclude_locations"][0])
-            if "greenhouse_companies" in params:
-                settings["greenhouse_companies"] = parse_list(params["greenhouse_companies"][0])
-            if "lever_companies" in params:
-                settings["lever_companies"] = parse_list(params["lever_companies"][0])
-            if "ashby_companies" in params:
-                settings["ashby_companies"] = parse_list(params["ashby_companies"][0])
-            if "smartrecruiters_companies" in params:
-                settings["smartrecruiters_companies"] = parse_list(params["smartrecruiters_companies"][0])
+            my_skills_raw = parsed_data.get('my_skills', [''])[0]
+            current_settings['my_skills'] = [s.strip() for s in my_skills_raw.split(',') if s.strip()]
 
-            settings["auto_hide_applied_company_jobs"] = ("auto_hide_applied_company_jobs" in params)
+            ex_kw_raw = parsed_data.get('exclude_keywords', [''])[0]
+            current_settings['exclude_keywords'] = [s.strip() for s in ex_kw_raw.split(',') if s.strip()]
 
-            save_settings(settings)
+            ex_loc_raw = parsed_data.get('exclude_locations', [''])[0]
+            current_settings['exclude_locations'] = [s.strip() for s in ex_loc_raw.split(',') if s.strip()]
+
+            def parse_multiline(param_name):
+                raw = parsed_data.get(param_name, [''])[0]
+                lines = []
+                for line in raw.replace('\r', '').split('\n'):
+                    for item in line.split(','):
+                        if item.strip():
+                            lines.append(item.strip())
+                return lines
+
+            current_settings['greenhouse_companies'] = parse_multiline('greenhouse_companies')
+            current_settings['lever_companies'] = parse_multiline('lever_companies')
+            current_settings['ashby_companies'] = parse_multiline('ashby_companies')
+            current_settings['smartrecruiters_companies'] = parse_multiline('smartrecruiters_companies')
+
+            current_settings['auto_hide_applied_company_jobs'] = 'auto_hide_applied_company_jobs' in parsed_data
+
+            save_settings(current_settings)
+            add_scraper_log("⚙️ Updated and saved custom filter settings.")
+
             self.send_response(302)
             self.send_header("Location", "/settings")
             self.end_headers()
@@ -268,8 +269,6 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
 
 def start_web_server(port=PORT):
-    from config import HP_STREAM_TAILSCALE_IP
     server = ThreadedHTTPServer(("0.0.0.0", port), CleanHandler)
-    print(f"🌍 Threaded Web Dashboard running at: http://{HP_STREAM_TAILSCALE_IP}:{port} (Local: http://127.0.0.1:{port})")
+    add_scraper_log(f"🌐 Unified Dashboard Web Server active on port {port}")
     server.serve_forever()
-

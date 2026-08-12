@@ -1,5 +1,5 @@
 import urllib.parse
-from config import SCRAPER_STATUS, HP_STREAM_TAILSCALE_IP
+from config import SCRAPER_STATUS, HP_STREAM_TAILSCALE_IP, get_git_commit
 from core.storage import (
     load_settings, load_hidden_jobs,
     load_reported_closed_jobs, load_json_safe
@@ -29,6 +29,7 @@ def render_unified_dashboard_html(active_tab="flow"):
     conv_rate = round((offers / total * 100), 1) if total > 0 else 0.0
 
     last_run = SCRAPER_STATUS.get("last_run", "Never")
+    git_commit = get_git_commit()
 
     existing_keys = set((normalize_company(j.get('company')), normalize_role(j.get('title'))) for j in all_jobs)
     for a in apps:
@@ -809,6 +810,10 @@ def render_unified_dashboard_html(active_tab="flow"):
 
         <div class="section-card">
             <div class="section-title">System Status</div>
+            <div class="diag-row">
+                <span class="diag-label">Active Git Commit</span>
+                <span class="diag-value" style="color:var(--blue); font-family:var(--font-mono);">{git_commit}</span>
+            </div>
             <div class="diag-row">
                 <span class="diag-label">Last scraper run</span>
                 <span class="diag-value" style="color:var(--text-secondary);">{last_run}</span>
