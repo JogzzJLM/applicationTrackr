@@ -6,7 +6,7 @@ import socketserver
 import threading
 from urllib.parse import parse_qs, urlparse, quote
 
-from config import PORT, SCRAPER_STATUS, add_scraper_log
+from config import PORT, SCRAPER_STATUS, add_scraper_log, HP_STREAM_TAILSCALE_IP
 from core.storage import (
     load_settings, save_settings,
     load_hidden_jobs, hide_job, save_hidden_jobs,
@@ -99,13 +99,21 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
                 html = "<html><body><h3>Sankey Diagram Loading...</h3></body></html>"
             self.wfile.write(html.encode("utf-8"))
 
-
         elif path == "/api/status":
+            from config import SCRAPER_STATUS
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_cors_headers()
             self.end_headers()
             self.wfile.write(json.dumps(SCRAPER_STATUS, indent=2).encode("utf-8"))
+
+        elif path == "/api/kb-status":
+            kb_phrases = load_closed_keywords_kb()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_cors_headers()
+            self.end_headers()
+            self.wfile.write(json.dumps({"count": len(kb_phrases), "phrases": kb_phrases}, indent=2).encode("utf-8"))
 
         elif path == "/api/logs":
             from config import get_scraper_logs
@@ -199,77 +207,38 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({"status": "ok", "reopened_id": j_id}).encode("utf-8"))
 
-        elif path == "/api/mark-applied":
-            comp = qs.get("company", [""])[0]
-            title = qs.get("title", [""])[0]
-            if comp and title:
-                update_google_sheet_via_webhook(comp, title, "Applied", "Direct Apply")
-                add_scraper_log(f"✅ Marked applied via Web UI: {comp} - {title}")
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_cors_headers()
-            self.end_headers()
-            self.wfile.write(json.dumps({"status": "ok", "company": comp, "title": title}).encode("utf-8"))
-
-        elif path == "/api/calendar.ics":
-            summary = qs.get("summary", ["Application Deadline"])[0]
-            desc = qs.get("desc", ["Logged via ApplicationTrackr"])[0]
-            ics_content = generate_apple_calendar_ics(summary, desc)
-            self.send_response(200)
-            self.send_header("Content-Type", "text/calendar; charset=utf-8")
-            self.send_header("Content-Disposition", 'attachment; filename="application_deadline.ics"')
-            self.send_cors_headers()
-            self.end_headers()
-            self.wfile.write(ics_content.encode("utf-8"))
-
-        else:
-            self.send_response(404)
-            self.send_header("Content-Type", "text/plain")
-            self.end_headers()
-            self.wfile.write(b"404 Not Found")
-
     def do_POST(self):
         parsed = urlparse(self.path)
         path = parsed.path
 
-        content_len = int(self.headers.get('Content-Length', 0))
-        body = self.rfile.read(content_len).decode('utf-8')
-        params = parse_qs(body)
-
         if path == "/api/settings":
+            content_length = int(self.headers.get("Content-Length", 0))
+            post_data = self.rfile.read(content_length).decode("utf-8")
+            form = parse_qs(post_data)
+
             settings = load_settings()
 
-            def parse_list(val_str):
-                return [x.strip() for x in val_str.split(",") if x.strip()]
+            def parse_csv_input(key):
+                raw = form.get(key, [""])[0]
+                return [x.strip() for x in raw.split(",") if x.strip()]
 
-            if "my_skills" in params:
-                settings["my_skills"] = parse_list(params["my_skills"][0])
-            if "exclude_keywords" in params:
-                settings["exclude_keywords"] = parse_list(params["exclude_keywords"][0])
-            if "exclude_locations" in params:
-                settings["exclude_locations"] = parse_list(params["exclude_locations"][0])
-            if "greenhouse_companies" in params:
-                settings["greenhouse_companies"] = parse_list(params["greenhouse_companies"][0])
-            if "lever_companies" in params:
-                settings["lever_companies"] = parse_list(params["lever_companies"][0])
-            if "ashby_companies" in params:
-                settings["ashby_companies"] = parse_list(params["ashby_companies"][0])
-            if "smartrecruiters_companies" in params:
-                settings["smartrecruiters_companies"] = parse_list(params["smartrecruiters_companies"][0])
-
-            settings["auto_hide_applied_company_jobs"] = ("auto_hide_applied_company_jobs" in params)
+            settings["my_skills"] = parse_csv_input("my_skills")
+            settings["exclude_keywords"] = parse_csv_input("exclude_keywords")
+            settings["exclude_locations"] = parse_csv_input("exclude_locations")
+            settings["greenhouse_companies"] = parse_csv_input("greenhouse_companies")
+            settings["lever_companies"] = parse_csv_input("lever_companies")
+            settings["ashby_companies"] = parse_csv_input("ashby_companies")
+            settings["smartrecruiters_companies"] = parse_csv_input("smartrecruiters_companies")
+            settings["auto_hide_applied_company_jobs"] = "auto_hide_applied_company_jobs" in form
 
             save_settings(settings)
+            add_scraper_log("⚙️ Saved updated filter settings via Web Interface")
+
             self.send_response(302)
             self.send_header("Location", "/settings")
             self.end_headers()
-        else:
-            self.send_response(404)
-            self.end_headers()
 
-def start_web_server(port=PORT):
-    from config import HP_STREAM_TAILSCALE_IP
-    server = ThreadedHTTPServer(("0.0.0.0", port), CleanHandler)
-    print(f"🌍 Threaded Web Dashboard running at: http://{HP_STREAM_TAILSCALE_IP}:{port} (Local: http://127.0.0.1:{port})")
+def start_web_server():
+    server = ThreadedHTTPServer(("0.0.0.0", PORT), CleanHandler)
+    print(f"🌐 Threaded Web Dashboard running at: http://{HP_STREAM_TAILSCALE_IP}:{PORT} (Local: http://127.0.0.1:{PORT})")
     server.serve_forever()
-

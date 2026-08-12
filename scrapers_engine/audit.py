@@ -1,11 +1,11 @@
 import time
 import requests
 import concurrent.futures
-from config import SCRAPER_STATUS, add_scraper_log
+from config import SCRAPER_STATUS, add_scraper_log, update_scraper_status, update_source_status
 from core.storage import (
     SEEN_JOBS_FILE, DISCOVERED_JOBS_FILE,
     load_reported_closed_jobs, save_reported_closed_jobs,
-    load_json_safe, atomic_write_json
+    load_json_safe, atomic_write_json, save_scraper_status
 )
 
 from core.normalization import normalize_company, normalize_role
@@ -31,7 +31,10 @@ def save_discovered_jobs(discovered_jobs):
     atomic_write_json(DISCOVERED_JOBS_FILE, discovered_jobs[:1000])
 
 def purge_expired_jobs():
-    add_scraper_log("🧹 Starting Job Link Health Check & Purge...")
+    print("""
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🧹 JOB LINK HEALTH CHECK & DEAD LISTING PURGE                         │
+└────────────────────────────────────────────────────────────────────────┘""")
     discovered = load_discovered_jobs()
     initial_count = len(discovered)
     valid_jobs = []
@@ -45,7 +48,7 @@ def purge_expired_jobs():
         try:
             resp = requests.head(link, timeout=4, allow_redirects=True, headers={"User-Agent": "Mozilla/5.0"})
             if resp.status_code in [404, 410]:
-                add_scraper_log(f"  [Purge] Dead link ({resp.status_code}): {job.get('company')} - {job.get('title')}")
+                add_scraper_log(f"  ├── 🛑 Dead link ({resp.status_code}): {job.get('company')} - {job.get('title')}")
                 return None
         except Exception:
             pass
@@ -60,7 +63,7 @@ def purge_expired_jobs():
                 purged_count += 1
 
     save_discovered_jobs(valid_jobs)
-    add_scraper_log(f"🧹 Purge Complete: Checked {initial_count} schemes, removed {purged_count} dead/closed listings.")
+    add_scraper_log(f"  └── 🧹 Purge Complete: Checked {initial_count} schemes, removed {purged_count} dead/closed listings.")
     return purged_count
 
 def recheck_existing_open_jobs_for_closure():
@@ -69,7 +72,10 @@ def recheck_existing_open_jobs_for_closure():
     Iterates through all existing open schemes in discovered_jobs.json, fetches their live webpages,
     and checks if any match newly learned closure patterns. If closed, automatically moves them to reported_closed_jobs.json.
     """
-    add_scraper_log("🔄 Starting Cascade Closure Audit on all existing open schemes...")
+    print("""
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🛑 CASCADE CLOSURE AUDIT (AI KNOWLEDGE BASE VERIFICATION)              │
+└────────────────────────────────────────────────────────────────────────┘""")
     discovered = load_discovered_jobs()
     closed_map = load_reported_closed_jobs()
 
@@ -79,10 +85,10 @@ def recheck_existing_open_jobs_for_closure():
     existing_open = [j for j in discovered if j.get("id") not in closed_ids and j.get("link") not in closed_links]
 
     if not existing_open:
-        add_scraper_log("  [Closure Audit] No open schemes to recheck.")
+        add_scraper_log("  └── ℹ️ No active open schemes to recheck.")
         return 0
 
-    add_scraper_log(f"  [Closure Audit] Re-evaluating {len(existing_open)} active open schemes against updated Knowledge Base...")
+    add_scraper_log(f"  ├── 🔍 Re-evaluating {len(existing_open)} active open schemes against updated Knowledge Base...")
 
     newly_detected_closed = []
 
@@ -106,7 +112,7 @@ def recheck_existing_open_jobs_for_closure():
             for c_job in newly_detected_closed:
                 j_id = c_job.get("id", f"job_{time.time()}")
                 closed_map[j_id] = c_job
-                add_scraper_log(f"  [Closure Audit] 🛑 Auto-Moved to Closed Directory: {c_job.get('company')} - {c_job.get('title')}")
+                add_scraper_log(f"  ├── 🛑 Auto-Moved to Closed Directory: {c_job.get('company')} - {c_job.get('title')}")
             save_reported_closed_jobs(closed_map)
 
         send_notification(
@@ -117,15 +123,18 @@ def recheck_existing_open_jobs_for_closure():
             priority=3,
             sound="chime"
         )
-        add_scraper_log(f"✅ Cascade Closure Audit complete! Automatically moved {len(newly_detected_closed)} newly closed schemes to Closed Directory.")
+        add_scraper_log(f"  └── ✅ Cascade Closure Audit complete! Automatically moved {len(newly_detected_closed)} newly closed schemes to Closed Directory.")
     else:
-        add_scraper_log(f"✅ Cascade Closure Audit complete! All {len(existing_open)} open schemes confirmed 100% active & apply-able.")
+        add_scraper_log(f"  └── ✅ Cascade Closure Audit complete! All {len(existing_open)} open schemes confirmed 100% active & apply-able.")
 
     return len(newly_detected_closed)
 
 def run_all_scrapers():
     start_time = time.time()
-    add_scraper_log("🔍 Running Parallel Multi-Threaded UK Scraper Engine...")
+    print("""
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🔍 UK SCHEME PARALLEL MULTI-THREADED SCRAPER ENGINE                    │
+└────────────────────────────────────────────────────────────────────────┘""")
     seen_jobs = load_seen_jobs()
     discovered_list = load_discovered_jobs()
     all_new_jobs = []
@@ -168,8 +177,9 @@ def run_all_scrapers():
     SCRAPER_STATUS["total_seen_jobs"] = len(seen_jobs)
     SCRAPER_STATUS["total_discovered_jobs"] = len(discovered_list)
     SCRAPER_STATUS["last_new_jobs_found"] = len(all_new_jobs)
+    save_scraper_status(SCRAPER_STATUS)
 
-    add_scraper_log(f"📊 Parallel Scraper Run Complete in {elapsed}s: {len(discovered_list)} total active schemes indexed ({len(all_new_jobs)} new alerts sent).")
+    add_scraper_log(f"  └── 📊 Parallel Scraper Run Complete in {elapsed}s: {len(discovered_list)} total active schemes indexed ({len(all_new_jobs)} new alerts sent).")
 
     if all_new_jobs and len(all_new_jobs) <= 10:
         if len(all_new_jobs) > 3:
@@ -178,19 +188,19 @@ def run_all_scrapers():
                 title=f"{len(all_new_jobs)} New Active Schemes Discovered!",
                 message=f"Latest roles found:\n{summary}\nTap to view all listings.",
                 link="http://100.75.135.73:5000/jobs",
-                tags="sparkles,uk",
-                priority=4,
-                sound="bing"
+                tags="rocket,star",
+                priority=3,
+                sound="chime"
             )
         else:
-            for title, location, link in all_new_jobs:
+            for job in all_new_jobs:
                 send_notification(
-                    title=f"New Role: {title}",
-                    message=f"Location: {location}\nTap to view details!",
-                    link="http://100.75.135.73:5000/jobs",
-                    tags="sparkles,uk",
+                    title=f"New Scheme: {job[0]}",
+                    message=f"Location: {job[1]}\nSource: Active UK Search",
+                    link=job[2],
+                    tags="briefcase,sparkles",
                     priority=4,
-                    sound="bing"
+                    sound="chime"
                 )
 
-    return all_new_jobs
+    return len(all_new_jobs)

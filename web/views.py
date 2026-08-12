@@ -559,6 +559,7 @@ def render_unified_dashboard_html(active_tab="flow"):
         .section-title {{
             font-size: 16px; font-weight: 700; color: var(--text-primary);
             letter-spacing: -0.022em; margin-bottom: 16px;
+            display: flex; align-items: center; justify-content: space-between;
         }}
 
         /* ─── Settings form ─── */
@@ -586,17 +587,26 @@ def render_unified_dashboard_html(active_tab="flow"):
         /* ─── Diagnostics ─── */
         .diag-row {{
             display: flex; justify-content: space-between; align-items: center;
-            padding: 8px 0;
+            padding: 10px 0;
             border-bottom: 1px solid var(--border-light);
             font-size: 13px;
         }}
         .diag-label {{ font-weight: 600; color: var(--text-primary); }}
-        .diag-value {{ color: var(--green); font-weight: 600; }}
+        .diag-value {{ color: var(--green); font-weight: 600; font-family: var(--font-mono); font-size: 12px; }}
         .kb-tag {{
             display: inline-block; padding: 4px 10px;
             background: rgba(255,255,255,0.7); border: 1px solid var(--border-light);
             border-radius: 6px; font-size: 12px; font-weight: 500;
             color: var(--text-secondary); margin: 3px;
+        }}
+        .live-dot {{
+            display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+            background: var(--green); margin-right: 6px;
+            animation: pulse 1.8s ease-in-out infinite;
+        }}
+        @keyframes pulse {{
+            0%, 100% {{ transform: scale(1); opacity: 1; }}
+            50% {{ transform: scale(1.3); opacity: 0.5; }}
         }}
 
         /* ─── Sankey iframe ─── */
@@ -629,7 +639,7 @@ def render_unified_dashboard_html(active_tab="flow"):
 
 <div class="shell">
 
-    <!-- Compact Glass Pill Stat Strip (Saves vertical space & reduces scrolling) -->
+    <!-- Compact Glass Pill Stat Strip -->
     <div class="compact-stats-bar">
         <div class="c-stat"><span class="c-label">Applications</span><span class="c-val">{total}</span></div>
         <div class="c-stat"><span class="c-label">Active</span><span class="c-val blue">{active}</span></div>
@@ -766,36 +776,44 @@ def render_unified_dashboard_html(active_tab="flow"):
 
     <!-- Panel: Diagnostics -->
     <div id="view-diagnostics" class="panel" style="{view_status}">
+        <!-- Section 1: Independent Live Terminal Stream -->
         <div class="section-card">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-                <div class="section-title" style="margin-bottom:0;">Live Terminal Output (docker logs -f applicationtrackr)</div>
-                <div style="display:flex; gap:8px;">
-                    <button onclick="fetchLiveLogs()" class="btn btn-tinted">Refresh</button>
-                    <button onclick="clearLiveLogs()" class="btn btn-ghost btn-danger-text">Clear</button>
-                </div>
+            <div class="section-title">
+                <span><span class="live-dot"></span> Live Terminal Stream (docker logs -f applicationtrackr)</span>
+                <button onclick="clearLiveLogs()" class="btn btn-ghost btn-danger-text" style="font-size:11px;">Clear Buffer</button>
             </div>
-            <div id="live-log-container" style="background:#1c1c1e; color:#34c759; font-family:var(--font-mono); font-size:12px; line-height:1.6; height:420px; overflow-y:auto; padding:16px; border-radius:12px; border:1px solid rgba(255,255,255,0.1); white-space:pre-wrap; word-break:break-word;">
-                Loading live container stream...
+            <div id="live-log-container" style="background:#1c1c1e; color:#34c759; font-family:var(--font-mono); font-size:12px; line-height:1.65; height:420px; overflow-y:auto; padding:16px; border-radius:12px; border:1px solid rgba(255,255,255,0.1); white-space:pre-wrap; word-break:break-word;">
+                Streaming live container output...
             </div>
         </div>
 
+        <!-- Section 2: Independent Real-Time Source Status Grid -->
         <div class="section-card">
-            <div class="section-title">System Status</div>
+            <div class="section-title">
+                <span><span class="live-dot"></span> System Status & Source Health</span>
+                <span style="font-size:11px; font-weight:500; color:var(--text-tertiary);">Auto-syncing real-time</span>
+            </div>
             <div class="diag-row">
                 <span class="diag-label">Last scraper run</span>
-                <span class="diag-value" style="color:var(--text-secondary);">{last_run}</span>
+                <span class="diag-value" id="diag-last-run" style="color:var(--text-primary); font-family:var(--font); font-weight:600;">{last_run}</span>
             </div>
             <div class="diag-row">
-                <span class="diag-label">Indexed schemes</span>
-                <span class="diag-value" style="color:var(--text-secondary);">{discovered_count}</span>
+                <span class="diag-label">Indexed active schemes</span>
+                <span class="diag-value" id="diag-indexed-count" style="color:var(--blue); font-size:14px;">{discovered_count}</span>
             </div>
-            <div style="margin-top:16px; font-size:13px; font-weight:600; color:var(--text-primary); margin-bottom:8px;">Source status</div>
-            {src_status_html}
+            <div style="margin-top:16px; font-size:12px; font-weight:700; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:8px;">Live Source Connectors</div>
+            <div id="diag-source-status">
+                {src_status_html}
+            </div>
         </div>
 
+        <!-- Section 3: Independent Real-Time Knowledge Base Rules -->
         <div class="section-card">
-            <div class="section-title">Knowledge Base ({kb_count} rules)</div>
-            <div style="max-height:200px; overflow-y:auto;">
+            <div class="section-title">
+                <span id="diag-kb-title">Knowledge Base ({kb_count} rules)</span>
+                <span style="font-size:11px; font-weight:500; color:var(--text-tertiary);">AI closure patterns</span>
+            </div>
+            <div id="diag-kb-container" style="max-height:200px; overflow-y:auto;">
                 {kb_badges_html}
             </div>
         </div>
@@ -818,19 +836,80 @@ def render_unified_dashboard_html(active_tab="flow"):
 
 <script>
     var logInterval = null;
+    var statusInterval = null;
+    var kbInterval = null;
 
-    function startLiveLogPolling() {{
-        fetchLiveLogs();
-        if (!logInterval) {{
-            logInterval = setInterval(fetchLiveLogs, 2000);
-        }}
+    function fetchLiveLogs() {{
+        fetch('/api/logs')
+            .then(r => r.json())
+            .then(data => {{
+                var container = document.getElementById('live-log-container');
+                if (container && data.logs) {{
+                    if (data.logs.length === 0) {{
+                        container.innerHTML = '<span style="color:#8e8e93;">No terminal output recorded yet. Trigger a Rescan or Sheet Sync to stream live output.</span>';
+                    }} else {{
+                        var isAtBottom = (container.scrollHeight - container.scrollTop <= container.clientHeight + 60);
+                        container.innerHTML = data.logs.map(l => '<div>' + escapeHtml(l) + '</div>').join('');
+                        if (isAtBottom) {{
+                            container.scrollTop = container.scrollHeight;
+                        }}
+                    }}
+                }}
+            }})
+            .catch(() => {{}});
     }}
 
-    function stopLiveLogPolling() {{
-        if (logInterval) {{
-            clearInterval(logInterval);
-            logInterval = null;
-        }}
+    function fetchSystemStatus() {{
+        fetch('/api/status')
+            .then(r => r.json())
+            .then(data => {{
+                var elLastRun = document.getElementById('diag-last-run');
+                if (elLastRun && data.last_run) elLastRun.innerText = data.last_run;
+
+                var elIndexed = document.getElementById('diag-indexed-count');
+                if (elIndexed && data.total_discovered_jobs !== undefined) elIndexed.innerText = data.total_discovered_jobs;
+
+                var elSources = document.getElementById('diag-source-status');
+                if (elSources && data.source_status) {{
+                    var html = '';
+                    for (var src in data.source_status) {{
+                        html += '<div class="diag-row"><span class="diag-label">' + escapeHtml(src) + '</span><span class="diag-value">' + escapeHtml(data.source_status[src]) + '</span></div>';
+                    }}
+                    elSources.innerHTML = html;
+                }}
+            }})
+            .catch(() => {{}});
+    }}
+
+    function fetchKBStatus() {{
+        fetch('/api/kb-status')
+            .then(r => r.json())
+            .then(data => {{
+                var elTitle = document.getElementById('diag-kb-title');
+                if (elTitle && data.count !== undefined) elTitle.innerText = 'Knowledge Base (' + data.count + ' rules)';
+
+                var elContainer = document.getElementById('diag-kb-container');
+                if (elContainer && data.phrases) {{
+                    elContainer.innerHTML = data.phrases.map(p => '<span class="kb-tag">' + escapeHtml(p) + '</span>').join(' ');
+                }}
+            }})
+            .catch(() => {{}});
+    }}
+
+    function startLivePolling() {{
+        fetchLiveLogs();
+        fetchSystemStatus();
+        fetchKBStatus();
+
+        if (!logInterval) logInterval = setInterval(fetchLiveLogs, 2000);
+        if (!statusInterval) statusInterval = setInterval(fetchSystemStatus, 3000);
+        if (!kbInterval) kbInterval = setInterval(fetchKBStatus, 5000);
+    }}
+
+    function stopLivePolling() {{
+        if (logInterval) {{ clearInterval(logInterval); logInterval = null; }}
+        if (statusInterval) {{ clearInterval(statusInterval); statusInterval = null; }}
+        if (kbInterval) {{ clearInterval(kbInterval); kbInterval = null; }}
     }}
 
     function switchTab(tabId) {{
@@ -844,9 +923,9 @@ def render_unified_dashboard_html(active_tab="flow"):
         if (activeBtn) activeBtn.classList.add('active');
 
         if (tabId === 'diagnostics') {{
-            startLiveLogPolling();
+            startLivePolling();
         }} else {{
-            stopLiveLogPolling();
+            stopLivePolling();
         }}
     }}
 
@@ -958,26 +1037,6 @@ def render_unified_dashboard_html(active_tab="flow"):
         return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     }}
 
-    function fetchLiveLogs() {{
-        fetch('/api/logs')
-            .then(r => r.json())
-            .then(data => {{
-                var container = document.getElementById('live-log-container');
-                if (container && data.logs) {{
-                    if (data.logs.length === 0) {{
-                        container.innerHTML = '<span style="color:#8e8e93;">No terminal output recorded yet. Trigger a Rescan or Sheet Sync to stream live output.</span>';
-                    }} else {{
-                        var isAtBottom = (container.scrollHeight - container.scrollTop <= container.clientHeight + 50);
-                        container.innerHTML = data.logs.map(l => '<div>' + escapeHtml(l) + '</div>').join('');
-                        if (isAtBottom) {{
-                            container.scrollTop = container.scrollHeight;
-                        }}
-                    }}
-                }}
-            }})
-            .catch(() => {{}});
-    }}
-
     function clearLiveLogs() {{
         fetch('/api/clear-logs')
             .then(r => r.json())
@@ -987,7 +1046,7 @@ def render_unified_dashboard_html(active_tab="flow"):
     document.addEventListener('DOMContentLoaded', function() {{
         filterJobs();
         if ('{active_tab}' === 'diagnostics') {{
-            startLiveLogPolling();
+            startLivePolling();
         }}
     }});
 

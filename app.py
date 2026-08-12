@@ -19,7 +19,12 @@ if __name__ == "__main__":
 
     time.sleep(1)
 
-    print("\n🚀 ApplicationTrackr Modular Engine Online!")
+    print("""
+┌────────────────────────────────────────────────────────────────────────┐
+│ 🚀 APPLICATIONTRACKR MODULAR ENGINE ONLINE                             │
+│    UK Early Career Job Discovery & Application Automation              │
+└────────────────────────────────────────────────────────────────────────┘""")
+
     send_notification(
         title="ApplicationTrackr Online",
         message="Modular Engine Active: Scrapers + Email Inbox + Web Dashboard + Watchdog.",

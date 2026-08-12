@@ -8,7 +8,8 @@ from core.storage import (
     DEFAULT_SETTINGS, load_json_safe, atomic_write_json,
     load_reported_closed_jobs, save_reported_closed_jobs,
     load_hidden_jobs, save_hidden_jobs, hide_job,
-    load_settings, save_settings
+    load_settings, save_settings,
+    load_scraper_status, save_scraper_status
 )
 from core.kb import (
     DEFAULT_CLOSED_PHRASES, extract_generic_closure_phrases,
@@ -29,12 +30,7 @@ GOOGLE_SHEET_WEBHOOK_URL = os.getenv("GOOGLE_SHEET_WEBHOOK_URL", "")
 HEALTHCHECKS_PING_URL = os.getenv("HEALTHCHECKS_PING_URL", "")
 GOOGLE_SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS94NpozDGeHO9UPag662CXcH-C5TGN9Y61-nW04VDlPJSZGVTq62E1lRvnXl8gq_CbR5kvMx5XnMFi/pub?output=csv"
 
-SCRAPER_STATUS = {
-    "last_run": "Never",
-    "total_seen_jobs": 0,
-    "last_new_jobs_found": 0,
-    "source_status": {}
-}
+SCRAPER_STATUS = load_scraper_status()
 
 _LOG_LOCK = threading.Lock()
 SCRAPER_LOGS = []
@@ -63,7 +59,10 @@ class TerminalStreamTee:
                 if clean_line:
                     with _LOG_LOCK:
                         timestamp = time.strftime("%H:%M:%S")
-                        formatted = f"[{timestamp}] {clean_line}" if not clean_line.startswith("[") else clean_line
+                        if not clean_line.startswith("[") and not clean_line.startswith("┌") and not clean_line.startswith("├") and not clean_line.startswith("└") and not clean_line.startswith("│") and not clean_line.startswith("  "):
+                            formatted = f"[{timestamp}] {clean_line}"
+                        else:
+                            formatted = clean_line
                         SCRAPER_LOGS.append(formatted)
                         if len(SCRAPER_LOGS) > 600:
                             SCRAPER_LOGS.pop(0)
@@ -94,6 +93,18 @@ def clear_scraper_logs():
     global SCRAPER_LOGS
     with _LOG_LOCK:
         SCRAPER_LOGS = []
+
+def update_scraper_status(key, value):
+    with _LOG_LOCK:
+        SCRAPER_STATUS[key] = value
+        save_scraper_status(SCRAPER_STATUS)
+
+def update_source_status(source_name, status_str):
+    with _LOG_LOCK:
+        if "source_status" not in SCRAPER_STATUS:
+            SCRAPER_STATUS["source_status"] = {}
+        SCRAPER_STATUS["source_status"][source_name] = status_str
+        save_scraper_status(SCRAPER_STATUS)
 
 # Dynamic ATS lists re-exported from settings for backward compatibility
 _settings = load_settings()

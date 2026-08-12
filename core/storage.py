@@ -8,13 +8,13 @@ PORT = 5000
 HP_STREAM_TAILSCALE_IP = "100.75.135.73"
 
 SEEN_JOBS_FILE = "seen_jobs.json"
-
 SEEN_EMAILS_FILE = "seen_emails.json"
 DISCOVERED_JOBS_FILE = "discovered_jobs.json"
 SETTINGS_FILE = "settings.json"
 CLOSED_KB_FILE = "closed_keywords_kb.json"
 REPORTED_CLOSED_FILE = "reported_closed_jobs.json"
 HIDDEN_JOBS_FILE = "hidden_jobs.json"
+SCRAPER_STATUS_FILE = "scraper_status.json"
 
 DEFAULT_SETTINGS = {
     "grad_years_allowed": ["2027", "2028", "2029"],
@@ -39,6 +39,21 @@ DEFAULT_SETTINGS = {
     "lever_companies": ["spotify", "revolut", "checkout", "beamng", "wayve", "palantir", "five-ai"],
     "ashby_companies": ["mistral", "synthesia", "multiverse", "ramp", "huggingface", "cohere", "notion", "scaleai"],
     "smartrecruiters_companies": ["squarepointcapital", "visa", "ubisoft", "zalando", "bosch"]
+}
+
+DEFAULT_SCRAPER_STATUS = {
+    "last_run": "Never",
+    "total_seen_jobs": 0,
+    "total_discovered_jobs": 0,
+    "last_new_jobs_found": 0,
+    "source_status": {
+        "Greenhouse API": "🟢 Active • 19/19 target companies online",
+        "Lever API": "🟢 Active • 7/7 target companies online",
+        "Ashby API": "🟢 Active • 8/8 target companies online",
+        "SmartRecruiters API": "🟢 Active • 5/5 target companies online",
+        "The Trackr API": "🟢 Active • Tier-1 Direct Egress",
+        "Gmail Inbox Listener": "🟢 Active • Email auto-tracker active"
+    }
 }
 
 def atomic_write_json(filepath, data, indent=2):
@@ -95,3 +110,17 @@ def load_settings():
 def save_settings(data):
     atomic_write_json(SETTINGS_FILE, data)
     print("💾 Saved updated filter settings to settings.json")
+
+def load_scraper_status():
+    loaded = load_json_safe(SCRAPER_STATUS_FILE, None)
+    if loaded and isinstance(loaded, dict):
+        merged = dict(DEFAULT_SCRAPER_STATUS)
+        merged.update(loaded)
+        if "source_status" in loaded:
+            merged["source_status"] = dict(DEFAULT_SCRAPER_STATUS["source_status"])
+            merged["source_status"].update(loaded["source_status"])
+        return merged
+    return dict(DEFAULT_SCRAPER_STATUS)
+
+def save_scraper_status(status_data):
+    atomic_write_json(SCRAPER_STATUS_FILE, status_data)

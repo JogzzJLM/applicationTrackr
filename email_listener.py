@@ -7,7 +7,7 @@ from email.header import decode_header
 import time
 from datetime import datetime, timedelta
 from urllib.parse import quote
-from config import GMAIL_USER, GMAIL_APP_PASS, SEEN_EMAILS_FILE, HP_STREAM_TAILSCALE_IP
+from config import GMAIL_USER, GMAIL_APP_PASS, SEEN_EMAILS_FILE, HP_STREAM_TAILSCALE_IP, update_source_status
 from notifications import send_notification
 from sheets import update_google_sheet_via_webhook
 
@@ -35,7 +35,6 @@ def save_seen_emails(seen):
 
 def extract_company_name(subject, from_sender, body_text=""):
     """Intelligently extracts the company name from email subject, sender domain, or body."""
-    # 1. Direct Subject Patterns: "at Company", "to Company", "Company Application"
     sub_match = (
         re.search(r"\b(?:at|with|for|to)\s+([A-Z][a-zA-Z0-9\s\&]+?)(?=\s+[\-\–\|]|[\.\,\!\?]|$)", subject, re.IGNORECASE) or
         re.search(r"([A-Z][a-zA-Z0-9\s\&]+?)\s+Application\b", subject)
@@ -45,99 +44,76 @@ def extract_company_name(subject, from_sender, body_text=""):
         if len(c_name) > 2 and c_name.lower() not in ["your", "the", "a", "an", "our", "us"]:
             return c_name.title()
 
-    # 2. Sender Domain Extraction (@company.com)
     domain_match = re.search(r"@([a-zA-Z0-9\-]+)\.", from_sender)
     if domain_match:
         dom = domain_match.group(1).lower()
         if dom not in GENERIC_DOMAINS and len(dom) > 2:
-            # Format domain nicely e.g. "marshallwace" -> "Marshall Wace" if known, else Title Case
             if dom == "marshallwace" or dom == "mwc":
                 return "Marshall Wace"
             elif dom == "the-trackr":
                 return "Trackr"
             return dom.capitalize()
 
-    # 3. Body Text Match
-    body_match = re.search(r"team at\s+([A-Z][a-zA-Z0-9\s]+)", body_text) or re.search(r"applying to\s+([A-Z][a-zA-Z0-9\s]+)", body_text)
-    if body_match:
-        c_name = body_match.group(1).strip().split('\n')[0].split('.')[0]
-        if len(c_name) > 2:
-            return c_name.strip().title()
+    return "Application Company"
 
-    return "Target Company"
+def classify_email_stage(text):
+    """Determines application status from email content."""
+    text_lower = text.lower()
 
-def classify_email_stage(combined_text):
-    """
-    Evaluates combined subject & body text against recruitment stage categories using strict priority hierarchy.
-
-    Priority Order:
-    1. Offer (Score 500)
-    2. Rejected (Score 400 - if explicit rejection phrasing present)
-    3. Interview / Next Round (Score 300)
-    4. Online Assessment (Score 200)
-    5. Applied / Confirmation (Score 100)
-    6. Application Update Fallback (Score 50)
-    """
-    has_applied = any(k in combined_text for k in [
-        "thank you for applying", "thanks for applying", "application received",
-        "thanks for your interest", "received your application", "application submitted",
-        "successfully submitted", "received your resume", "received your cv", "application confirmation"
-    ])
-
-    has_offer = any(k in combined_text for k in [
-        "offer of employment", "job offer", "pleased to offer", "congratulations!",
-        "offer letter", "formal offer", "delighted to offer"
-    ])
-
-    has_rejection = any(k in combined_text for k in [
-        "we regret to inform", "regret to inform", "unfortunately", "will not be moving forward",
-        "pursue other candidates", "decided not to proceed", "other candidates whose skills",
-        "unsuccessful", "not shortlisted", "not selected", "filled the role"
-    ])
-
-    has_interview = any(k in combined_text for k in [
-        "invitation to interview", "interview invitation", "schedule your interview",
-        "schedule a chat", "speak with our team", "technical interview", "behavioral interview",
-        "final round", "next round", "move forward with your application",
-        "pleased to invite you for an interview", "pleased to invite you to an interview",
-        "progress your application", "advanced to the next stage",
-        "shortlisted", "book your time slot", "interview slot"
-    ])
-
-    # Require explicit invite/action phrasing for online assessment stage
-    has_assessment = any(k in combined_text for k in [
-        "invited to complete", "invitation to complete", "invited to take",
-        "complete your assessment", "start your test", "assessment link",
-        "complete the hackerrank", "complete your hirevue", "take your online test",
-        "complete the codility", "complete your codesignal", "test deadline"
-    ])
-
-    has_update_fallback = any(k in combined_text for k in [
-        "application update", "update on your application", "status update",
-        "regarding your application", "application status", "position at", "role at"
-    ])
-
-    if has_offer:
+    offer_keywords = [
+        "offer of employment", "pleased to offer", "congratulations on your offer",
+        "job offer", "formal offer", "offer letter", "we would like to offer"
+    ]
+    if any(k in text_lower for k in offer_keywords):
         return "Offer"
-    elif has_rejection:
-        return "Rejected"
-    elif has_interview:
+
+    interview_keywords = [
+        "interview", "schedule a call", "invitation to interview", "next step", "speaking with",
+        "first round", "final round", "assessment centre", "assessment center", "video call"
+    ]
+    if any(k in text_lower for k in interview_keywords):
         return "Interview"
-    elif has_assessment:
+
+    oa_keywords = [
+        "online test", "coding assessment", "hackerrank", "codility", "hirevue",
+        "online assessment", "numerical reasoning", "logic test", "take-home"
+    ]
+    if any(k in text_lower for k in oa_keywords):
         return "Online Assessment"
-    elif has_applied:
+
+    rejection_keywords = [
+        "regret to inform", "unable to offer", "not moving forward", "other candidates",
+        "unsuccessful", "high volume of applications", "after careful consideration",
+        "decided not to proceed", "will not be proceeding"
+    ]
+    if any(k in text_lower for k in rejection_keywords):
+        return "Rejected"
+
+    applied_keywords = [
+        "thank you for applying", "application received", "received your application",
+        "confirming your application", "application submitted", "successfully submitted"
+    ]
+    if any(k in text_lower for k in applied_keywords):
         return "Applied"
-    elif has_update_fallback:
+
+    update_keywords = [
+        "application status", "update regarding your", "regarding your application"
+    ]
+    if any(k in text_lower for k in update_keywords):
         return "Application Update"
+
     return None
 
-
 def check_email_inbox():
-
-    if not GMAIL_USER or not GMAIL_APP_PASS or "your_email" in GMAIL_USER:
+    if not GMAIL_USER or not GMAIL_APP_PASS:
+        update_source_status("Gmail Inbox Listener", "⚪ Offline (No Credentials Set)")
         return
 
-    print("📧 Checking Gmail Inbox for application updates (Read & Unread)...")
+    print("""
+┌────────────────────────────────────────────────────────────────────────┐
+│ 📧 GMAIL INBOX AUTOMATION & STATUS LISTENER                            │
+└────────────────────────────────────────────────────────────────────────┘""")
+    print("  ├── 📬 Checking Gmail Inbox for application updates (Read & Unread)...")
     seen_emails = load_seen_emails()
     is_first_run = len(seen_emails) == 0
 
@@ -152,50 +128,54 @@ def check_email_inbox():
             if attempt == 0:
                 time.sleep(2)
             else:
-                print(f"⚠️ Email Listener Notice: IMAP connection offline/retry skipped ({e})")
+                update_source_status("Gmail Inbox Listener", f"⚠️ Connection Skipped ({e})")
+                print(f"  └── ⚠️ Email Listener Notice: IMAP connection offline/retry skipped ({e})")
                 return
 
     try:
-        # Search recent emails (past 3 days) so even if marked as READ on phone, we process them!
         since_date = (datetime.now() - timedelta(days=3)).strftime("%d-%b-%Y")
         status, messages = mail.search(None, f'(SINCE "{since_date}")')
         if status != "OK" or not messages[0]:
             status, messages = mail.search(None, 'ALL')
 
         if status != "OK" or not messages[0]:
+            update_source_status("Gmail Inbox Listener", f"🟢 Active • {len(seen_emails)} emails tracked")
+            print("  └── ℹ️ Inbox up to date (0 new application emails).")
             mail.logout()
             return
 
         email_ids = messages[0].split()
 
-        # First Run Protection: If seen_emails is empty, seed with current inbox UIDs so old history is never retroactively processed
         if is_first_run:
-            print(f"📧 [Email Listener] Initialized email tracker with {len(email_ids)} existing inbox messages.")
+            print(f"  └── 📦 Initialized email tracker with {len(email_ids)} existing inbox messages.")
             for e_id in email_ids:
                 seen_emails.add(e_id.decode())
             save_seen_emails(seen_emails)
+            update_source_status("Gmail Inbox Listener", f"🟢 Active • {len(seen_emails)} emails tracked")
             mail.logout()
             return
 
-        # Check latest 30 messages
+        processed_new = 0
         for e_id in email_ids[-30:]:
             str_id = e_id.decode()
             if str_id in seen_emails:
                 continue
 
-            # Mark email ID as evaluated immediately to avoid duplicate processing
             seen_emails.add(str_id)
+            processed_new += 1
 
             status, msg_data = mail.fetch(e_id, "(RFC822)")
             for response_part in msg_data:
                 if isinstance(response_part, tuple):
                     msg = email.message_from_bytes(response_part[1])
-                    
-                    subject, encoding = decode_header(msg["Subject"])[0] if msg["Subject"] else ("No Subject", None)
+                    subject, encoding = decode_header(msg.get("Subject", ""))[0]
                     if isinstance(subject, bytes):
                         subject = subject.decode(encoding or "utf-8", errors="ignore")
-                    
-                    from_sender = msg.get("From", "")
+
+                    from_sender, encoding = decode_header(msg.get("From", ""))[0]
+                    if isinstance(from_sender, bytes):
+                        from_sender = from_sender.decode(encoding or "utf-8", errors="ignore")
+
                     body_text = ""
                     if msg.is_multipart():
                         for part in msg.walk():
@@ -213,39 +193,34 @@ def check_email_inbox():
                         update_google_sheet_via_webhook(company_name, "Offer")
                         send_notification(
                             title=f"🎉 JOB OFFER: {company_name}!",
-                            message=f"Congratulations! Offer email received from {company_name}.\nCheck your inbox for details!",
+                            message=f"Congratulations! Offer email received from {company_name}.",
                             tags="tada,trophy",
                             priority=5,
                             sound="fanfare"
                         )
-                        print(f"📧 [Email Listener] 🥳 OFFER DETECTED for {company_name}!")
+                        print(f"  ├── 🥳 OFFER DETECTED for {company_name}!")
 
                     elif detected_stage == "Interview":
                         update_google_sheet_via_webhook(company_name, "Interview")
-                        cal_url = f"http://{HP_STREAM_TAILSCALE_IP}:5000/api/calendar.ics?summary={quote('Interview: ' + company_name)}&desc={quote('Interview invite received from ' + company_name)}"
                         send_notification(
                             title=f"Interview Invite: {company_name}",
-                            message=f"Next round/interview email received from {company_name}.\nTap to add to Apple Calendar!",
-                            link=cal_url,
+                            message=f"Next round/interview email received from {company_name}.",
                             tags="calendar,fire",
                             priority=5,
                             sound="fanfare"
                         )
-                        print(f"📧 [Email Listener] 🗓 INTERVIEW INVITE DETECTED for {company_name}!")
+                        print(f"  ├── 🗓 INTERVIEW INVITE DETECTED for {company_name}!")
 
                     elif detected_stage == "Online Assessment":
                         update_google_sheet_via_webhook(company_name, "Online Assessment")
-                        cal_url = f"http://{HP_STREAM_TAILSCALE_IP}:5000/api/calendar.ics?summary={quote('Assessment Deadline: ' + company_name)}&desc={quote('Coding test / online assessment received from ' + company_name)}"
                         send_notification(
                             title=f"Assessment Invite: {company_name}",
-                            message=f"Coding test / online assessment email received from {company_name}.\nTap to add deadline to Apple Calendar!",
-                            link=cal_url,
+                            message=f"Coding test / online assessment email received from {company_name}.",
                             tags="computer,fire",
                             priority=5,
                             sound="fanfare"
                         )
-                        print(f"📧 [Email Listener] 💻 ASSESSMENT INVITE DETECTED for {company_name}!")
-
+                        print(f"  ├── 💻 ASSESSMENT INVITE DETECTED for {company_name}!")
 
                     elif detected_stage == "Rejected":
                         update_google_sheet_via_webhook(company_name, "Rejected")
@@ -256,7 +231,7 @@ def check_email_inbox():
                             priority=2,
                             sound="minion"
                         )
-                        print(f"📧 [Email Listener] ❌ REJECTION DETECTED for {company_name}.")
+                        print(f"  ├── ❌ REJECTION DETECTED for {company_name}.")
 
                     elif detected_stage == "Applied":
                         update_google_sheet_via_webhook(company_name, "Applied")
@@ -267,22 +242,13 @@ def check_email_inbox():
                             priority=2,
                             sound="subtle"
                         )
-                        print(f"📧 [Email Listener] ✅ APPLICATION CONFIRMED for {company_name}.")
-
-                    elif detected_stage == "Application Update":
-                        update_google_sheet_via_webhook(company_name, "Application Update")
-                        send_notification(
-                            title=f"Application Update: {company_name}",
-                            message=f"New application update email received from {company_name}.\nCheck your inbox!",
-                            tags="envelope,bell",
-                            priority=4,
-                            sound="fanfare"
-                        )
-                        print(f"📧 [Email Listener] 🔔 APPLICATION UPDATE DETECTED for {company_name}!")
-
+                        print(f"  ├── ✅ APPLICATION CONFIRMED for {company_name}.")
 
         mail.logout()
         save_seen_emails(seen_emails)
+        update_source_status("Gmail Inbox Listener", f"🟢 Active • {len(seen_emails)} emails tracked")
+        print(f"  └── ✅ Gmail check complete ({processed_new} new messages evaluated).")
 
     except Exception as e:
-        print(f"⚠️ Email Listener Error: {e}")
+        update_source_status("Gmail Inbox Listener", f"⚠️ Notice ({e})")
+        print(f"  └── ⚠️ Email Listener Error: {e}")

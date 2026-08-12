@@ -6,6 +6,7 @@ from core.normalization import normalize_company, normalize_role, normalize_url,
 from core.storage import load_reported_closed_jobs, load_settings, save_settings
 from core.scoring import calculate_skill_match_score
 from scrapers_engine.verifier import verify_live_page_applyable
+from config import update_source_status
 
 _JOB_LOCK = concurrent.futures.ThreadPoolExecutor.__module__ and __import__('threading').Lock()
 
@@ -118,7 +119,7 @@ def extract_and_register_ats_company(url):
             gh_list.append(comp)
             settings["greenhouse_companies"] = gh_list
             updated = True
-            print(f"  [ATS Auto-Discovery] Added new Greenhouse company: {comp}")
+            print(f"  ├── ⚙️ [ATS Auto-Discovery] Added new Greenhouse company: {comp}")
 
     lev_match = re.search(r'lever\.co/([^/?#]+)', url, re.IGNORECASE)
     if lev_match:
@@ -128,7 +129,7 @@ def extract_and_register_ats_company(url):
             lev_list.append(comp)
             settings["lever_companies"] = lev_list
             updated = True
-            print(f"  [ATS Auto-Discovery] Added new Lever company: {comp}")
+            print(f"  ├── ⚙️ [ATS Auto-Discovery] Added new Lever company: {comp}")
 
     ash_match = re.search(r'ashbyhq\.com/([^/?#]+)', url, re.IGNORECASE)
     if ash_match:
@@ -138,7 +139,7 @@ def extract_and_register_ats_company(url):
             ash_list.append(comp)
             settings["ashby_companies"] = ash_list
             updated = True
-            print(f"  [ATS Auto-Discovery] Added new Ashby company: {comp}")
+            print(f"  ├── ⚙️ [ATS Auto-Discovery] Added new Ashby company: {comp}")
 
     if updated:
         save_settings(settings)
@@ -152,7 +153,7 @@ def scrape_greenhouse_jobs(seen_jobs, discovered_list, scraper_status=None):
     relevant_found = 0
 
     clean_companies = list(set([c.split('?')[0].split('#')[0].strip() for c in companies if c.strip()]))
-    print(f"  [Greenhouse API] Scanning {len(clean_companies)} target companies concurrently...")
+    print(f"  ├── 🟢 [Greenhouse API] Scanning {len(clean_companies)} target companies concurrently...")
 
     def fetch_company(company):
         nonlocal companies_scanned, relevant_found
@@ -186,7 +187,7 @@ def scrape_greenhouse_jobs(seen_jobs, discovered_list, scraper_status=None):
                                 local_new.append((f"{company.capitalize()} - {title}", location, job_url))
 
                 if company_relevant > 0:
-                    print(f"    ↳ {company.capitalize()}: {len(fetched)} jobs fetched ({company_relevant} relevant)")
+                    print(f"  │   ↳ {company.capitalize()}: {len(fetched)} fetched ({company_relevant} relevant)")
         except Exception:
             pass
         return local_new
@@ -196,8 +197,8 @@ def scrape_greenhouse_jobs(seen_jobs, discovered_list, scraper_status=None):
         for res in results:
             new_jobs.extend(res)
 
-    if scraper_status is not None:
-        scraper_status["source_status"][source_name] = f"OK ({companies_scanned}/{len(clean_companies)} companies online, {relevant_found} active schemes)"
+    status_str = f"🟢 Active • {companies_scanned}/{len(clean_companies)} companies online ({relevant_found} active schemes)"
+    update_source_status(source_name, status_str)
     return new_jobs
 
 def scrape_lever_jobs(seen_jobs, discovered_list, scraper_status=None):
@@ -209,7 +210,7 @@ def scrape_lever_jobs(seen_jobs, discovered_list, scraper_status=None):
     relevant_found = 0
 
     clean_companies = list(set([c.split('?')[0].split('#')[0].strip() for c in companies if c.strip()]))
-    print(f"  [Lever API] Scanning {len(clean_companies)} target companies concurrently...")
+    print(f"  ├── 🟢 [Lever API] Scanning {len(clean_companies)} target companies concurrently...")
 
     def fetch_company(company):
         nonlocal companies_scanned, relevant_found
@@ -243,7 +244,7 @@ def scrape_lever_jobs(seen_jobs, discovered_list, scraper_status=None):
                                 local_new.append((f"{company.capitalize()} - {title}", location, job_url))
 
                 if company_relevant > 0:
-                    print(f"    ↳ {company.capitalize()}: {len(fetched)} jobs fetched ({company_relevant} relevant)")
+                    print(f"  │   ↳ {company.capitalize()}: {len(fetched)} fetched ({company_relevant} relevant)")
         except Exception:
             pass
         return local_new
@@ -253,8 +254,8 @@ def scrape_lever_jobs(seen_jobs, discovered_list, scraper_status=None):
         for res in results:
             new_jobs.extend(res)
 
-    if scraper_status is not None:
-        scraper_status["source_status"][source_name] = f"OK ({companies_scanned}/{len(clean_companies)} companies online, {relevant_found} active schemes)"
+    status_str = f"🟢 Active • {companies_scanned}/{len(clean_companies)} companies online ({relevant_found} active schemes)"
+    update_source_status(source_name, status_str)
     return new_jobs
 
 def scrape_ashby_jobs(seen_jobs, discovered_list, scraper_status=None):
@@ -266,7 +267,7 @@ def scrape_ashby_jobs(seen_jobs, discovered_list, scraper_status=None):
     relevant_found = 0
 
     clean_companies = list(set([c.strip() for c in companies if c.strip()]))
-    print(f"  [Ashby API] Scanning {len(clean_companies)} target companies concurrently...")
+    print(f"  ├── 🟢 [Ashby API] Scanning {len(clean_companies)} target companies concurrently...")
 
     def fetch_company(company):
         nonlocal companies_scanned, relevant_found
@@ -298,7 +299,7 @@ def scrape_ashby_jobs(seen_jobs, discovered_list, scraper_status=None):
                                 local_new.append((f"{company.capitalize()} - {title}", location, job_url))
 
                 if company_relevant > 0:
-                    print(f"    ↳ {company.capitalize()}: {len(fetched)} jobs fetched ({company_relevant} relevant)")
+                    print(f"  │   ↳ {company.capitalize()}: {len(fetched)} fetched ({company_relevant} relevant)")
         except Exception:
             pass
         return local_new
@@ -308,8 +309,8 @@ def scrape_ashby_jobs(seen_jobs, discovered_list, scraper_status=None):
         for res in results:
             new_jobs.extend(res)
 
-    if scraper_status is not None:
-        scraper_status["source_status"][source_name] = f"OK ({companies_scanned}/{len(clean_companies)} companies online, {relevant_found} active schemes)"
+    status_str = f"🟢 Active • {companies_scanned}/{len(clean_companies)} companies online ({relevant_found} active schemes)"
+    update_source_status(source_name, status_str)
     return new_jobs
 
 def scrape_smartrecruiters_jobs(seen_jobs, discovered_list, scraper_status=None):
@@ -321,7 +322,7 @@ def scrape_smartrecruiters_jobs(seen_jobs, discovered_list, scraper_status=None)
     relevant_found = 0
 
     clean_companies = list(set([c.strip() for c in companies if c.strip()]))
-    print(f"  [SmartRecruiters API] Scanning {len(clean_companies)} target companies concurrently...")
+    print(f"  ├── 🟢 [SmartRecruiters API] Scanning {len(clean_companies)} target companies concurrently...")
 
     def fetch_company(company):
         nonlocal companies_scanned, relevant_found
@@ -354,7 +355,7 @@ def scrape_smartrecruiters_jobs(seen_jobs, discovered_list, scraper_status=None)
                                 local_new.append((f"{company.capitalize()} - {title}", location, job_url))
 
                 if company_relevant > 0:
-                    print(f"    ↳ {company.capitalize()}: {len(fetched)} jobs fetched ({company_relevant} relevant)")
+                    print(f"  │   ↳ {company.capitalize()}: {len(fetched)} fetched ({company_relevant} relevant)")
         except Exception:
             pass
         return local_new
@@ -364,6 +365,6 @@ def scrape_smartrecruiters_jobs(seen_jobs, discovered_list, scraper_status=None)
         for res in results:
             new_jobs.extend(res)
 
-    if scraper_status is not None:
-        scraper_status["source_status"][source_name] = f"OK ({companies_scanned}/{len(clean_companies)} companies online, {relevant_found} active schemes)"
+    status_str = f"🟢 Active • {companies_scanned}/{len(clean_companies)} companies online ({relevant_found} active schemes)"
+    update_source_status(source_name, status_str)
     return new_jobs
