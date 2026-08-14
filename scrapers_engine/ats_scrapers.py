@@ -2,7 +2,7 @@ import re
 import time
 import requests
 import concurrent.futures
-from core.normalization import normalize_company, normalize_role, normalize_url, extract_ats_post_id
+from core.normalization import normalize_company, normalize_role, normalize_url, extract_ats_post_id, fuzzy_roles_match
 from core.storage import (
     load_reported_closed_jobs, load_settings, save_settings,
     load_closed_urls_cache, mark_url_as_closed
@@ -61,7 +61,7 @@ def add_discovered_job(discovered_list, job_id, company, title, location, link, 
         return False
 
     for c_job in closed_map.values():
-        if normalize_company(c_job.get("company")) == norm_c and normalize_role(c_job.get("title")) == norm_t:
+        if normalize_company(c_job.get("company")) == norm_c and (normalize_role(c_job.get("title")) == norm_t or fuzzy_roles_match(title, c_job.get("title"))):
             mark_url_as_closed(link)
             return False
 
@@ -85,7 +85,7 @@ def add_discovered_job(discovered_list, job_id, company, title, location, link, 
                 is_match = True
             elif norm_u and item_url and norm_u == item_url:
                 is_match = True
-            elif norm_c and norm_t and item_c == norm_c and item_t == norm_t:
+            elif norm_c and item_c == norm_c and (norm_t == item_t or fuzzy_roles_match(title, item.get("title"))):
                 is_match = True
 
             if is_match:

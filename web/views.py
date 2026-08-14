@@ -98,13 +98,13 @@ def render_unified_dashboard_html(active_tab="flow"):
                 badge_cls = "badge-red"
             elif "interview" in latest_lower:
                 cnt_interview += 1
-                badge_cls = "badge-orange"
+                badge_cls = "badge-papaya"
             elif "assessment" in latest_lower or "oa" in latest_lower or "test" in latest_lower:
                 cnt_assessment += 1
-                badge_cls = "badge-purple"
+                badge_cls = "badge-cyan"
             else:
                 cnt_applied += 1
-                badge_cls = "badge-blue"
+                badge_cls = "badge-yellow"
 
             comp_clean = clean_company_display_name(a['company'])
             comp_js = comp_clean.replace("'", "\\'").replace('"', '&quot;')
@@ -166,7 +166,7 @@ def render_unified_dashboard_html(active_tab="flow"):
             src = j.get("source", "Discovered API")
             if src not in existing["sources"]:
                 existing["sources"].append(src)
-            if any(ats in j.get("link", "").lower() for ats in ["greenhouse", "lever", "ashby", "smartrecruiters"]):
+            if any(ats in j.get("link", "").lower() for ats in ["greenhouse", "lever", "ashby", "smartrecruiters", "gradcracker"]):
                 existing["link"] = j["link"]
                 if j.get("company") and len(j.get("company")) > 2:
                     existing["company"] = clean_company_display_name(j.get("company"))
@@ -248,11 +248,11 @@ def render_unified_dashboard_html(active_tab="flow"):
                         action_items_html += f"""
                         <div class="action-item-card">
                             <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-                                <div style="font-weight:700; font-size:15px; color:var(--text-primary);">{comp_name}</div>
-                                <span class="badge badge-orange">Closing Soon</span>
+                                <div style="font-weight:800; font-size:15px; color:var(--text-primary);">{comp_name}</div>
+                                <span class="badge badge-papaya">CLOSING SOON</span>
                             </div>
-                            <div style="font-size:13px; color:var(--blue); font-weight:600; margin-top:2px;">{title_name}</div>
-                            <div style="font-size:12px; color:var(--text-tertiary); margin-top:4px;">Deadline: <strong style="color:var(--orange);">{j.get('deadline')}</strong></div>
+                            <div style="font-size:13px; color:var(--cyan); font-weight:700; margin-top:3px;">{title_name}</div>
+                            <div style="font-size:12px; color:var(--text-tertiary); margin-top:4px;">Deadline: <strong style="color:var(--papaya); font-family:var(--font-mono);">{j.get('deadline')}</strong></div>
                             <div style="margin-top:12px; display:flex; gap:8px;">
                                 <a href="{j_link}" target="_blank" rel="noopener" class="btn btn-filled" style="flex:1; justify-content:center;">Apply Now ↗</a>
                                 <button onclick="logJob('{comp_js}', '{title_js}')" class="btn btn-tinted">+ Log</button>
@@ -297,201 +297,182 @@ def render_unified_dashboard_html(active_tab="flow"):
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>ApplicationTrackr - Early Career Command Center</title>
+    <title>ApplicationTrackr // McLaren F1 Telemetry</title>
     <meta name="description" content="UK graduate scheme application tracker and job discovery engine">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800;900&family=Titillium+Web:wght@600;700;900&family=JetBrains+Mono:wght@500;700;800&display=swap" rel="stylesheet">
 
     <style>
         :root {{
-            --bg: #f4f5f8;
-            --border: #d2d2d7;
-            --border-light: rgba(0, 0, 0, 0.08);
-            --text-primary: #1d1d1f;
-            --text-secondary: #515154;
-            --text-tertiary: #86868b;
-            --blue: #0071e3;
-            --blue-bg: rgba(0, 113, 227, 0.08);
-            --blue-glow: rgba(0, 113, 227, 0.18);
-            --green: #34c759;
-            --green-bg: rgba(52, 199, 89, 0.1);
-            --red: #ff3b30;
-            --red-bg: rgba(255, 59, 48, 0.1);
-            --orange: #ff9500;
-            --orange-bg: rgba(255, 149, 0, 0.1);
-            --purple: #af52de;
-            --purple-bg: rgba(175, 82, 222, 0.1);
-            --gray-bg: rgba(142, 142, 147, 0.12);
-            --card-bg: rgba(255, 255, 255, 0.88);
-            --card-border: rgba(255, 255, 255, 0.95);
-            --card-shadow: 0 4px 20px rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.02);
-            --card-shadow-hover: 0 12px 36px rgba(0,0,0,0.08), 0 2px 8px rgba(0,0,0,0.04);
-            --radius: 16px;
-            --radius-lg: 22px;
-            --font: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+            --papaya: #FF8000;
+            --papaya-glow: rgba(255, 128, 0, 0.28);
+            --carbon-bg: #09090b;
+            --carbon-surface: #121216;
+            --carbon-card: #18181f;
+            --carbon-border: rgba(255, 128, 0, 0.35);
+            --cyan: #00F0FF;
+            --cyan-glow: rgba(0, 240, 255, 0.22);
+            --yellow: #FFEA00;
+            --green: #00E676;
+            --red: #FF1744;
+            --text-primary: #FFFFFF;
+            --text-secondary: #A0A0AB;
+            --text-tertiary: #656570;
+            --radius: 14px;
+            --radius-lg: 20px;
+            --font: 'Outfit', 'Titillium Web', sans-serif;
             --font-mono: 'JetBrains Mono', monospace;
         }}
 
         * {{ margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }}
 
         body {{
-            background: var(--bg);
+            background: var(--carbon-bg);
             background-image:
-                radial-gradient(ellipse at 10% 0%, rgba(0, 113, 227, 0.06) 0%, transparent 60%),
-                radial-gradient(ellipse at 90% 100%, rgba(175, 82, 222, 0.05) 0%, transparent 60%);
+                radial-gradient(ellipse at 5% 0%, rgba(255, 128, 0, 0.12) 0%, transparent 60%),
+                radial-gradient(ellipse at 95% 100%, rgba(0, 240, 255, 0.08) 0%, transparent 60%);
             background-attachment: fixed;
             color: var(--text-primary);
             font-family: var(--font);
             -webkit-font-smoothing: antialiased;
-            line-height: 1.47;
+            line-height: 1.4;
         }}
 
-        .shell {{ max-width: 1400px; margin: 0 auto; padding: 0 28px 40px 28px; }}
+        .shell {{ max-width: 1440px; margin: 0 auto; padding: 0 28px 40px 28px; }}
 
-        /* ─── Top Bar ─── */
+        /* ─── McLaren Top Race Control Bar ─── */
         .topbar {{
             display: flex; align-items: center; justify-content: space-between;
             padding: 14px 28px;
-            border-bottom: 1px solid var(--border-light);
-            background: rgba(255,255,255,0.85);
-            backdrop-filter: saturate(180%) blur(20px);
+            border-bottom: 1px solid var(--carbon-border);
+            background: rgba(18, 18, 22, 0.92);
+            backdrop-filter: blur(20px);
             position: sticky; top: 0; z-index: 100;
         }}
         .topbar-brand {{
-            font-size: 18px; font-weight: 800; color: var(--text-primary);
-            letter-spacing: -0.03em; display: flex; align-items: center; gap: 8px;
+            font-size: 20px; font-weight: 900; color: var(--text-primary);
+            letter-spacing: 0.04em; text-transform: uppercase; display: flex; align-items: center; gap: 10px;
         }}
-        .topbar-right {{ display: flex; align-items: center; gap: 10px; }}
+        .topbar-brand span {{ color: var(--papaya); }}
+        .topbar-right {{ display: flex; align-items: center; gap: 12px; }}
 
-        .status-pill {{
-            display: inline-flex; align-items: center; gap: 6px;
-            font-size: 12px; font-weight: 600; color: var(--green);
-            padding: 6px 14px; background: var(--green-bg);
-            border-radius: 100px; border: 1px solid rgba(52, 199, 89, 0.2);
+        .race-status-pill {{
+            display: inline-flex; align-items: center; gap: 8px;
+            font-size: 11.5px; font-weight: 800; font-family: var(--font-mono); color: var(--green);
+            padding: 6px 14px; background: rgba(0, 230, 118, 0.12);
+            border-radius: 980px; border: 1px solid rgba(0, 230, 118, 0.3);
+            letter-spacing: 0.05em; text-transform: uppercase;
         }}
-        .status-pill .dot {{
-            width: 7px; height: 7px; border-radius: 50%;
-            background: var(--green);
-            animation: blink 2s ease-in-out infinite;
+        .race-status-pill .dot {{
+            width: 8px; height: 8px; border-radius: 50%;
+            background: var(--green); box-shadow: 0 0 10px var(--green);
+            animation: pulse-green 1.5s ease-in-out infinite;
         }}
-        @keyframes blink {{ 0%, 100% {{ opacity: 1; }} 50% {{ opacity: 0.3; }} }}
+        @keyframes pulse-green {{ 0%, 100% {{ opacity: 1; }} 50% {{ opacity: 0.3; }} }}
 
-        /* ─── Buttons ─── */
+        /* ─── F1 Telemetry Action Buttons ─── */
         .btn {{
             display: inline-flex; align-items: center; gap: 6px;
-            padding: 8px 16px; border-radius: 980px;
-            font-size: 13px; font-weight: 600; font-family: var(--font);
+            padding: 9px 18px; border-radius: 8px;
+            font-size: 13px; font-weight: 800; font-family: var(--font);
+            text-transform: uppercase; letter-spacing: 0.04em;
             cursor: pointer; border: none; text-decoration: none;
             transition: all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
         }}
         .btn:active {{ transform: scale(0.96); }}
-        .btn-filled {{ background: var(--blue); color: #fff; box-shadow: 0 2px 10px var(--blue-glow); }}
-        .btn-filled:hover {{ box-shadow: 0 4px 18px var(--blue-glow); background: #0062c4; }}
-        .btn-tinted {{ background: var(--blue-bg); color: var(--blue); }}
-        .btn-tinted:hover {{ background: rgba(0, 113, 227, 0.15); }}
-        .btn-ghost {{ background: transparent; color: var(--text-secondary); }}
-        .btn-ghost:hover {{ background: rgba(0,0,0,0.05); }}
-        .btn-danger-text {{ color: var(--red); }}
+        .btn-filled {{ background: var(--papaya); color: #000; box-shadow: 0 0 16px var(--papaya-glow); }}
+        .btn-filled:hover {{ background: #ff9424; box-shadow: 0 0 24px var(--papaya-glow); }}
+        .btn-tinted {{ background: rgba(0, 240, 255, 0.12); color: var(--cyan); border: 1px solid rgba(0, 240, 255, 0.3); }}
+        .btn-tinted:hover {{ background: rgba(0, 240, 255, 0.22); }}
+        .btn-ghost {{ background: transparent; color: var(--text-secondary); border: 1px solid rgba(255,255,255,0.1); }}
+        .btn-ghost:hover {{ background: rgba(255,255,255,0.06); color: #fff; }}
+        .btn-danger-text {{ color: var(--red); border-color: rgba(255, 23, 68, 0.3); }}
 
-        /* ─── Hero KPI Cards Grid ─── */
+        /* ─── Hero Telemetry Stat Cards Grid ─── */
         .hero-stats-grid {{
             display: grid;
             grid-template-columns: repeat(4, 1fr);
             gap: 16px; margin: 24px 0 24px 0;
         }}
-        @media (max-width: 1100px) {{
-            .hero-stats-grid {{ grid-template-columns: repeat(2, 1fr); }}
-        }}
-        @media (max-width: 600px) {{
-            .hero-stats-grid {{ grid-template-columns: 1fr; }}
-        }}
+        @media (max-width: 1100px) {{ .hero-stats-grid {{ grid-template-columns: repeat(2, 1fr); }} }}
+        @media (max-width: 600px) {{ .hero-stats-grid {{ grid-template-columns: 1fr; }} }}
 
         .hero-stat-card {{
-            background: var(--card-bg);
-            border: 1px solid var(--card-border);
+            background: var(--carbon-card);
+            border: 1px solid var(--carbon-border);
             border-radius: var(--radius-lg);
-            padding: 20px 22px;
-            box-shadow: var(--card-shadow);
+            padding: 22px 24px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
             display: flex; flex-direction: column; justify-content: space-between;
             position: relative; overflow: hidden;
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
         }}
-        .hero-stat-card:hover {{
-            transform: translateY(-2px);
-            box-shadow: var(--card-shadow-hover);
-        }}
-
         .hero-stat-card::before {{
             content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 4px;
         }}
-        .card-blue::before {{ background: linear-gradient(90deg, #0071e3, #42a5f5); }}
-        .card-purple::before {{ background: linear-gradient(90deg, #af52de, #ab47bc); }}
-        .card-green::before {{ background: linear-gradient(90deg, #34c759, #66bb6a); }}
-        .card-orange::before {{ background: linear-gradient(90deg, #ff9500, #ffa726); }}
+        .card-papaya::before {{ background: linear-gradient(90deg, #FF8000, #FFEA00); }}
+        .card-cyan::before {{ background: linear-gradient(90deg, #00F0FF, #00E676); }}
+        .card-green::before {{ background: linear-gradient(90deg, #00E676, #00F0FF); }}
+        .card-yellow::before {{ background: linear-gradient(90deg, #FFEA00, #FF8000); }}
 
         .stat-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }}
-        .stat-title {{ font-size: 13px; font-weight: 700; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.04em; }}
-        .stat-badge {{ font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 980px; }}
+        .stat-title {{ font-size: 12px; font-weight: 800; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.08em; }}
+        .stat-badge {{ font-size: 11px; font-weight: 800; font-family: var(--font-mono); padding: 4px 9px; border-radius: 6px; }}
 
-        .stat-number {{ font-size: 34px; font-weight: 800; color: var(--text-primary); letter-spacing: -0.04em; line-height: 1.1; margin: 4px 0 10px 0; }}
-        .stat-footer {{ margin-top: auto; display: flex; flex-direction: column; gap: 6px; }}
-        .stat-sub {{ font-size: 12px; font-weight: 600; color: var(--text-secondary); }}
+        .stat-number {{ font-size: 38px; font-weight: 900; font-family: var(--font-mono); color: var(--text-primary); letter-spacing: -0.04em; line-height: 1.1; margin: 6px 0 10px 0; }}
+        .stat-footer {{ margin-top: auto; display: flex; flex-direction: column; gap: 8px; }}
+        .stat-sub {{ font-size: 12.5px; font-weight: 700; color: var(--text-secondary); }}
 
         .stat-meter {{
-            width: 100%; height: 5px; background: rgba(0,0,0,0.06); border-radius: 100px; overflow: hidden;
+            width: 100%; height: 6px; background: rgba(255,255,255,0.08); border-radius: 100px; overflow: hidden;
         }}
-        .stat-meter div {{ height: 100%; border-radius: 100px; transition: width 0.4s ease; }}
+        .stat-meter div {{ height: 100%; border-radius: 100px; }}
 
-        /* ─── Navigation Tabs ─── */
+        /* ─── Telemetry Tabs ─── */
         .tab-bar {{
-            display: flex; gap: 6px;
-            border-bottom: 1px solid var(--border-light);
+            display: flex; gap: 8px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
             margin-bottom: 24px; overflow-x: auto;
         }}
         .tab {{
-            padding: 12px 20px;
-            font-size: 14px; font-weight: 600;
+            padding: 14px 22px;
+            font-size: 14px; font-weight: 800;
             color: var(--text-secondary);
             background: transparent; border: none;
             cursor: pointer; font-family: var(--font);
             border-bottom: 3px solid transparent;
-            white-space: nowrap;
-            transition: all 0.2s ease;
+            text-transform: uppercase; letter-spacing: 0.06em;
+            white-space: nowrap; transition: all 0.2s ease;
         }}
         .tab:hover {{ color: var(--text-primary); }}
         .tab.active {{
-            color: var(--blue);
-            border-bottom-color: var(--blue);
+            color: var(--papaya);
+            border-bottom-color: var(--papaya);
         }}
 
-        /* ─── Section Card Wrapper ─── */
+        /* ─── Telemetry Section Cards ─── */
         .section-card {{
-            background: var(--card-bg);
-            backdrop-filter: blur(20px) saturate(180%);
-            border: 1px solid var(--card-border);
+            background: var(--carbon-card);
+            border: 1px solid var(--carbon-border);
             border-radius: var(--radius-lg);
-            padding: 24px; margin-bottom: 24px;
-            box-shadow: var(--card-shadow);
+            padding: 26px; margin-bottom: 24px;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.6);
         }}
         .section-title {{
-            font-size: 17px; font-weight: 800; color: var(--text-primary);
-            letter-spacing: -0.025em; margin-bottom: 18px;
+            font-size: 18px; font-weight: 900; color: var(--text-primary);
+            text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 20px;
             display: flex; align-items: center; justify-content: space-between;
         }}
 
-        /* ─── Pipeline Split Grid ─── */
+        /* ─── Grid Split Layout ─── */
         .pipeline-grid {{
             display: grid;
             grid-template-columns: 1.35fr 1fr;
             gap: 22px; align-items: start;
         }}
-        @media (max-width: 1080px) {{
-            .pipeline-grid {{ grid-template-columns: 1fr; }}
-        }}
+        @media (max-width: 1080px) {{ .pipeline-grid {{ grid-template-columns: 1fr; }} }}
 
-        /* ─── Sankey Embed Frame ─── */
         .sankey-frame {{
             width: 100%; height: 420px; border: none;
             border-radius: var(--radius); background: transparent;
@@ -499,135 +480,131 @@ def render_unified_dashboard_html(active_tab="flow"):
 
         /* ─── Action Items Cards Grid ─── */
         .action-items-grid {{
-            display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px;
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px;
         }}
         .action-item-card {{
-            background: rgba(255, 255, 255, 0.95);
-            border: 1px solid var(--border-light);
-            border-radius: var(--radius); padding: 16px;
-            box-shadow: var(--card-shadow); display: flex; flex-direction: column; justify-content: space-between;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 128, 0, 0.3);
+            border-radius: var(--radius); padding: 18px;
+            display: flex; flex-direction: column; justify-content: space-between;
         }}
 
-        /* ─── Toolbar & Filter Chips ─── */
+        /* ─── Toolbar & Chips ─── */
         .toolbar {{ display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }}
         .search-wrap {{ flex: 1; min-width: 240px; position: relative; }}
         .search-wrap svg {{ position: absolute; left: 14px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; color: var(--text-tertiary); }}
         .search-input {{
-            width: 100%; padding: 11px 16px 11px 40px;
-            border: 1px solid var(--border-light); border-radius: var(--radius);
-            font-size: 13.5px; font-weight: 500; color: var(--text-primary);
-            background: rgba(255,255,255,0.9); outline: none; font-family: var(--font);
-            box-shadow: var(--card-shadow);
+            width: 100%; padding: 12px 16px 12px 42px;
+            border: 1px solid rgba(255, 255, 255, 0.15); border-radius: var(--radius);
+            font-size: 14px; font-weight: 600; color: #fff;
+            background: rgba(0,0,0,0.5); outline: none; font-family: var(--font);
         }}
-        .search-input:focus {{ border-color: var(--blue); box-shadow: 0 0 0 4px var(--blue-glow); }}
+        .search-input:focus {{ border-color: var(--papaya); box-shadow: 0 0 16px var(--papaya-glow); }}
 
         .sort-select {{
-            padding: 11px 16px; border: 1px solid var(--border-light);
-            border-radius: var(--radius); font-size: 13px; font-weight: 500;
-            color: var(--text-primary); background: rgba(255,255,255,0.9); outline: none; cursor: pointer;
+            padding: 12px 16px; border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: var(--radius); font-size: 13.5px; font-weight: 700;
+            color: #fff; background: rgba(0,0,0,0.5); outline: none; cursor: pointer;
         }}
 
         .filter-group-label {{
-            font-size: 11.5px; font-weight: 800; color: var(--text-tertiary);
-            text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px;
+            font-size: 11.5px; font-weight: 900; color: var(--text-tertiary);
+            text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px;
         }}
-        .filter-chips-wrap {{ margin-bottom: 20px; display: flex; flex-direction: column; gap: 8px; }}
+        .filter-chips-wrap {{ margin-bottom: 24px; display: flex; flex-direction: column; gap: 10px; }}
         .filter-chips {{ display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }}
         .chip {{
-            padding: 8px 18px; border-radius: 980px;
-            font-size: 12.5px; font-weight: 600; color: var(--text-secondary);
-            background: rgba(255,255,255,0.75); border: 1px solid var(--border-light);
+            padding: 9px 20px; border-radius: 8px;
+            font-size: 13px; font-weight: 800; color: var(--text-secondary);
+            background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.1);
             cursor: pointer; white-space: nowrap; font-family: var(--font);
+            text-transform: uppercase; letter-spacing: 0.04em;
             transition: all 0.2s ease;
         }}
-        .chip:hover {{ background: rgba(255,255,255,0.95); border-color: var(--border); }}
+        .chip:hover {{ background: rgba(255, 255, 255, 0.1); color: #fff; }}
         .chip.active {{
-            background: var(--blue); color: #fff; border-color: var(--blue);
-            box-shadow: 0 2px 10px var(--blue-glow);
+            background: var(--papaya); color: #000; border-color: var(--papaya);
+            box-shadow: 0 0 16px var(--papaya-glow);
         }}
 
-        /* ─── Jobs Grid & Cards ─── */
-        .grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }}
+        /* ─── Telemetry Job Cards ─── */
+        .grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 18px; }}
         .card {{
-            background: var(--card-bg); border: 1px solid var(--card-border);
-            border-radius: var(--radius); padding: 20px;
-            display: flex; flex-direction: column; gap: 9px; box-shadow: var(--card-shadow);
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            background: var(--carbon-card); border: 1px solid var(--carbon-border);
+            border-radius: var(--radius); padding: 22px;
+            display: flex; flex-direction: column; gap: 10px; box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+            transition: transform 0.2s ease, border-color 0.2s ease;
         }}
-        .card:hover {{ transform: translateY(-3px); box-shadow: var(--card-shadow-hover); }}
+        .card:hover {{ transform: translateY(-3px); border-color: var(--papaya); box-shadow: 0 12px 40px var(--papaya-glow); }}
         .card-top {{ display: flex; justify-content: space-between; align-items: center; }}
-        .card-status {{ display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 600; color: var(--text-tertiary); }}
-        .status-dot {{ width: 7px; height: 7px; border-radius: 50%; }}
-        .dot-green {{ background: var(--green); }}
-        .dot-blue {{ background: var(--blue); }}
-        .dot-red {{ background: var(--red); }}
-        .card-match {{ font-size: 12px; font-weight: 800; color: var(--blue); background: var(--blue-bg); padding: 3px 10px; border-radius: 980px; }}
-        .card-company {{ font-size: 16px; font-weight: 800; color: var(--text-primary); letter-spacing: -0.01em; }}
-        .card-role {{ font-size: 14px; font-weight: 600; color: var(--blue); }}
-        .card-meta {{ font-size: 12.5px; color: var(--text-tertiary); font-weight: 500; }}
-        .card-source {{ font-size: 11.5px; color: var(--text-tertiary); }}
-        .link-muted {{ color: var(--blue); text-decoration: none; font-weight: 600; }}
-        .card-actions {{ display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }}
+        .card-status {{ display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: var(--text-tertiary); }}
+        .status-dot {{ width: 8px; height: 8px; border-radius: 50%; }}
+        .dot-green {{ background: var(--green); box-shadow: 0 0 8px var(--green); }}
+        .dot-cyan {{ background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }}
+        .dot-red {{ background: var(--red); box-shadow: 0 0 8px var(--red); }}
+        .card-match {{ font-size: 12px; font-weight: 900; font-family: var(--font-mono); color: var(--papaya); background: rgba(255, 128, 0, 0.12); border: 1px solid rgba(255, 128, 0, 0.3); padding: 4px 10px; border-radius: 6px; }}
+        .card-company {{ font-size: 17px; font-weight: 900; color: var(--text-primary); letter-spacing: -0.01em; }}
+        .card-role {{ font-size: 14.5px; font-weight: 700; color: var(--cyan); }}
+        .card-meta {{ font-size: 12.5px; color: var(--text-tertiary); font-weight: 600; }}
+        .card-source {{ font-size: 12px; color: var(--text-tertiary); }}
+        .link-muted {{ color: var(--papaya); text-decoration: none; font-weight: 700; }}
+        .card-actions {{ display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }}
 
-        /* ─── Badges ─── */
-        .badge {{ display: inline-block; padding: 4px 9px; border-radius: 6px; font-size: 11.5px; font-weight: 700; }}
-        .badge-blue {{ background: var(--blue-bg); color: var(--blue); }}
-        .badge-green {{ background: var(--green-bg); color: #248a3d; }}
-        .badge-red {{ background: var(--red-bg); color: var(--red); }}
-        .badge-purple {{ background: var(--purple-bg); color: var(--purple); }}
-        .badge-orange {{ background: var(--orange-bg); color: #d97706; }}
-        .badge-gray {{ background: var(--gray-bg); color: var(--text-secondary); }}
+        /* ─── F1 Badges ─── */
+        .badge {{ display: inline-block; padding: 4px 10px; border-radius: 6px; font-size: 11.5px; font-weight: 800; font-family: var(--font-mono); text-transform: uppercase; }}
+        .badge-papaya {{ background: rgba(255, 128, 0, 0.18); color: var(--papaya); border: 1px solid rgba(255, 128, 0, 0.4); }}
+        .badge-cyan {{ background: rgba(0, 240, 255, 0.15); color: var(--cyan); border: 1px solid rgba(0, 240, 255, 0.4); }}
+        .badge-green {{ background: rgba(0, 230, 118, 0.15); color: var(--green); border: 1px solid rgba(0, 230, 118, 0.4); }}
+        .badge-red {{ background: rgba(255, 23, 68, 0.15); color: var(--red); border: 1px solid rgba(255, 23, 68, 0.4); }}
+        .badge-yellow {{ background: rgba(255, 234, 0, 0.15); color: var(--yellow); border: 1px solid rgba(255, 234, 0, 0.4); }}
 
         /* ─── Data Table ─── */
-        .data-table {{ width: 100%; border-collapse: collapse; font-size: 13.5px; }}
+        .data-table {{ width: 100%; border-collapse: collapse; font-size: 14px; }}
         .data-table th {{
-            text-align: left; padding: 12px 14px; font-size: 11.5px; font-weight: 700;
-            color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.04em;
-            border-bottom: 1px solid var(--border-light);
+            text-align: left; padding: 14px 16px; font-size: 12px; font-weight: 900;
+            color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.06em;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
         }}
-        .data-table td {{ padding: 12px 14px; border-bottom: 1px solid var(--border-light); vertical-align: middle; }}
-        .td-company {{ font-weight: 700; color: var(--text-primary); }}
-        .td-role {{ color: var(--text-secondary); font-weight: 500; }}
+        .data-table td {{ padding: 14px 16px; border-bottom: 1px solid rgba(255,255,255,0.06); vertical-align: middle; }}
+        .td-company {{ font-weight: 900; color: var(--text-primary); }}
+        .td-role {{ color: var(--text-secondary); font-weight: 600; }}
 
         /* ─── Modal ─── */
         .modal-backdrop {{
             position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-            background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(10px);
+            background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(12px);
             z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 20px;
         }}
         .modal-card {{
-            background: #ffffff; border-radius: 24px; width: 100%; max-width: 460px;
-            padding: 28px; box-shadow: 0 24px 48px rgba(0,0,0,0.18);
+            background: var(--carbon-card); border: 1px solid var(--papaya); border-radius: 20px; width: 100%; max-width: 480px;
+            padding: 30px; box-shadow: 0 0 40px var(--papaya-glow);
         }}
 
-        .form-group {{ margin-bottom: 18px; }}
-        .form-label {{ font-size: 13px; font-weight: 700; color: var(--text-primary); margin-bottom: 6px; display: block; }}
+        .form-group {{ margin-bottom: 20px; }}
+        .form-label {{ font-size: 13px; font-weight: 800; color: var(--text-primary); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px; display: block; }}
         .form-input {{
-            width: 100%; padding: 11px 16px; border: 1px solid var(--border-light);
-            border-radius: 12px; font-size: 14px; font-weight: 500; color: var(--text-primary);
-            background: rgba(255,255,255,0.9); outline: none; font-family: var(--font);
+            width: 100%; padding: 12px 16px; border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 10px; font-size: 14.5px; font-weight: 600; color: #fff;
+            background: rgba(0,0,0,0.6); outline: none; font-family: var(--font);
         }}
-        .form-input:focus {{ border-color: var(--blue); box-shadow: 0 0 0 4px var(--blue-glow); }}
+        .form-input:focus {{ border-color: var(--papaya); box-shadow: 0 0 16px var(--papaya-glow); }}
 
-        .diag-row {{ display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--border-light); font-size: 13.5px; }}
-        .diag-label {{ font-weight: 700; color: var(--text-primary); }}
-        .diag-value {{ color: var(--green); font-weight: 700; font-family: var(--font-mono); font-size: 12.5px; }}
-        .kb-tag {{ display: inline-block; padding: 5px 12px; background: rgba(255,255,255,0.8); border: 1px solid var(--border-light); border-radius: 8px; font-size: 12px; font-weight: 600; color: var(--text-secondary); margin: 4px; }}
-
-        .live-dot {{ display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--green); margin-right: 6px; animation: pulse 1.8s ease-in-out infinite; }}
-        @keyframes pulse {{ 0%, 100% {{ transform: scale(1); opacity: 1; }} 50% {{ transform: scale(1.35); opacity: 0.4; }} }}
+        .diag-row {{ display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.08); font-size: 14px; }}
+        .diag-label {{ font-weight: 800; color: var(--text-primary); }}
+        .diag-value {{ color: var(--green); font-weight: 800; font-family: var(--font-mono); font-size: 13px; }}
+        .kb-tag {{ display: inline-block; padding: 5px 12px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; font-size: 12px; font-weight: 700; color: var(--text-secondary); margin: 4px; }}
     </style>
 </head>
 <body>
 
-<!-- Top bar -->
+<!-- Race Control Bar -->
 <div class="topbar">
     <div class="topbar-brand">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color:var(--blue);"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-        ApplicationTrackr
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#FF8000" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        <span>McLAREN //</span> Trackr #4
     </div>
     <div class="topbar-right">
-        <div class="status-pill"><span class="dot"></span> Online</div>
+        <div class="race-status-pill"><span class="dot"></span> GREEN FLAG // LIVE SESSION</div>
         <button onclick="openLogModal()" class="btn btn-filled">+ Log App</button>
         <button onclick="syncSheetAndReload()" class="btn btn-tinted">Sync Sheet</button>
         <a href="/api/rescan" class="btn btn-ghost">Rescan</a>
@@ -636,63 +613,63 @@ def render_unified_dashboard_html(active_tab="flow"):
 
 <div class="shell">
 
-    <!-- Hero KPI Glass Cards Grid -->
+    <!-- Hero Telemetry Stat Cards Grid -->
     <div class="hero-stats-grid">
-        <div class="hero-stat-card card-blue">
+        <div class="hero-stat-card card-papaya">
             <div class="stat-header">
-                <span class="stat-title">Applications</span>
-                <span class="stat-badge badge-blue">100% Tracked</span>
+                <span class="stat-title">Applications Tracked</span>
+                <span class="stat-badge badge-papaya">100% TELEMETRY</span>
             </div>
             <div class="stat-number">{total}</div>
             <div class="stat-footer">
-                <span class="stat-sub">{active} active in pipeline</span>
-                <div class="stat-meter"><div style="width: {pct_applied}%; background: var(--blue);"></div></div>
+                <span class="stat-sub">{active} active in grid</span>
+                <div class="stat-meter"><div style="width: {pct_applied}%; background: var(--papaya);"></div></div>
             </div>
         </div>
 
-        <div class="hero-stat-card card-purple">
+        <div class="hero-stat-card card-cyan">
             <div class="stat-header">
-                <span class="stat-title">Active Pipeline</span>
-                <span class="stat-badge badge-purple">{cnt_assessment + cnt_interview} In Assessment/Interview</span>
+                <span class="stat-title">Active Race Pipeline</span>
+                <span class="stat-badge badge-cyan">{cnt_assessment + cnt_interview} IN OA/INT</span>
             </div>
             <div class="stat-number">{active}</div>
             <div class="stat-footer">
                 <span class="stat-sub">{cnt_assessment} OA · {cnt_interview} Interviews</span>
-                <div class="stat-meter"><div style="width: {pct_assessment + pct_interview}%; background: var(--purple);"></div></div>
+                <div class="stat-meter"><div style="width: {pct_assessment + pct_interview}%; background: var(--cyan);"></div></div>
             </div>
         </div>
 
         <div class="hero-stat-card card-green">
             <div class="stat-header">
-                <span class="stat-title">Offers & Conversion</span>
-                <span class="stat-badge badge-green">{conv_rate}% Conversion Rate</span>
+                <span class="stat-title">P1 Podium Offers</span>
+                <span class="stat-badge badge-green">{conv_rate}% CONVERSION</span>
             </div>
-            <div class="stat-number">{offers} <span style="font-size:18px; font-weight:700; color:var(--green);">Offers</span></div>
+            <div class="stat-number">{offers} <span style="font-size:18px; font-weight:800; color:var(--green);">P1 OFFERS</span></div>
             <div class="stat-footer">
                 <span class="stat-sub">{cnt_offer} Secured · {cnt_rejected} Rejected</span>
                 <div class="stat-meter"><div style="width: {conv_rate}%; background: var(--green);"></div></div>
             </div>
         </div>
 
-        <div class="hero-stat-card card-orange">
+        <div class="hero-stat-card card-yellow">
             <div class="stat-header">
                 <span class="stat-title">Discovered Market</span>
-                <span class="stat-badge badge-orange">6 Sources Scanning</span>
+                <span class="stat-badge badge-yellow">7 SOURCES ONLINE</span>
             </div>
-            <div class="stat-number">{discovered_count} <span style="font-size:18px; font-weight:700; color:var(--orange);">Schemes</span></div>
+            <div class="stat-number">{discovered_count} <span style="font-size:18px; font-weight:800; color:var(--yellow);">SCHEMES</span></div>
             <div class="stat-footer">
                 <span class="stat-sub">{intern_count} Intern · {grad_count} Grad · {placement_count} Placement</span>
-                <div class="stat-meter"><div style="width: 85%; background: var(--orange);"></div></div>
+                <div class="stat-meter"><div style="width: 88%; background: var(--yellow);"></div></div>
             </div>
         </div>
     </div>
 
-    <!-- Navigation Tabs -->
+    <!-- Telemetry Navigation Tabs -->
     <div class="tab-bar">
         <button class="tab {tab_flow}" data-tab="flow" onclick="switchTab('flow')">Pipeline Flow</button>
         <button class="tab {tab_jobs}" data-tab="jobs" id="tab-jobs-btn" onclick="switchTab('jobs')">Discovered Schemes ({discovered_count})</button>
         <button class="tab {tab_settings}" data-tab="settings" onclick="switchTab('settings')">Filter Settings</button>
-        <button class="tab {tab_status}" data-tab="diagnostics" onclick="switchTab('diagnostics')">Diagnostics & Logs</button>
+        <button class="tab {tab_status}" data-tab="diagnostics" onclick="switchTab('diagnostics')">Diagnostics & Telemetry</button>
         <button class="tab {tab_closed}" data-tab="closed" onclick="switchTab('closed')">Closed Schemes ({closed_count})</button>
     </div>
 
@@ -713,15 +690,15 @@ def render_unified_dashboard_html(active_tab="flow"):
                     <button onclick="openLogModal()" class="btn btn-filled" style="font-size:12px;">+ Log App</button>
                 </div>
 
-                <div style="margin-bottom:16px;">
-                    <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:700; color:var(--text-tertiary); margin-bottom:6px;">
-                        <span>Stage Distribution Meter</span>
+                <div style="margin-bottom:18px;">
+                    <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:800; color:var(--text-tertiary); margin-bottom:8px; text-transform:uppercase;">
+                        <span>Telemetry Stage Distribution</span>
                         <span>{cnt_applied} Applied · {cnt_assessment} OA · {cnt_interview} Int · {cnt_offer} Offer</span>
                     </div>
-                    <div style="background:rgba(0,0,0,0.06); border-radius:100px; height:8px; display:flex; overflow:hidden;">
-                        <div style="width:{pct_applied}%; background:var(--blue);" title="Applied"></div>
-                        <div style="width:{pct_assessment}%; background:var(--purple);" title="Assessment"></div>
-                        <div style="width:{pct_interview}%; background:var(--orange);" title="Interview"></div>
+                    <div style="background:rgba(255,255,255,0.08); border-radius:100px; height:8px; display:flex; overflow:hidden;">
+                        <div style="width:{pct_applied}%; background:var(--yellow);" title="Applied"></div>
+                        <div style="width:{pct_assessment}%; background:var(--cyan);" title="Assessment"></div>
+                        <div style="width:{pct_interview}%; background:var(--papaya);" title="Interview"></div>
                         <div style="width:{pct_offer}%; background:var(--green);" title="Offer"></div>
                         <div style="width:{pct_rejected}%; background:var(--red);" title="Rejected"></div>
                     </div>
@@ -746,7 +723,7 @@ def render_unified_dashboard_html(active_tab="flow"):
             </div>
         </div>
 
-        {"<div class='section-card' style='margin-top:8px;'><div class='section-title'>⚠️ Schemes Closing Soon (Urgent Action Items)</div><div class='action-items-grid'>" + action_items_html + "</div></div>" if action_items_html else ""}
+        {"<div class='section-card' style='margin-top:10px;'><div class='section-title'>⚠️ Pit Stop Urgent Action Items (Closing Soon)</div><div class='action-items-grid'>" + action_items_html + "</div></div>" if action_items_html else ""}
     </div>
 
     <!-- Panel: Discovered Schemes -->
@@ -776,7 +753,7 @@ def render_unified_dashboard_html(active_tab="flow"):
                 <button class="chip" data-prog-chip="placement" onclick="filterProgram('placement', this)">Industrial Placements (Yr 2 / 12-Mo) ({placement_count})</button>
             </div>
 
-            <div class="filter-group-label" style="margin-top:4px;">Domain Focus & Status</div>
+            <div class="filter-group-label" style="margin-top:6px;">Domain Focus & Status</div>
             <div class="filter-chips">
                 <button class="chip active" data-dom-chip="all" onclick="filterDomain('all', this)">All Focuses ({discovered_count})</button>
                 <button class="chip" data-dom-chip="not_applied" onclick="filterDomain('not_applied', this)">Not Applied ({not_applied_count})</button>
@@ -827,12 +804,12 @@ def render_unified_dashboard_html(active_tab="flow"):
                     <textarea name="smartrecruiters_companies" class="form-input" rows="2">{sr_comp}</textarea>
                 </div>
                 <div class="form-group">
-                    <label style="display:flex; align-items:center; gap:8px; font-size:13px; font-weight:600; cursor:pointer;">
-                        <input type="checkbox" name="auto_hide_applied_company_jobs" value="true" {auto_hide_chk} style="width:17px; height:17px; accent-color:var(--blue);">
+                    <label style="display:flex; align-items:center; gap:10px; font-size:14px; font-weight:700; cursor:pointer; color:#fff;">
+                        <input type="checkbox" name="auto_hide_applied_company_jobs" value="true" {auto_hide_chk} style="width:18px; height:18px; accent-color:var(--papaya);">
                         Hide other listings from applied companies
                     </label>
                 </div>
-                <button type="submit" class="btn btn-filled">Save Filter Settings</button>
+                <button type="submit" class="btn btn-filled">Save Telemetry Settings</button>
             </form>
         </div>
     </div>
@@ -841,28 +818,28 @@ def render_unified_dashboard_html(active_tab="flow"):
     <div id="view-diagnostics" class="panel" style="{view_status}">
         <div class="section-card">
             <div class="section-title">
-                <span><span class="live-dot"></span> Live Terminal Stream (docker logs -f applicationtrackr)</span>
+                <span><span class="race-status-pill"><span class="dot"></span> Live Log Stream</span> (docker logs -f applicationtrackr)</span>
                 <button onclick="clearLiveLogs()" class="btn btn-ghost btn-danger-text" style="font-size:12px;">Clear Buffer</button>
             </div>
-            <div id="live-log-container" style="background:#1c1c1e; color:#34c759; font-family:var(--font-mono); font-size:12px; line-height:1.65; height:420px; overflow-y:auto; padding:18px; border-radius:14px; border:1px solid rgba(255,255,255,0.1); white-space:pre-wrap; word-break:break-word;">
-                Streaming live container output...
+            <div id="live-log-container" style="background:#09090b; color:#00E676; font-family:var(--font-mono); font-size:12.5px; line-height:1.65; height:420px; overflow-y:auto; padding:18px; border-radius:14px; border:1px solid rgba(255,128,0,0.3); white-space:pre-wrap; word-break:break-word;">
+                Streaming live container telemetry output...
             </div>
         </div>
 
         <div class="section-card">
             <div class="section-title">
-                <span><span class="live-dot"></span> System Status & Source Health</span>
-                <span style="font-size:12px; font-weight:600; color:var(--text-tertiary);">Auto-syncing real-time</span>
+                <span>System Status & Source Health</span>
+                <span style="font-size:12px; font-weight:800; font-family:var(--font-mono); color:var(--cyan);">AUTO-SYNC LIVE</span>
             </div>
             <div class="diag-row">
                 <span class="diag-label">Last scraper run</span>
-                <span class="diag-value" id="diag-last-run" style="color:var(--text-primary); font-family:var(--font); font-weight:700;">{last_run}</span>
+                <span class="diag-value" id="diag-last-run" style="color:var(--text-primary); font-family:var(--font-mono); font-weight:700;">{last_run}</span>
             </div>
             <div class="diag-row">
                 <span class="diag-label">Indexed active schemes</span>
-                <span class="diag-value" id="diag-indexed-count" style="color:var(--blue); font-size:15px;">{discovered_count}</span>
+                <span class="diag-value" id="diag-indexed-count" style="color:var(--papaya); font-size:16px;">{discovered_count}</span>
             </div>
-            <div style="margin-top:18px; font-size:12px; font-weight:800; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Live Source Connectors</div>
+            <div style="margin-top:20px; font-size:12px; font-weight:900; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:10px;">Live Source Connectors (7 Sources)</div>
             <div id="diag-source-status">
                 {src_status_html}
             </div>
@@ -871,7 +848,7 @@ def render_unified_dashboard_html(active_tab="flow"):
         <div class="section-card">
             <div class="section-title">
                 <span id="diag-kb-title">Knowledge Base ({kb_count} rules)</span>
-                <span style="font-size:12px; font-weight:600; color:var(--text-tertiary);">AI closure patterns</span>
+                <span style="font-size:12px; font-weight:800; font-family:var(--font-mono); color:var(--text-tertiary);">AI CLOSURE RULES</span>
             </div>
             <div id="diag-kb-container" style="max-height:220px; overflow-y:auto;">
                 {kb_badges_html}
@@ -883,7 +860,7 @@ def render_unified_dashboard_html(active_tab="flow"):
     <div id="view-closed" class="panel" style="{view_closed}">
         <div class="section-card">
             <div class="section-title">Closed Schemes ({closed_count})</div>
-            <p style="font-size:13.5px; color:var(--text-tertiary); margin-bottom:18px;">
+            <p style="font-size:14px; color:var(--text-tertiary); margin-bottom:20px;">
                 Schemes marked as closed or filled. Re-open any scheme if it becomes available again.
             </p>
             <div class="grid">
@@ -897,8 +874,8 @@ def render_unified_dashboard_html(active_tab="flow"):
 <!-- Modal: Log New Application -->
 <div id="log-modal" class="modal-backdrop" style="display:none;">
     <div class="modal-card">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px;">
-            <div style="font-size:18px; font-weight:800; color:var(--text-primary);">Log Application to Google Sheets</div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+            <div style="font-size:19px; font-weight:900; color:var(--text-primary); text-transform:uppercase; letter-spacing:0.04em;">Log App to Google Sheets</div>
             <button onclick="closeLogModal()" class="btn btn-ghost">✕</button>
         </div>
         <div class="form-group">
@@ -920,7 +897,7 @@ def render_unified_dashboard_html(active_tab="flow"):
                 <option value="Rejected">Rejected</option>
             </select>
         </div>
-        <div style="display:flex; gap:10px; margin-top:24px;">
+        <div style="display:flex; gap:10px; margin-top:28px;">
             <button onclick="submitModalLog()" class="btn btn-filled" style="flex:1; justify-content:center;">Save to Google Sheets</button>
             <button onclick="closeLogModal()" class="btn btn-ghost">Cancel</button>
         </div>

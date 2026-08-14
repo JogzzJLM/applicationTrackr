@@ -12,6 +12,7 @@ from scrapers_engine.ats_scrapers import (
 from scrapers_engine.trackr_scraper import (
     parse_trackr_date, is_trackr_item_active_and_recent, scrape_trackr_website
 )
+from scrapers_engine.gradcracker_scraper import scrape_gradcracker_website
 from scrapers_engine.audit import (
     load_seen_jobs, save_seen_jobs, load_discovered_jobs,
     save_discovered_jobs, purge_expired_jobs,

@@ -15,11 +15,11 @@ def render_job_card(j, is_reported_closed=False, is_applied=False, is_hidden=Fal
 
     prog_type = j.get('program_type') or extract_program_type(title_str)
     if prog_type == "placement":
-        prog_badge = '<span class="badge badge-purple">Placement (Yr 2 / 12-Mo)</span>'
+        prog_badge = '<span class="badge badge-cyan">Placement (Yr 2 / 12-Mo)</span>'
     elif prog_type == "internship":
-        prog_badge = '<span class="badge badge-orange">Internship (Yr 2 / Summer)</span>'
+        prog_badge = '<span class="badge badge-papaya">Internship (Yr 2 / Summer)</span>'
     else:
-        prog_badge = '<span class="badge badge-blue">Graduate Scheme (Yr 3+)</span>'
+        prog_badge = '<span class="badge badge-yellow">Graduate Scheme (Yr 3+)</span>'
 
     deadline_str = j.get('deadline') or j.get('closeDate') or j.get('closing_date') or 'Rolling / ASAP'
 
@@ -29,9 +29,9 @@ def render_job_card(j, is_reported_closed=False, is_applied=False, is_hidden=Fal
     title_js = title_str.replace("'", "\\'").replace('"', '&quot;')
 
     if is_applied:
-        status_dot = '<span class="status-dot dot-blue"></span>'
+        status_dot = '<span class="status-dot dot-cyan"></span>'
         status_label = 'Applied'
-        action_btn = '<span class="btn btn-ghost" style="cursor:default;">In Sheet</span>'
+        action_btn = '<span class="btn btn-ghost" style="cursor:default; color:var(--cyan);">In Sheet</span>'
     elif is_reported_closed:
         status_dot = '<span class="status-dot dot-red"></span>'
         status_label = 'Closed'
@@ -39,7 +39,7 @@ def render_job_card(j, is_reported_closed=False, is_applied=False, is_hidden=Fal
     else:
         status_dot = '<span class="status-dot dot-green"></span>'
         status_label = 'Open'
-        action_btn = f'<button onclick="logJob(\'{comp_js}\', \'{title_js}\')" class="btn btn-tinted">Log Applied</button>'
+        action_btn = f'<button onclick="logJob(\'{comp_js}\', \'{title_js}\')" class="btn btn-tinted">+ Log App</button>'
 
     t_low = title_str.lower()
     cat = "software"
@@ -55,8 +55,8 @@ def render_job_card(j, is_reported_closed=False, is_applied=False, is_hidden=Fal
 
     source_url = j.get('source_url') or link_str
     display_url = source_url.replace("https://", "").replace("http://", "").replace("www.", "").rstrip("/")
-    if len(display_url) > 40:
-        display_url = display_url[:37] + "..."
+    if len(display_url) > 36:
+        display_url = display_url[:33] + "..."
 
     link_js = link_str.replace("'", "\\'").replace('"', '&quot;')
     report_btn_html = f'<button onclick="reportClosedJob(\'{j_id}\', \'{link_js}\')" class="btn btn-ghost btn-danger-text">Report Closed</button>' if not is_reported_closed else ''
@@ -65,12 +65,12 @@ def render_job_card(j, is_reported_closed=False, is_applied=False, is_hidden=Fal
     <div class="card" data-search="{comp_str.lower()} {title_str.lower()} {loc_str.lower()} {status_tag} {cat} {prog_type} {source_text.lower()}" data-status="{status_tag}" data-cat="{cat}" data-program="{prog_type}" data-date="{date_str}" data-deadline="{deadline_str.lower()}" data-match="{match_score}" data-company="{comp_str.lower()}" data-title="{title_str.lower()}">
         <div class="card-top">
             <div class="card-status">{status_dot} {status_label} &nbsp;·&nbsp; {prog_badge}</div>
-            <div class="card-match">{match_score}% Match</div>
+            <div class="card-match">{match_score}% MATCH</div>
         </div>
         <div class="card-company">{comp_str}</div>
         <div class="card-role">{title_str}</div>
-        <div class="card-meta">{loc_str}  ·  Discovered: {date_str}  ·  <span style="color:var(--orange); font-weight:600;">Deadline: {deadline_str}</span></div>
-        <div class="card-source"><a href="{source_url}" target="_blank" rel="noopener" class="link-muted">{display_url}</a> · {source_text}</div>
+        <div class="card-meta">{loc_str}  ·  Discovered: {date_str}  ·  <span style="color:var(--papaya); font-weight:700;">Deadline: {deadline_str}</span></div>
+        <div class="card-source"><a href="{source_url}" target="_blank" rel="noopener" class="link-muted">{display_url}</a> · <span style="color:var(--cyan);">{source_text}</span></div>
         <div class="card-actions">
             <a href="{link_str}" target="_blank" rel="noopener noreferrer" class="btn btn-filled">Apply ↗</a>
             {action_btn}

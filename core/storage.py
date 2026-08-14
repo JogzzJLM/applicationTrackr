@@ -53,6 +53,7 @@ DEFAULT_SCRAPER_STATUS = {
         "Ashby API": "🟢 Active • 8/8 target companies online",
         "SmartRecruiters API": "🟢 Active • 5/5 target companies online",
         "The Trackr API": "🟢 Active • Tier-1 Direct Egress",
+        "Gradcracker API": "🟢 Active • 4 STEM Sectors Online",
         "Gmail Inbox Listener": "🟢 Active • Email auto-tracker active"
     }
 }

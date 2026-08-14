@@ -17,6 +17,7 @@ from scrapers_engine.ats_scrapers import (
     scrape_smartrecruiters_jobs, _JOB_LOCK
 )
 from scrapers_engine.trackr_scraper import scrape_trackr_website
+from scrapers_engine.gradcracker_scraper import scrape_gradcracker_website
 
 def load_seen_jobs():
     data = load_json_safe(SEEN_JOBS_FILE, [])
@@ -149,18 +150,20 @@ def run_all_scrapers():
     discovered_list = load_discovered_jobs()
     all_new_jobs = []
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
         f_gh = executor.submit(scrape_greenhouse_jobs, seen_jobs, discovered_list, SCRAPER_STATUS)
         f_lever = executor.submit(scrape_lever_jobs, seen_jobs, discovered_list, SCRAPER_STATUS)
         f_ashby = executor.submit(scrape_ashby_jobs, seen_jobs, discovered_list, SCRAPER_STATUS)
         f_sr = executor.submit(scrape_smartrecruiters_jobs, seen_jobs, discovered_list, SCRAPER_STATUS)
         f_trackr = executor.submit(scrape_trackr_website, seen_jobs, discovered_list, False, add_scraper_log, SCRAPER_STATUS)
+        f_gc = executor.submit(scrape_gradcracker_website, seen_jobs, discovered_list, False, add_scraper_log, SCRAPER_STATUS)
 
         all_new_jobs.extend(f_gh.result())
         all_new_jobs.extend(f_lever.result())
         all_new_jobs.extend(f_ashby.result())
         all_new_jobs.extend(f_sr.result())
         all_new_jobs.extend(f_trackr.result())
+        all_new_jobs.extend(f_gc.result())
 
     save_seen_jobs(seen_jobs)
     save_discovered_jobs(discovered_list)

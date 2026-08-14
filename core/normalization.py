@@ -104,6 +104,33 @@ def normalize_role(title):
     words = [w for w in cleaned.split() if w not in stop_words]
     return " ".join(words)
 
+def stem_word(w):
+    w = str(w).lower()
+    for suffix in ["ing", "ships", "ship", "s", "ed"]:
+        if w.endswith(suffix) and len(w) > len(suffix) + 3:
+            return w[:-len(suffix)]
+    return w
+
+def fuzzy_roles_match(title1, title2, threshold=0.70):
+    """
+    Computes a token-set similarity ratio between two role titles after word stemming.
+    Returns True if titles represent the same underlying scheme.
+    """
+    if not title1 or not title2:
+        return False
+    norm1 = normalize_role(title1)
+    norm2 = normalize_role(title2)
+    if norm1 == norm2:
+        return True
+    words1 = set(stem_word(w) for w in norm1.split())
+    words2 = set(stem_word(w) for w in norm2.split())
+    if not words1 or not words2:
+        return False
+    intersection = words1 & words2
+    union = words1 | words2
+    jaccard = len(intersection) / len(union) if union else 0.0
+    return jaccard >= threshold
+
 def extract_program_type(title):
     """
     Extracts the academic year programme target:
