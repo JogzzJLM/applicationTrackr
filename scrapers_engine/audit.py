@@ -16,6 +16,7 @@ from scrapers_engine.ats_scrapers import (
     scrape_greenhouse_jobs, scrape_lever_jobs, scrape_ashby_jobs,
     scrape_smartrecruiters_jobs, _JOB_LOCK
 )
+from core.normalization import deduplicate_job_list
 from scrapers_engine.trackr_scraper import scrape_trackr_website
 from scrapers_engine.gradcracker_scraper import scrape_gradcracker_website
 
@@ -30,7 +31,8 @@ def load_discovered_jobs():
     return load_json_safe(DISCOVERED_JOBS_FILE, [])
 
 def save_discovered_jobs(discovered_jobs):
-    atomic_write_json(DISCOVERED_JOBS_FILE, discovered_jobs[:1000])
+    clean_jobs = deduplicate_job_list(discovered_jobs)
+    atomic_write_json(DISCOVERED_JOBS_FILE, clean_jobs[:1000])
 
 def purge_expired_jobs():
     print("""

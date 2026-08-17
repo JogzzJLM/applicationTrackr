@@ -175,3 +175,77 @@ def extract_ats_post_id(url):
     if ash_match:
         return f"ash_{ash_match.group(1)}"
     return None
+
+def deduplicate_job_list(job_list):
+    """
+    Multi-Layered Smart Job Deduplication:
+    1. ATS Post ID Match (e.g. gh_5162206007 == gh_5162206007)
+    2. Normalized URL Match (e.g. job-boards.greenhouse.io/verkada/jobs/5162206007)
+    3. Company Name + Fuzzy Role Title Match (e.g. Verkada + Technical Support Engineer Industrial Placement)
+    Collapses duplicates into single master cards with merged sources list.
+    """
+    if not job_list:
+        return []
+
+    deduped = []
+    for item in job_list:
+        if not item or not isinstance(item, dict):
+            continue
+
+        comp = item.get("company", "")
+        title = item.get("title", "")
+        link = item.get("link", "")
+
+        norm_c = normalize_company(comp)
+        norm_t = normalize_role(title)
+        norm_u = normalize_url(link)
+        ats_id = extract_ats_post_id(link)
+
+        matched = False
+        for existing in deduped:
+            e_link = existing.get("link", "")
+            e_comp = existing.get("company", "")
+            e_title = existing.get("title", "")
+
+            e_norm_c = normalize_company(e_comp)
+            e_norm_t = normalize_role(e_title)
+            e_norm_u = normalize_url(e_link)
+            e_ats_id = extract_ats_post_id(e_link)
+
+            is_match = False
+            if ats_id and e_ats_id and ats_id == e_ats_id:
+                is_match = True
+            elif norm_u and e_norm_u and norm_u == e_norm_u:
+                is_match = True
+            elif norm_c and e_norm_c == norm_c and (norm_t == e_norm_t or fuzzy_roles_match(title, e_title)):
+                is_match = True
+
+            if is_match:
+                matched = True
+                if "sources" not in existing:
+                    existing["sources"] = [existing.get("source", "Discovered API")]
+                src = item.get("source", "Discovered API")
+                if isinstance(item.get("sources"), list):
+                    for s in item.get("sources"):
+                        if s not in existing["sources"]:
+                            existing["sources"].append(s)
+                elif src not in existing["sources"]:
+                    existing["sources"].append(src)
+
+                if any(ats in link.lower() for ats in ["greenhouse", "lever", "ashby", "smartrecruiters", "gradcracker"]):
+                    existing["link"] = link
+                    existing["source_url"] = item.get("source_url") or link
+                    if comp and len(comp) > 2:
+                        existing["company"] = clean_company_display_name(comp)
+                    if title and len(title) > len(existing.get("title", "")):
+                        existing["title"] = title
+                break
+
+        if not matched:
+            item_copy = dict(item)
+            item_copy["company"] = clean_company_display_name(comp)
+            if "sources" not in item_copy:
+                item_copy["sources"] = [item_copy.get("source", "Discovered API")]
+            deduped.append(item_copy)
+
+    return deduped
