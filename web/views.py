@@ -112,12 +112,14 @@ def render_unified_dashboard_html(active_tab="flow"):
                 badge_cls = "badge-yellow"
 
             comp_clean = clean_company_display_name(a['company'])
+            role_clean = a['role']
             comp_js = comp_clean.replace("'", "\\'").replace('"', '&quot;')
+            role_js = role_clean.replace("'", "\\'").replace('"', '&quot;')
 
             action_html = f"""
             <div style="display:flex; gap:4px;">
-                <button onclick="quickUpdateStage('{comp_js}', 'Interview')" class="btn btn-tinted" style="font-size:11px; padding:3px 8px;" title="Promote to Interview">+ Interview</button>
-                <button onclick="quickUpdateStage('{comp_js}', 'Rejected')" class="btn btn-ghost btn-danger-text" style="font-size:11px; padding:3px 8px;" title="Mark Rejected">Reject</button>
+                <button onclick="quickUpdateStage('{comp_js}', '{role_js}', 'Interview')" class="btn btn-tinted" style="font-size:11px; padding:3px 8px;" title="Promote to Interview">+ Interview</button>
+                <button onclick="quickUpdateStage('{comp_js}', '{role_js}', 'Rejected')" class="btn btn-ghost btn-danger-text" style="font-size:11px; padding:3px 8px;" title="Mark Rejected">Reject</button>
             </div>
             """
 
@@ -918,8 +920,8 @@ def render_unified_dashboard_html(active_tab="flow"):
         logJobWithStage(comp, title, stage);
     }}
 
-    function quickUpdateStage(comp, stage) {{
-        logJobWithStage(comp, 'Software/Quant Role', stage);
+    function quickUpdateStage(comp, role, stage) {{
+        logJobWithStage(comp, role, stage);
     }}
 
     function logJobWithStage(comp, title, stage) {{

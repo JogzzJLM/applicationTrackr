@@ -28,6 +28,33 @@ def fetch_google_sheet_csv(force_refresh=False):
 
     return _SHEET_CSV_CACHE.get("content", "")
 
+def find_existing_application_info(company):
+    """
+    Searches logged applications in Google Sheets and discovered jobs to resolve
+    the exact existing role title and application link for `company`.
+    """
+    norm_c = normalize_company(company)
+    if not norm_c:
+        return None, None
+
+    apps = get_detailed_applications()
+    for app in apps:
+        if normalize_company(app.get("company")) == norm_c:
+            r = app.get("role", "")
+            if r and r.lower() != "software/quant role":
+                return app.get("company"), r
+
+    try:
+        from scrapers_engine.audit import load_discovered_jobs
+        discovered = load_discovered_jobs()
+        for j in discovered:
+            if normalize_company(j.get("company")) == norm_c:
+                return j.get("company"), j.get("title")
+    except Exception:
+        pass
+
+    return None, None
+
 def resolve_smart_stage(company, stage):
     """
     Inspects existing stages logged for `company` in Google Sheets and returns an intelligent
@@ -75,15 +102,24 @@ def resolve_smart_stage(company, stage):
 
     return stage
 
-def update_google_sheet_via_webhook(company, stage, role="Software/Quant Role", link="", resolve_sequential=True):
+def update_google_sheet_via_webhook(company, stage, role=None, link="", resolve_sequential=True):
     if not GOOGLE_SHEET_WEBHOOK_URL or "YOUR_WEBHOOK_ID" in GOOGLE_SHEET_WEBHOOK_URL:
-        return
+        return False
+
+    if not role or role.strip().lower() in ["software/quant role", "role", ""]:
+        ex_company, ex_role = find_existing_application_info(company)
+        if ex_role:
+            role = ex_role
+            if ex_company:
+                company = ex_company
+        else:
+            role = "Software/Quant Role"
 
     if resolve_sequential:
         final_stage = resolve_smart_stage(company, stage)
         if final_stage is None:
             print(f"📊 Sheet Notice: Stage '{stage}' for {company} already recorded. Skipping duplicate.")
-            return
+            return False
     else:
         final_stage = stage
 
@@ -91,7 +127,7 @@ def update_google_sheet_via_webhook(company, stage, role="Software/Quant Role", 
     try:
         resp = requests.post(GOOGLE_SHEET_WEBHOOK_URL, json=payload, timeout=6)
         if resp.status_code in [200, 201]:
-            print(f"✅ Logged to Google Sheet: {company} -> {final_stage}")
+            print(f"✅ Logged to Google Sheet: {company} ({role}) -> {final_stage}")
             fetch_google_sheet_csv(force_refresh=True)
             return True
         else:
@@ -127,39 +163,73 @@ def get_applied_companies_set(csv_text=None):
     _, applied_companies = get_applied_jobs_set(csv_text=csv_text)
     return applied_companies
 
+def merge_duplicate_app_rows(apps):
+    """
+    Merges multiple rows for the same company if one of them is a generic fallback row
+    (e.g., 'Software/Quant Role') created when a rejection/stage update email was received.
+    """
+    if not apps:
+        return []
+
+    merged_map = {}
+    for app in apps:
+        c_norm = normalize_company(app.get("company", ""))
+        if not c_norm:
+            continue
+
+        if c_norm in merged_map:
+            existing = merged_map[c_norm]
+            if app.get("role") and app.get("role").strip().lower() != "software/quant role":
+                existing["role"] = app.get("role")
+                if app.get("company") and len(app.get("company")) > 2:
+                    existing["company"] = app.get("company")
+
+            for st in app.get("stages", []):
+                if st not in existing["stages"]:
+                    existing["stages"].append(st)
+
+            latest_stage = existing["stages"][-1] if existing["stages"] else "Applied"
+            latest_lower = latest_stage.lower()
+            if "offer" in latest_lower:
+                status = "Offer 🎉"
+                status_type = "offer"
+            elif "reject" in latest_lower or "fail" in latest_lower:
+                status = "Rejected"
+                status_type = "rejected"
+            elif "ghost" in latest_lower:
+                status = "Ghosted"
+                status_type = "ghosted"
+            else:
+                status = "Active"
+                status_type = "active"
+
+            existing["latest_stage"] = latest_stage
+            existing["status"] = status
+            existing["status_type"] = status_type
+
+        else:
+            merged_map[c_norm] = dict(app)
+            merged_map[c_norm]["stages"] = list(app.get("stages", []))
+
+    return list(merged_map.values())
+
 def parse_sheet_stats(csv_text=None):
-    if csv_text is None:
-        csv_text = fetch_google_sheet_csv()
-    if not csv_text:
-        return {"total": 0, "active": 0, "offers": 0, "rejections": 0}
+    apps = get_detailed_applications(csv_text=csv_text)
+    total = len(apps)
+    active = 0
+    offers = 0
+    rejections = 0
 
-    try:
-        reader = csv.DictReader(io.StringIO(csv_text))
-        total = 0
-        active = 0
-        offers = 0
-        rejections = 0
+    for a in apps:
+        st = a.get("status_type", "active")
+        if st == "offer":
+            offers += 1
+        elif st == "rejected":
+            rejections += 1
+        else:
+            active += 1
 
-        for row in reader:
-            stages = []
-            for k, v in row.items():
-                if v and v.strip() and k.strip().lower() not in ["company", "role", "link", "date"]:
-                    stages.append(v.strip())
-
-            if stages:
-                total += 1
-                latest = stages[-1].lower()
-                if "offer" in latest:
-                    offers += 1
-                elif "reject" in latest or "fail" in latest or "ghost" in latest:
-                    rejections += 1
-                else:
-                    active += 1
-
-        return {"total": total, "active": active, "offers": offers, "rejections": rejections}
-    except Exception as e:
-        print(f"Error parsing stats for report: {e}")
-        return {"total": 0, "active": 0, "offers": 0, "rejections": 0}
+    return {"total": total, "active": active, "offers": offers, "rejections": rejections}
 
 def get_detailed_applications(csv_text=None):
     """Fetches Google Sheet CSV and returns a list of detailed application dicts."""
@@ -204,7 +274,8 @@ def get_detailed_applications(csv_text=None):
                 })
         except Exception as e:
             print(f"Error reading detailed applications: {e}")
-    return apps
+
+    return merge_duplicate_app_rows(apps)
 
 def generate_default_sankey():
     """Renders a clean zero-data state when Google Sheet has 0 applications."""
