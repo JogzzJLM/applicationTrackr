@@ -2,7 +2,8 @@ import urllib.parse
 from config import SCRAPER_STATUS, HP_STREAM_TAILSCALE_IP
 from core.storage import (
     load_settings, load_hidden_jobs,
-    load_reported_closed_jobs, load_json_safe
+    load_reported_closed_jobs, load_json_safe,
+    load_pending_email_updates
 )
 from core.kb import load_closed_keywords_kb
 from core.normalization import (
@@ -25,6 +26,71 @@ def render_unified_dashboard_html(active_tab="flow"):
     applied_jobs, applied_companies = get_applied_jobs_set(csv_text=csv_text)
     settings = load_settings()
     hidden_jobs = load_hidden_jobs()
+
+    pending_updates = load_pending_email_updates()
+    pending_updates_banner_html = ""
+    if pending_updates:
+        items_html = ""
+        for u in pending_updates:
+            u_id = u.get("id", "")
+            comp = u.get("company", "Company")
+            stage = u.get("stage", "Update")
+            subj = u.get("subject", "")
+            date_rec = u.get("date_received", "")
+            options = u.get("options", [])
+
+            opt_btns = ""
+            if options:
+                for opt in options:
+                    opt_role = opt.get("role", "Software/Quant Role")
+                    opt_comp = opt.get("company", comp)
+                    opt_role_js = opt_role.replace("'", "\\'").replace('"', '&quot;')
+                    opt_comp_js = opt_comp.replace("'", "\\'").replace('"', '&quot;')
+                    opt_btns += f"""
+                    <button onclick="resolvePendingUpdate('{u_id}', '{opt_comp_js}', '{opt_role_js}', '{stage}')" class="btn btn-filled" style="font-size:12px; margin-right:6px; margin-top:6px;">
+                        Assign to: {opt_role}
+                    </button>
+                    """
+            else:
+                opt_btns += f"""
+                <button onclick="openLogModalForPending('{u_id}', '{comp.replace("'", "\\'")}', '{stage}')" class="btn btn-filled" style="font-size:12px; margin-right:6px; margin-top:6px;">
+                    + Assign to New Role
+                </button>
+                """
+
+            opt_btns += f"""
+            <button onclick="dismissPendingUpdate('{u_id}')" class="btn btn-ghost" style="font-size:12px; margin-top:6px;">
+                Dismiss
+            </button>
+            """
+
+            items_html += f"""
+            <div style="background:#fff; border:1px solid rgba(255,128,0,0.4); border-radius:12px; padding:16px; margin-top:12px;">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                    <div>
+                        <span class="badge badge-papaya">ACTION REQUIRED</span>
+                        <strong style="font-size:15px; margin-left:8px; color:var(--text-primary);">{comp}</strong>
+                        <span style="color:var(--red); font-weight:800; margin-left:6px;">[{stage}]</span>
+                    </div>
+                    <span style="font-size:12px; color:var(--text-tertiary);">{date_rec}</span>
+                </div>
+                <div style="font-size:13px; color:var(--text-secondary); margin-top:6px;">Email Subject: <em>"{subj}"</em></div>
+                <div style="font-size:12.5px; font-weight:700; color:var(--text-primary); margin-top:10px;">Which logged application does this status update belong to?</div>
+                <div style="margin-top:4px;">{opt_btns}</div>
+            </div>
+            """
+
+        pending_updates_banner_html = f"""
+        <div class="section-card" style="border:2px solid var(--papaya); background:rgba(255,128,0,0.04);">
+            <div class="section-title" style="color:var(--papaya);">
+                <span>⚠️ Action Required: Email Updates Received ({len(pending_updates)})</span>
+            </div>
+            <p style="font-size:13.5px; color:var(--text-secondary);">
+                Incoming status emails were received for companies with multiple roles (or unlogged roles). Select which role to update on Google Sheets:
+            </p>
+            {items_html}
+        </div>
+        """
 
     total = stats.get("total", 0)
     active = stats.get("active", 0)
@@ -112,14 +178,13 @@ def render_unified_dashboard_html(active_tab="flow"):
                 badge_cls = "badge-yellow"
 
             comp_clean = clean_company_display_name(a['company'])
-            role_clean = a['role']
             comp_js = comp_clean.replace("'", "\\'").replace('"', '&quot;')
-            role_js = role_clean.replace("'", "\\'").replace('"', '&quot;')
+            role_js = a['role'].replace("'", "\\'").replace('"', '&quot;')
 
             action_html = f"""
             <div style="display:flex; gap:4px;">
-                <button onclick="quickUpdateStage('{comp_js}', '{role_js}', 'Interview')" class="btn btn-tinted" style="font-size:11px; padding:3px 8px;" title="Promote to Interview">+ Interview</button>
-                <button onclick="quickUpdateStage('{comp_js}', '{role_js}', 'Rejected')" class="btn btn-ghost btn-danger-text" style="font-size:11px; padding:3px 8px;" title="Mark Rejected">Reject</button>
+                <button onclick="quickUpdateStage('{comp_js}', 'Interview', '{role_js}')" class="btn btn-tinted" style="font-size:11px; padding:3px 8px;" title="Promote to Interview">+ Interview</button>
+                <button onclick="quickUpdateStage('{comp_js}', 'Rejected', '{role_js}')" class="btn btn-ghost btn-danger-text" style="font-size:11px; padding:3px 8px;" title="Mark Rejected">Reject</button>
             </div>
             """
 
@@ -651,6 +716,8 @@ def render_unified_dashboard_html(active_tab="flow"):
 
     <!-- Panel: Pipeline & Sankey (Side-by-Side Split View) -->
     <div id="view-flow" class="panel" style="{view_flow}">
+        {pending_updates_banner_html}
+
         <div class="pipeline-grid">
             <div class="section-card">
                 <div class="section-title">
@@ -890,6 +957,13 @@ def render_unified_dashboard_html(active_tab="flow"):
         document.getElementById('modal-company').focus();
     }}
 
+    function openLogModalForPending(pendingId, comp, stage) {{
+        document.getElementById('log-modal').style.display = 'flex';
+        document.getElementById('modal-company').value = comp;
+        document.getElementById('modal-stage').value = stage || 'Applied';
+        document.getElementById('modal-role').focus();
+    }}
+
     function closeLogModal() {{
         document.getElementById('log-modal').style.display = 'none';
     }}
@@ -920,8 +994,23 @@ def render_unified_dashboard_html(active_tab="flow"):
         logJobWithStage(comp, title, stage);
     }}
 
-    function quickUpdateStage(comp, role, stage) {{
-        logJobWithStage(comp, role, stage);
+    function quickUpdateStage(comp, stage, role) {{
+        logJobWithStage(comp, role || 'Software/Quant Role', stage);
+    }}
+
+    function resolvePendingUpdate(id, comp, role, stage) {{
+        fetch('/api/resolve-pending-update?id=' + encodeURIComponent(id) + '&company=' + encodeURIComponent(comp) + '&role=' + encodeURIComponent(role) + '&stage=' + encodeURIComponent(stage))
+            .then(r => r.json())
+            .then(() => {{
+                reloadSankeyIframe();
+                location.reload();
+            }});
+    }}
+
+    function dismissPendingUpdate(id) {{
+        fetch('/api/dismiss-pending-update?id=' + encodeURIComponent(id))
+            .then(r => r.json())
+            .then(() => location.reload());
     }}
 
     function logJobWithStage(comp, title, stage) {{

@@ -16,6 +16,7 @@ REPORTED_CLOSED_FILE = "reported_closed_jobs.json"
 CLOSED_URLS_CACHE_FILE = "closed_urls_cache.json"
 HIDDEN_JOBS_FILE = "hidden_jobs.json"
 SCRAPER_STATUS_FILE = "scraper_status.json"
+PENDING_EMAILS_FILE = "pending_email_updates.json"
 
 DEFAULT_SETTINGS = {
     "grad_years_allowed": ["2027", "2028", "2029"],
@@ -116,6 +117,23 @@ def hide_job(job_id):
     hidden.add(job_id)
     save_hidden_jobs(hidden)
 
+def load_pending_email_updates():
+    return load_json_safe(PENDING_EMAILS_FILE, [])
+
+def save_pending_email_updates(updates):
+    atomic_write_json(PENDING_EMAILS_FILE, updates)
+
+def add_pending_email_update(update_obj):
+    updates = load_pending_email_updates()
+    updates.append(update_obj)
+    save_pending_email_updates(updates)
+
+def remove_pending_email_update(update_id):
+    updates = load_pending_email_updates()
+    filtered = [u for u in updates if u.get("id") != update_id]
+    save_pending_email_updates(filtered)
+    return len(updates) - len(filtered)
+
 def load_settings():
     loaded = load_json_safe(SETTINGS_FILE, None)
     if loaded and isinstance(loaded, dict):
@@ -128,6 +146,9 @@ def save_settings(data):
     atomic_write_json(SETTINGS_FILE, data)
     print("💾 Saved updated filter settings to settings.json")
 
+def save_scraper_status(status_dict):
+    atomic_write_json(SCRAPER_STATUS_FILE, status_dict)
+
 def load_scraper_status():
     loaded = load_json_safe(SCRAPER_STATUS_FILE, None)
     if loaded and isinstance(loaded, dict):
@@ -138,6 +159,3 @@ def load_scraper_status():
             merged["source_status"].update(loaded["source_status"])
         return merged
     return dict(DEFAULT_SCRAPER_STATUS)
-
-def save_scraper_status(status_data):
-    atomic_write_json(SCRAPER_STATUS_FILE, status_data)

@@ -9,7 +9,8 @@ from datetime import datetime, timedelta
 from urllib.parse import quote
 from config import GMAIL_USER, GMAIL_APP_PASS, SEEN_EMAILS_FILE, HP_STREAM_TAILSCALE_IP, update_source_status
 from notifications import send_notification
-from sheets import update_google_sheet_via_webhook
+from sheets import update_google_sheet_via_webhook, get_detailed_applications, normalize_company
+from core.storage import add_pending_email_update
 
 
 GENERIC_DOMAINS = {
@@ -104,6 +105,89 @@ def classify_email_stage(text):
 
     return None
 
+def handle_incoming_email_update(company_name, detected_stage, subject="", from_sender="", body_text=""):
+    """
+    Intelligently maps incoming email status updates (Rejected, Interview, OA, Offer) to existing applications in Google Sheets.
+    - If 1 application exists for company_name: updates that exact application's role on Google Sheets.
+    - If >1 application exists for company_name: saves a pending update so the user can select which role it belongs to.
+    - If 0 applications exist: logs a new entry or creates a pending update.
+    """
+    apps = get_detailed_applications(force_refresh=True)
+    norm_c = normalize_company(company_name)
+
+    matching_apps = [a for a in apps if normalize_company(a.get("company", "")) == norm_c]
+
+    if len(matching_apps) == 1:
+        exact_role = matching_apps[0].get("role", "Software/Quant Role")
+        exact_company = matching_apps[0].get("company", company_name)
+        update_google_sheet_via_webhook(exact_company, detected_stage, role=exact_role, resolve_sequential=True)
+        send_notification(
+            title=f"Update Logged: {exact_company} ({detected_stage})",
+            message=f"Automatically updated status to {detected_stage} for exact role: '{exact_role}'.",
+            tags="check-mark",
+            priority=3,
+            sound="chime"
+        )
+        print(f"  ├── ✅ MATCHED 1-EXACT APPLICATION: {exact_company} -> {exact_role} ({detected_stage})")
+        return True
+
+    elif len(matching_apps) > 1:
+        update_id = f"pending_{int(time.time()*1000)}"
+        pending_obj = {
+            "id": update_id,
+            "company": company_name,
+            "stage": detected_stage,
+            "subject": subject[:80] if subject else f"{company_name} Email Update",
+            "date_received": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "options": [
+                {"company": a.get("company", company_name), "role": a.get("role")}
+                for a in matching_apps
+            ]
+        }
+        add_pending_email_update(pending_obj)
+        send_notification(
+            title=f"⚠️ Action Required: {company_name} ({detected_stage})",
+            message=f"Email update received from {company_name}. You have {len(matching_apps)} active applications for {company_name}. Click to select which role this update belongs to.",
+            tags="warning,bell",
+            priority=5,
+            sound="fanfare"
+        )
+        print(f"  ├── ⚠️ AMBIGUOUS UPDATE ({len(matching_apps)} apps found for {company_name}). Saved to Pending Actions.")
+        return False
+
+    else:
+        if detected_stage in ["Applied", "Offer"]:
+            update_google_sheet_via_webhook(company_name, detected_stage, role="Software/Quant Role", resolve_sequential=True)
+            send_notification(
+                title=f"New Application Logged: {company_name}",
+                message=f"Logged new application for {company_name} ({detected_stage}).",
+                tags="check-mark",
+                priority=2,
+                sound="subtle"
+            )
+            print(f"  ├── ✅ LOGGED NEW APPLICATION: {company_name} ({detected_stage})")
+            return True
+        else:
+            update_id = f"pending_{int(time.time()*1000)}"
+            pending_obj = {
+                "id": update_id,
+                "company": company_name,
+                "stage": detected_stage,
+                "subject": subject[:80] if subject else f"{company_name} Email Update",
+                "date_received": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "options": []
+            }
+            add_pending_email_update(pending_obj)
+            send_notification(
+                title=f"Notice: {company_name} ({detected_stage})",
+                message=f"Email update ({detected_stage}) received from {company_name}, but no active application was logged. Click to resolve on dashboard.",
+                tags="information_source",
+                priority=3,
+                sound="subtle"
+            )
+            print(f"  ├── ℹ️ Email update for unlogged company {company_name}. Saved to Pending Items.")
+            return False
+
 def check_email_inbox():
     if not GMAIL_USER or not GMAIL_APP_PASS:
         update_source_status("Gmail Inbox Listener", "⚪ Offline (No Credentials Set)")
@@ -189,60 +273,14 @@ def check_email_inbox():
                     company_name = extract_company_name(subject, from_sender, body_text)
                     detected_stage = classify_email_stage(combined_text)
 
-                    if detected_stage == "Offer":
-                        update_google_sheet_via_webhook(company_name, "Offer")
-                        send_notification(
-                            title=f"🎉 JOB OFFER: {company_name}!",
-                            message=f"Congratulations! Offer email received from {company_name}.",
-                            tags="tada,trophy",
-                            priority=5,
-                            sound="fanfare"
+                    if detected_stage:
+                        handle_incoming_email_update(
+                            company_name=company_name,
+                            detected_stage=detected_stage,
+                            subject=subject,
+                            from_sender=from_sender,
+                            body_text=body_text
                         )
-                        print(f"  ├── 🥳 OFFER DETECTED for {company_name}!")
-
-                    elif detected_stage == "Interview":
-                        update_google_sheet_via_webhook(company_name, "Interview")
-                        send_notification(
-                            title=f"Interview Invite: {company_name}",
-                            message=f"Next round/interview email received from {company_name}.",
-                            tags="calendar,fire",
-                            priority=5,
-                            sound="fanfare"
-                        )
-                        print(f"  ├── 🗓 INTERVIEW INVITE DETECTED for {company_name}!")
-
-                    elif detected_stage == "Online Assessment":
-                        update_google_sheet_via_webhook(company_name, "Online Assessment")
-                        send_notification(
-                            title=f"Assessment Invite: {company_name}",
-                            message=f"Coding test / online assessment email received from {company_name}.",
-                            tags="computer,fire",
-                            priority=5,
-                            sound="fanfare"
-                        )
-                        print(f"  ├── 💻 ASSESSMENT INVITE DETECTED for {company_name}!")
-
-                    elif detected_stage == "Rejected":
-                        update_google_sheet_via_webhook(company_name, "Rejected")
-                        send_notification(
-                            title=f"Update: {company_name}",
-                            message=f"Application status updated to Rejected for {company_name}.",
-                            tags="x",
-                            priority=2,
-                            sound="minion"
-                        )
-                        print(f"  ├── ❌ REJECTION DETECTED for {company_name}.")
-
-                    elif detected_stage == "Applied":
-                        update_google_sheet_via_webhook(company_name, "Applied")
-                        send_notification(
-                            title=f"Application Confirmed: {company_name}",
-                            message=f"Logged 'Applied' status for {company_name} in Google Sheets.",
-                            tags="check-mark",
-                            priority=2,
-                            sound="subtle"
-                        )
-                        print(f"  ├── ✅ APPLICATION CONFIRMED for {company_name}.")
 
         mail.logout()
         save_seen_emails(seen_emails)
@@ -250,5 +288,10 @@ def check_email_inbox():
         print(f"  └── ✅ Gmail check complete ({processed_new} new messages evaluated).")
 
     except Exception as e:
-        update_source_status("Gmail Inbox Listener", f"⚠️ Notice ({e})")
-        print(f"  └── ⚠️ Email Listener Error: {e}")
+        update_source_status("Gmail Inbox Listener", f"⚠️ Check Notice ({e})")
+        print(f"  └── ⚠️ Email Listener Notice: Error reading inbox messages ({e})")
+        if mail:
+            try:
+                mail.logout()
+            except Exception:
+                pass

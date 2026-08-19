@@ -151,6 +151,41 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({"status": "ok", "company": comp, "stage": stage}).encode("utf-8"))
 
+        elif path == "/api/resolve-pending-update":
+            from core.storage import remove_pending_email_update
+            u_id = qs.get("id", [""])[0]
+            comp = qs.get("company", [""])[0]
+            title = qs.get("role", ["Software/Quant Role"])[0]
+            stage = qs.get("stage", ["Rejected"])[0]
+
+            if comp and title:
+                update_google_sheet_via_webhook(comp, stage, role=title, resolve_sequential=True)
+                add_scraper_log(f"✅ User resolved email update: {comp} ({title}) -> {stage}")
+                if u_id:
+                    remove_pending_email_update(u_id)
+                try:
+                    generate_sankey_from_google_sheets(force_refresh=True)
+                except Exception:
+                    pass
+
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_cors_headers()
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "ok"}).encode("utf-8"))
+
+        elif path == "/api/dismiss-pending-update":
+            from core.storage import remove_pending_email_update
+            u_id = qs.get("id", [""])[0]
+            if u_id:
+                remove_pending_email_update(u_id)
+                add_scraper_log(f"🙈 User dismissed pending email update ID: {u_id}")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_cors_headers()
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "ok"}).encode("utf-8"))
+
         elif path == "/api/rescan":
             add_scraper_log("⚡ Triggered Scraper Rescan from Dashboard UI")
             threading.Thread(target=run_all_scrapers, daemon=True).start()
