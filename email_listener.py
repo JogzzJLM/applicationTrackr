@@ -248,7 +248,7 @@ def check_email_inbox():
             seen_emails.add(str_id)
             processed_new += 1
 
-            status, msg_data = mail.fetch(e_id, "(RFC822)")
+            status, msg_data = mail.fetch(e_id, "(BODY.PEEK[])")
             for response_part in msg_data:
                 if isinstance(response_part, tuple):
                     msg = email.message_from_bytes(response_part[1])
