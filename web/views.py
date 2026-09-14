@@ -52,8 +52,10 @@ def render_unified_dashboard_html(active_tab="flow"):
                     </button>
                     """
             else:
+                comp_js = comp.replace("'", "\\'").replace('"', '&quot;')
+
                 opt_btns += f"""
-                <button onclick="openLogModalForPending('{u_id}', '{comp.replace("'", "\\'")}', '{stage}')" class="btn btn-filled" style="font-size:12px; margin-right:6px; margin-top:6px;">
+                <button onclick="openLogModalForPending('{u_id}', '{comp_js}', '{stage}')" class="btn btn-filled" style="font-size:12px; margin-right:6px; margin-top:6px;">
                     + Assign to New Role
                 </button>
                 """
