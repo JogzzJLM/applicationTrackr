@@ -1,20 +1,27 @@
-version: '3.8'
-
 services:
   applicationtrackr:
     build: .
     container_name: applicationtrackr
-    restart: always
+    restart: unless-stopped
     ports:
-      - "${PORT:-5000}:5000"
+      - "${PORT:-5000}:${PORT:-5000}"
     environment:
-      - PYTHONUNBUFFERED=1
-      - GMAIL_USER=${GMAIL_USER}
-      - GMAIL_APP_PASS=${GMAIL_APP_PASS}
-      - GOOGLE_SHEET_WEBHOOK_URL=${GOOGLE_SHEET_WEBHOOK_URL}
-      - HEALTHCHECKS_PING_URL=${HEALTHCHECKS_PING_URL}
+      PYTHONUNBUFFERED: "1"
+      APP_BASE_URL: "${APP_BASE_URL}"
+      APP_TIMEZONE: "${APP_TIMEZONE:-Europe/London}"
+      PORT: "${PORT:-5000}"
+      DATA_DIR: "/data"
+      SCRAPER_INTERVAL_SECONDS: "${SCRAPER_INTERVAL_SECONDS:-300}"
+      GMAIL_USER: "${GMAIL_USER}"
+      GMAIL_APP_PASS: "${GMAIL_APP_PASS}"
+      GOOGLE_SHEET_CSV_URL: "${GOOGLE_SHEET_CSV_URL}"
+      GOOGLE_SHEET_WEBHOOK_URL: "${GOOGLE_SHEET_WEBHOOK_URL}"
+      NTFY_BASE_URL: "${NTFY_BASE_URL:-https://ntfy.sh}"
+      NTFY_TOPIC: "${NTFY_TOPIC}"
+      NTFY_TOKEN: "${NTFY_TOKEN}"
+      HEALTHCHECKS_PING_URL: "${HEALTHCHECKS_PING_URL}"
     volumes:
-      - applicationtrackr_data:/app/data
+      - applicationtrackr_data:/data
 
 volumes:
   applicationtrackr_data:

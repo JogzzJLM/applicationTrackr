@@ -6,7 +6,7 @@ import socketserver
 import threading
 from urllib.parse import parse_qs, urlparse, quote
 
-from config import PORT, SCRAPER_STATUS, add_scraper_log, HP_STREAM_TAILSCALE_IP
+from config import APP_BASE_URL, PORT, SCRAPER_STATUS, add_scraper_log
 from core.storage import (
     load_settings, save_settings,
     load_hidden_jobs, hide_job, save_hidden_jobs,
@@ -293,5 +293,5 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
 
 def start_web_server():
     server = ThreadedHTTPServer(("0.0.0.0", PORT), CleanHandler)
-    print(f"🌐 Threaded Web Dashboard running at: http://{HP_STREAM_TAILSCALE_IP}:{PORT} (Local: http://127.0.0.1:{PORT})")
+    print(f"🌐 Threaded Web Dashboard running at: {APP_BASE_URL} (container-local: http://127.0.0.1:{PORT})")
     server.serve_forever()

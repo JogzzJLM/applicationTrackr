@@ -7,7 +7,7 @@ from email.header import decode_header
 import time
 from datetime import datetime, timedelta
 from urllib.parse import quote
-from config import GMAIL_USER, GMAIL_APP_PASS, SEEN_EMAILS_FILE, HP_STREAM_TAILSCALE_IP, update_source_status
+from config import GMAIL_USER, GMAIL_APP_PASS, SEEN_EMAILS_FILE, update_source_status
 from notifications import send_notification
 from sheets import update_google_sheet_via_webhook, get_detailed_applications, normalize_company
 from core.storage import add_pending_email_update

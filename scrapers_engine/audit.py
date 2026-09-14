@@ -1,7 +1,7 @@
 import time
 import requests
 import concurrent.futures
-from config import SCRAPER_STATUS, add_scraper_log, update_scraper_status, update_source_status
+from config import APP_BASE_URL, SCRAPER_STATUS, add_scraper_log, update_scraper_status, update_source_status
 from core.storage import (
     SEEN_JOBS_FILE, DISCOVERED_JOBS_FILE,
     load_reported_closed_jobs, save_reported_closed_jobs,
@@ -56,8 +56,11 @@ def purge_expired_jobs():
             return None
 
         try:
-            resp = requests.head(link, timeout=4, allow_redirects=True, headers={"User-Agent": "Mozilla/5.0"})
-            if resp.status_code in [404, 410, 403, 500]:
+            headers = {"User-Agent": "Mozilla/5.0"}
+            resp = requests.head(link, timeout=4, allow_redirects=True, headers=headers)
+            if resp.status_code in (403, 405) or resp.status_code >= 500:
+                resp = requests.get(link, timeout=6, allow_redirects=True, headers=headers, stream=True)
+            if resp.status_code in (404, 410):
                 mark_url_as_closed(link)
                 add_scraper_log(f"  ├── 🛑 Dead link ({resp.status_code}): {job.get('company')} - {job.get('title')}")
                 return None
@@ -131,7 +134,7 @@ def recheck_existing_open_jobs_for_closure():
         send_notification(
             title=f"Closure Audit: {len(newly_detected_closed)} Schemes Moved to Closed",
             message=f"Re-evaluated {len(existing_open)} open schemes against updated AI patterns. Automatically moved {len(newly_detected_closed)} newly closed schemes to Closed Directory.",
-            link=f"http://{HP_STREAM_TAILSCALE_IP}:5000/status",
+            link=f"{APP_BASE_URL}/status",
             tags="broom,brain",
             priority=3,
             sound="chime"
@@ -186,7 +189,7 @@ def run_all_scrapers():
         send_notification(
             title=f"🚀 {len(all_new_jobs)} New UK Schemes Discovered!",
             message="\n".join([f"• {j[0]} ({j[1]})" for j in all_new_jobs[:5]]),
-            link=f"http://{HP_STREAM_TAILSCALE_IP}:5000/discovered",
+            link=f"{APP_BASE_URL}/discovered",
             tags="bell,rocket",
             priority=4,
             sound="fanfare"

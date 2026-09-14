@@ -13,7 +13,12 @@ def fetch_google_sheet_csv(force_refresh=False):
     if not force_refresh and (now - _SHEET_CSV_CACHE["timestamp"]) < 5 and _SHEET_CSV_CACHE["content"]:
         return _SHEET_CSV_CACHE["content"]
 
-    cache_url = f"{GOOGLE_SHEET_CSV_URL}&_cb={int(now * 1000)}"
+    if not GOOGLE_SHEET_CSV_URL:
+        print("⚠️ GOOGLE_SHEET_CSV_URL is not configured.")
+        return _SHEET_CSV_CACHE.get("content", "")
+
+    separator = "&" if "?" in GOOGLE_SHEET_CSV_URL else "?"
+    cache_url = f"{GOOGLE_SHEET_CSV_URL}{separator}_cb={int(now * 1000)}"
 
     for attempt in range(2):
         try:
@@ -28,17 +33,20 @@ def fetch_google_sheet_csv(force_refresh=False):
 
     return _SHEET_CSV_CACHE.get("content", "")
 
-def resolve_smart_stage(company, stage):
+def resolve_smart_stage(company, stage, role=None):
     """
     Inspects existing stages logged for `company` in Google Sheets and returns an intelligent
     sequentially numbered stage name (e.g., 'Interview 1' -> 'Interview 2', 'Assessment 1' -> 'Assessment 2').
     """
     apps = get_detailed_applications()
     norm_c = normalize_company(company)
+    norm_r = normalize_role(role) if role else ""
 
     existing_stages = []
     for app in apps:
-        if normalize_company(app["company"]) == norm_c:
+        company_matches = normalize_company(app["company"]) == norm_c
+        role_matches = not norm_r or normalize_role(app.get("role", "")) == norm_r
+        if company_matches and role_matches:
             existing_stages = app.get("stages", [])
             break
 
@@ -80,7 +88,7 @@ def update_google_sheet_via_webhook(company, stage, role="Software/Quant Role", 
         return
 
     if resolve_sequential:
-        final_stage = resolve_smart_stage(company, stage)
+        final_stage = resolve_smart_stage(company, stage, role=role)
         if final_stage is None:
             print(f"📊 Sheet Notice: Stage '{stage}' for {company} already recorded. Skipping duplicate.")
             return
@@ -118,8 +126,8 @@ def get_applied_jobs_set(csv_text=None):
                     applied_companies.add(norm_c)
                     if norm_r:
                         applied_jobs.add((norm_c, norm_r))
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Error reading applied jobs from Google Sheet: {e}")
     return applied_jobs, applied_companies
 
 def get_applied_companies_set(csv_text=None):
@@ -161,11 +169,11 @@ def parse_sheet_stats(csv_text=None):
         print(f"Error parsing stats for report: {e}")
         return {"total": 0, "active": 0, "offers": 0, "rejections": 0}
 
-def get_detailed_applications(csv_text=None):
+def get_detailed_applications(csv_text=None, force_refresh=False):
     """Fetches Google Sheet CSV and returns a list of detailed application dicts."""
     apps = []
     if csv_text is None:
-        csv_text = fetch_google_sheet_csv()
+        csv_text = fetch_google_sheet_csv(force_refresh=force_refresh)
     if csv_text:
         try:
             reader = csv.DictReader(io.StringIO(csv_text))

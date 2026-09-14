@@ -2,6 +2,7 @@ import time
 import re
 import requests
 import concurrent.futures
+import hashlib
 from datetime import datetime, timedelta
 from config import SCRAPER_STATUS, add_scraper_log, update_source_status
 from scrapers_engine.ats_scrapers import is_relevant_role, add_discovered_job, extract_and_register_ats_company, _JOB_LOCK
@@ -142,7 +143,8 @@ def scrape_trackr_website(seen_jobs, discovered_list, force_rescan=False, log_fu
 
                         if is_trackr_item_active_and_recent(item):
                             if is_relevant_role(title, location, company):
-                                job_id = f"trackr_{hash(company + title)}"
+                                stable_key = f"{company}|{title}|{link}".encode("utf-8")
+                                job_id = f"trackr_{hashlib.sha256(stable_key).hexdigest()[:20]}"
                                 is_new = add_discovered_job(
                                     discovered_list, job_id, company, title, location, link, "The Trackr API", "https://the-trackr.com"
                                 )
@@ -151,7 +153,7 @@ def scrape_trackr_website(seen_jobs, discovered_list, force_rescan=False, log_fu
                                     relevant_found += 1
                                     if is_new and job_id not in seen_jobs:
                                         seen_jobs.add(job_id)
-                                        local_new.append((full_title, "UK", link))
+                                        local_new.append((f"{company} - {title}", location or "UK", link))
 
                 except Exception:
                     pass

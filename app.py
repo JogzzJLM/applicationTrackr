@@ -7,6 +7,7 @@ from email_listener import check_email_inbox
 from scrapers import run_all_scrapers
 from scheduler import scheduler_loop
 from web_server import start_web_server
+from config import SCRAPER_INTERVAL_SECONDS
 
 if __name__ == "__main__":
     generate_sankey_from_google_sheets()
@@ -38,4 +39,4 @@ if __name__ == "__main__":
         run_all_scrapers()
         generate_sankey_from_google_sheets()
         send_heartbeat_ping()
-        time.sleep(300)  # 5-minute interval = 288 multi-source scans & email checks per day
+        time.sleep(SCRAPER_INTERVAL_SECONDS)

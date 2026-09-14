@@ -1,5 +1,5 @@
 import urllib.parse
-from config import SCRAPER_STATUS, HP_STREAM_TAILSCALE_IP
+from config import SCRAPER_STATUS
 from core.storage import (
     load_settings, load_hidden_jobs,
     load_reported_closed_jobs, load_json_safe,

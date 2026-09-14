@@ -1,10 +1,13 @@
 import requests
-from config import NTFY_TOPIC, HEALTHCHECKS_PING_URL
+from config import NTFY_BASE_URL, NTFY_TOPIC, NTFY_TOKEN, HEALTHCHECKS_PING_URL
 
 def send_notification(title, message, link=None, tags="briefcase", priority=3, sound="chime"):
     clean_title = title.encode("ascii", "ignore").decode("ascii").strip()
     if not clean_title:
         clean_title = "ApplicationTrackr Alert"
+
+    if not NTFY_TOPIC:
+        return False
 
     headers = {
         "Title": clean_title,
@@ -14,17 +17,21 @@ def send_notification(title, message, link=None, tags="briefcase", priority=3, s
     }
     if link:
         headers["Click"] = link
+    if NTFY_TOKEN:
+        headers["Authorization"] = f"Bearer {NTFY_TOKEN}"
 
     try:
         requests.post(
-            f"https://ntfy.sh/{NTFY_TOPIC}",
+            f"{NTFY_BASE_URL}/{NTFY_TOPIC}",
             data=message.encode("utf-8"),
             headers=headers,
             timeout=10
         )
         print(f"✅ Notification Sent [{sound}]: {clean_title}")
+        return True
     except Exception as e:
         print(f"❌ Failed to send notification: {e}")
+        return False
 
 def send_heartbeat_ping():
     if HEALTHCHECKS_PING_URL and "YOUR_HEALTHCHECKS_UUID" not in HEALTHCHECKS_PING_URL:

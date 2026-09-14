@@ -1,6 +1,3 @@
-requests[socks]
-PySocks
-httpx
+requests
 beautifulsoup4
 plotly
-pandas

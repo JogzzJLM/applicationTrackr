@@ -1,22 +1,42 @@
 import os
 import json
 import threading
+import shutil
+from pathlib import Path
 
 _FILE_LOCK = threading.Lock()
 
-PORT = 5000
-HP_STREAM_TAILSCALE_IP = "100.75.135.73"
+def _env_int(name, default):
+    try:
+        return int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
 
-SEEN_JOBS_FILE = "seen_jobs.json"
-SEEN_EMAILS_FILE = "seen_emails.json"
-DISCOVERED_JOBS_FILE = "discovered_jobs.json"
-SETTINGS_FILE = "settings.json"
-CLOSED_KB_FILE = "closed_keywords_kb.json"
-REPORTED_CLOSED_FILE = "reported_closed_jobs.json"
-CLOSED_URLS_CACHE_FILE = "closed_urls_cache.json"
-HIDDEN_JOBS_FILE = "hidden_jobs.json"
-SCRAPER_STATUS_FILE = "scraper_status.json"
-PENDING_EMAILS_FILE = "pending_email_updates.json"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DATA_DIR = Path(os.getenv("DATA_DIR", str(PROJECT_ROOT / "data"))).expanduser().resolve()
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+PORT = _env_int("PORT", 5000)
+
+def _state_file(filename):
+    target = DATA_DIR / filename
+    seed = PROJECT_ROOT / filename
+    if not target.exists() and seed.exists() and seed.resolve() != target.resolve():
+        try:
+            shutil.copy2(seed, target)
+        except Exception as e:
+            print(f"⚠️ Could not seed {filename} into {DATA_DIR}: {e}")
+    return str(target)
+
+SEEN_JOBS_FILE = _state_file("seen_jobs.json")
+SEEN_EMAILS_FILE = _state_file("seen_emails.json")
+DISCOVERED_JOBS_FILE = _state_file("discovered_jobs.json")
+SETTINGS_FILE = _state_file("settings.json")
+CLOSED_KB_FILE = _state_file("closed_keywords_kb.json")
+REPORTED_CLOSED_FILE = _state_file("reported_closed_jobs.json")
+CLOSED_URLS_CACHE_FILE = _state_file("closed_urls_cache.json")
+HIDDEN_JOBS_FILE = _state_file("hidden_jobs.json")
+SCRAPER_STATUS_FILE = _state_file("scraper_status.json")
+PENDING_EMAILS_FILE = _state_file("pending_email_updates.json")
 
 DEFAULT_SETTINGS = {
     "grad_years_allowed": ["2027", "2028", "2029"],

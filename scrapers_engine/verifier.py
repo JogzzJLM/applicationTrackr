@@ -27,9 +27,12 @@ def verify_live_page_applyable(url):
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
         }
         resp = requests.get(url, headers=headers, timeout=4, allow_redirects=True)
-        if resp.status_code in [404, 410, 403, 500]:
+        if resp.status_code in (404, 410):
             mark_url_as_closed(url)
             return False
+        if resp.status_code in (401, 403, 429) or resp.status_code >= 500:
+            # Access denied/rate-limited/server errors do not prove the role is closed.
+            return True
 
         # Layer 1: ATS Redirect & Expired Egress Check
         if "linkedin.com" in url or "linkedin.com" in resp.url:
@@ -59,7 +62,7 @@ def verify_live_page_applyable(url):
                 return False
 
         # Layer 3: High-Confidence Structural Proximity & Semantic Rules
-        closure_states = {'closed', 'filled', 'expired', 'paused', 'unavailable', 'inactive', 'exist', 'removed', 'missing', 'invalid'}
+        closure_states = {'closed', 'filled', 'expired', 'paused', 'unavailable', 'inactive', 'removed'}
         job_nouns = {'application', 'applications', 'programme', 'program', 'role', 'position', 'vacancy', 'scheme', 'opportunity', 'posting', 'job', 'page'}
 
         words = text_clean.split()

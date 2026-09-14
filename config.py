@@ -4,7 +4,7 @@ Re-exports storage, normalization, knowledge base, and settings functions.
 """
 from core.storage import (
     SEEN_JOBS_FILE, SEEN_EMAILS_FILE, DISCOVERED_JOBS_FILE, SETTINGS_FILE,
-    CLOSED_KB_FILE, REPORTED_CLOSED_FILE, HIDDEN_JOBS_FILE, PORT, HP_STREAM_TAILSCALE_IP,
+    CLOSED_KB_FILE, REPORTED_CLOSED_FILE, HIDDEN_JOBS_FILE, PORT,
     DEFAULT_SETTINGS, load_json_safe, atomic_write_json,
     load_reported_closed_jobs, save_reported_closed_jobs,
     load_hidden_jobs, save_hidden_jobs, hide_job,
@@ -23,12 +23,17 @@ import sys
 import time
 import threading
 
-NTFY_TOPIC = os.getenv("NTFY_TOPIC", "jog_applicationtrackr_alerts")
+APP_BASE_URL = os.getenv("APP_BASE_URL", f"http://127.0.0.1:{PORT}").rstrip("/")
+APP_TIMEZONE = os.getenv("APP_TIMEZONE", "Europe/London")
+SCRAPER_INTERVAL_SECONDS = int(os.getenv("SCRAPER_INTERVAL_SECONDS", "300"))
+NTFY_BASE_URL = os.getenv("NTFY_BASE_URL", "https://ntfy.sh").rstrip("/")
+NTFY_TOPIC = os.getenv("NTFY_TOPIC", "")
+NTFY_TOKEN = os.getenv("NTFY_TOKEN", "")
 GMAIL_USER = os.getenv("GMAIL_USER", "")
 GMAIL_APP_PASS = os.getenv("GMAIL_APP_PASS", "")
 GOOGLE_SHEET_WEBHOOK_URL = os.getenv("GOOGLE_SHEET_WEBHOOK_URL", "")
+GOOGLE_SHEET_CSV_URL = os.getenv("GOOGLE_SHEET_CSV_URL", "")
 HEALTHCHECKS_PING_URL = os.getenv("HEALTHCHECKS_PING_URL", "")
-GOOGLE_SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS94NpozDGeHO9UPag662CXcH-C5TGN9Y61-nW04VDlPJSZGVTq62E1lRvnXl8gq_CbR5kvMx5XnMFi/pub?output=csv"
 
 SCRAPER_STATUS = load_scraper_status()
 
