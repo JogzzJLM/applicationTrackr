@@ -35,6 +35,14 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
 
+    def safe_write(self, payload):
+        """Write a response body without noisy tracebacks when a client disconnects."""
+        try:
+            self.wfile.write(payload)
+            return True
+        except (BrokenPipeError, ConnectionResetError):
+            return False
+
     def send_cors_headers(self):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
@@ -56,35 +64,35 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
             self.send_cors_headers()
             self.end_headers()
-            self.wfile.write(render_unified_dashboard_html("flow").encode("utf-8"))
+            self.safe_write(render_unified_dashboard_html("flow").encode("utf-8"))
 
         elif path in ["/jobs", "/discovered"]:
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_cors_headers()
             self.end_headers()
-            self.wfile.write(render_unified_dashboard_html("jobs").encode("utf-8"))
+            self.safe_write(render_unified_dashboard_html("jobs").encode("utf-8"))
 
         elif path == "/settings":
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_cors_headers()
             self.end_headers()
-            self.wfile.write(render_unified_dashboard_html("settings").encode("utf-8"))
+            self.safe_write(render_unified_dashboard_html("settings").encode("utf-8"))
 
         elif path in ["/status", "/diagnostics"]:
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_cors_headers()
             self.end_headers()
-            self.wfile.write(render_unified_dashboard_html("diagnostics").encode("utf-8"))
+            self.safe_write(render_unified_dashboard_html("diagnostics").encode("utf-8"))
 
         elif path == "/closed":
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_cors_headers()
             self.end_headers()
-            self.wfile.write(render_unified_dashboard_html("closed").encode("utf-8"))
+            self.safe_write(render_unified_dashboard_html("closed").encode("utf-8"))
 
         elif path == "/sankey-embed":
             generate_sankey_from_google_sheets(force_refresh=True)
@@ -98,7 +106,7 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
                     html = f.read()
             except Exception:
                 html = "<html><body><h3>Sankey Diagram Loading...</h3></body></html>"
-            self.wfile.write(html.encode("utf-8"))
+            self.safe_write(html.encode("utf-8"))
 
         elif path == "/api/status":
             from config import SCRAPER_STATUS
@@ -106,7 +114,7 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.send_cors_headers()
             self.end_headers()
-            self.wfile.write(json.dumps(SCRAPER_STATUS, indent=2).encode("utf-8"))
+            self.safe_write(json.dumps(SCRAPER_STATUS, indent=2).encode("utf-8"))
 
         elif path == "/api/kb-status":
             kb_phrases = load_closed_keywords_kb()
@@ -114,7 +122,7 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.send_cors_headers()
             self.end_headers()
-            self.wfile.write(json.dumps({"count": len(kb_phrases), "phrases": kb_phrases}, indent=2).encode("utf-8"))
+            self.safe_write(json.dumps({"count": len(kb_phrases), "phrases": kb_phrases}, indent=2).encode("utf-8"))
 
         elif path == "/api/logs":
             from config import get_scraper_logs
@@ -123,7 +131,7 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             self.send_cors_headers()
             self.end_headers()
             logs = get_scraper_logs()
-            self.wfile.write(json.dumps({"logs": logs}, indent=2).encode("utf-8"))
+            self.safe_write(json.dumps({"logs": logs}, indent=2).encode("utf-8"))
 
         elif path == "/api/clear-logs":
             from config import clear_scraper_logs
@@ -132,7 +140,7 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.send_cors_headers()
             self.end_headers()
-            self.wfile.write(json.dumps({"status": "ok"}).encode("utf-8"))
+            self.safe_write(json.dumps({"status": "ok"}).encode("utf-8"))
 
         elif path == "/api/mark-applied":
             comp = qs.get("company", [""])[0]
@@ -149,7 +157,7 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.send_cors_headers()
             self.end_headers()
-            self.wfile.write(json.dumps({"status": "ok", "company": comp, "stage": stage}).encode("utf-8"))
+            self.safe_write(json.dumps({"status": "ok", "company": comp, "stage": stage}).encode("utf-8"))
 
         elif path == "/api/resolve-pending-update":
             from core.storage import remove_pending_email_update
@@ -172,7 +180,7 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.send_cors_headers()
             self.end_headers()
-            self.wfile.write(json.dumps({"status": "ok"}).encode("utf-8"))
+            self.safe_write(json.dumps({"status": "ok"}).encode("utf-8"))
 
         elif path == "/api/dismiss-pending-update":
             from core.storage import remove_pending_email_update
@@ -184,7 +192,7 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.send_cors_headers()
             self.end_headers()
-            self.wfile.write(json.dumps({"status": "ok"}).encode("utf-8"))
+            self.safe_write(json.dumps({"status": "ok"}).encode("utf-8"))
 
         elif path == "/api/rescan":
             add_scraper_log("⚡ Triggered Scraper Rescan from Dashboard UI")
@@ -244,7 +252,7 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.send_cors_headers()
             self.end_headers()
-            self.wfile.write(json.dumps({"status": "ok", "reported_id": j_id}).encode("utf-8"))
+            self.safe_write(json.dumps({"status": "ok", "reported_id": j_id}).encode("utf-8"))
 
         elif path == "/api/reopen-job":
             j_id = qs.get("id", [""])[0]
@@ -258,7 +266,7 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.send_cors_headers()
             self.end_headers()
-            self.wfile.write(json.dumps({"status": "ok", "reopened_id": j_id}).encode("utf-8"))
+            self.safe_write(json.dumps({"status": "ok", "reopened_id": j_id}).encode("utf-8"))
 
     def do_POST(self):
         parsed = urlparse(self.path)

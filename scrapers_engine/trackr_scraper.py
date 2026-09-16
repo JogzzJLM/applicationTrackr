@@ -1,5 +1,7 @@
 import concurrent.futures
 import hashlib
+import json
+import os
 import re
 import threading
 import time
@@ -37,6 +39,10 @@ TRACKR_TYPES = [
 # Trackr changes much more slowly than our direct ATS sources.
 # Refresh it every 3 hours rather than every ApplicationTrackr cycle.
 TRACKR_REFRESH_SECONDS = 3 * 60 * 60
+TRACKR_CACHE_FILE = os.path.join(
+    os.getenv("DATA_DIR", "/data"),
+    "trackr_cache.json",
+)
 
 TRACKR_HEADERS = {
     "User-Agent": (
@@ -56,7 +62,54 @@ TRACKR_HEADERS = {
 
 _TRACKR_CACHE_LOCK = threading.Lock()
 _TRACKR_LAST_REFRESH = 0.0
+_TRACKR_LAST_ATTEMPT = 0.0
 _TRACKR_CACHED_ITEMS = []
+
+
+def _load_persistent_trackr_cache():
+    """Load the last successful Trackr dataset from persistent /data storage."""
+    try:
+        with open(TRACKR_CACHE_FILE, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+
+        if isinstance(payload, dict):
+            items = payload.get("items", [])
+            saved_at = float(payload.get("saved_at", 0) or 0)
+        elif isinstance(payload, list):
+            # Backwards-compatible fallback if the cache was ever stored as a list.
+            items = payload
+            saved_at = 0
+        else:
+            return [], 0.0
+
+        if not isinstance(items, list):
+            return [], 0.0
+
+        return items, saved_at
+    except FileNotFoundError:
+        return [], 0.0
+    except Exception:
+        return [], 0.0
+
+
+def _save_persistent_trackr_cache(items):
+    """Atomically persist only a successful, non-empty Trackr dataset."""
+    directory = os.path.dirname(TRACKR_CACHE_FILE)
+    os.makedirs(directory, exist_ok=True)
+
+    payload = {
+        "saved_at": time.time(),
+        "items": items,
+    }
+
+    tmp = TRACKR_CACHE_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False)
+
+    os.replace(tmp, TRACKR_CACHE_FILE)
+
+
+_TRACKR_CACHED_ITEMS, _TRACKR_LAST_REFRESH = _load_persistent_trackr_cache()
 
 
 def parse_trackr_date(d_str):
@@ -410,53 +463,68 @@ def _refresh_trackr_cache(log_func=None):
 
 def _get_trackr_items(force_rescan=False, log_func=None):
     """
-    Return cached Trackr data.
+    Return cached Trackr data while respecting a source-specific cooldown.
 
-    Trackr is contacted only when:
-      - there is no cache yet,
-      - the cache is >= 3 hours old,
-      - or force_rescan=True.
-
-    A suspicious empty refresh does NOT replace a known-good cache.
+    A failed/empty attempt also starts the three-hour cooldown, preventing the
+    normal five-minute ApplicationTrackr loop from repeatedly hitting Trackr.
+    The last successful non-empty dataset is persisted to /data.
     """
 
     global _TRACKR_LAST_REFRESH
+    global _TRACKR_LAST_ATTEMPT
     global _TRACKR_CACHED_ITEMS
 
     now = time.time()
 
     with _TRACKR_CACHE_LOCK:
-        cache_age = (
-            now - _TRACKR_LAST_REFRESH
-            if _TRACKR_LAST_REFRESH
+        attempt_age = (
+            now - _TRACKR_LAST_ATTEMPT
+            if _TRACKR_LAST_ATTEMPT
             else None
         )
 
-        cache_valid = (
-            bool(_TRACKR_CACHED_ITEMS)
-            and cache_age is not None
-            and cache_age < TRACKR_REFRESH_SECONDS
-        )
+        # Respect the Trackr cooldown even for a dashboard/manual rescan. The
+        # purpose is to avoid repeatedly hitting an endpoint that is currently
+        # treating this public IP differently.
+        if attempt_age is not None and attempt_age < TRACKR_REFRESH_SECONDS:
+            remaining = TRACKR_REFRESH_SECONDS - attempt_age
 
-        if cache_valid and not force_rescan:
             if log_func:
-                minutes_old = int(cache_age // 60)
-
-                log_func(
-                    f"  │   ↳ Trackr: using cached dataset "
-                    f"({_TRACKR_CACHED_ITEMS.__len__()} programmes, "
-                    f"{minutes_old}m old)"
-                )
+                minutes = max(1, int(remaining // 60))
+                if _TRACKR_CACHED_ITEMS:
+                    log_func(
+                        f"  │   ↳ Trackr: cooldown active; using "
+                        f"{len(_TRACKR_CACHED_ITEMS)} cached programmes "
+                        f"(next API attempt in ~{minutes}m)."
+                    )
+                else:
+                    log_func(
+                        f"  │   ↳ Trackr: cooldown active after empty/failed "
+                        f"response (next API attempt in ~{minutes}m)."
+                    )
 
             return list(_TRACKR_CACHED_ITEMS), False
 
-    # Don't hold the cache lock while performing network requests.
+        _TRACKR_LAST_ATTEMPT = now
+
+    # Do not hold the cache lock while performing network requests.
     fresh_items = _refresh_trackr_cache(log_func=log_func)
 
     if fresh_items:
+        saved_at = time.time()
+
+        try:
+            _save_persistent_trackr_cache(fresh_items)
+        except Exception as exc:
+            if log_func:
+                log_func(
+                    f"  │   ⚠️ Trackr cache persistence failed: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+
         with _TRACKR_CACHE_LOCK:
             _TRACKR_CACHED_ITEMS = fresh_items
-            _TRACKR_LAST_REFRESH = time.time()
+            _TRACKR_LAST_REFRESH = saved_at
 
         if log_func:
             log_func(
@@ -466,7 +534,7 @@ def _get_trackr_items(force_rescan=False, log_func=None):
 
         return list(fresh_items), True
 
-    # Empty response: preserve known-good data.
+    # Empty/failed response: preserve the last known-good dataset.
     with _TRACKR_CACHE_LOCK:
         if _TRACKR_CACHED_ITEMS:
             cached = list(_TRACKR_CACHED_ITEMS)
@@ -474,7 +542,7 @@ def _get_trackr_items(force_rescan=False, log_func=None):
             if log_func:
                 log_func(
                     "  │   ⚠️ Trackr refresh returned no programmes; "
-                    f"retaining {len(cached)} cached programmes."
+                    f"retaining {len(cached)} persistent cached programmes."
                 )
 
             return cached, False
@@ -482,11 +550,10 @@ def _get_trackr_items(force_rescan=False, log_func=None):
     if log_func:
         log_func(
             "  │   ⚠️ Trackr returned no programmes and no previous "
-            "cache is available."
+            "persistent cache is available. Next API attempt is in 3h."
         )
 
     return [], False
-
 
 def scrape_trackr_website(
     seen_jobs,
@@ -580,12 +647,12 @@ def scrape_trackr_website(
                 )
 
     if total_items_fetched:
-        status_str = (
-            f"🟢 Active • "
-            f"{relevant_found} active schemes indexed"
-        )
+        if refreshed:
+            status_str = f"🟢 Active • {relevant_found} active schemes indexed"
+        else:
+            status_str = f"🟡 Cached • {relevant_found} active schemes indexed"
     else:
-        status_str = "🟠 API unavailable/empty"
+        status_str = "🟠 API unavailable/empty • cooldown active"
 
     update_source_status(source_name, status_str)
 
