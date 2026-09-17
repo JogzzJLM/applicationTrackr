@@ -7,7 +7,20 @@ from email_listener import check_email_inbox
 from scrapers import run_all_scrapers
 from scheduler import scheduler_loop
 from web_server import start_web_server
-from config import SCRAPER_INTERVAL_SECONDS
+from config import SCRAPER_INTERVAL_SECONDS, EMAIL_POLL_SECONDS
+
+
+def email_listener_loop():
+    """Poll application inboxes independently of slow scraper cycles."""
+    while True:
+        started = time.time()
+        try:
+            check_email_inbox()
+        except Exception as exc:
+            print(f"⚠️ Email listener loop error: {type(exc).__name__}: {exc}")
+        elapsed = time.time() - started
+        time.sleep(max(5, EMAIL_POLL_SECONDS - elapsed))
+
 
 if __name__ == "__main__":
     generate_sankey_from_google_sheets()
@@ -17,6 +30,9 @@ if __name__ == "__main__":
 
     scheduler_thread = threading.Thread(target=scheduler_loop, daemon=True)
     scheduler_thread.start()
+
+    email_thread = threading.Thread(target=email_listener_loop, daemon=True, name="email-listener")
+    email_thread.start()
 
     time.sleep(1)
 
@@ -35,7 +51,6 @@ if __name__ == "__main__":
     )
 
     while True:
-        check_email_inbox()
         run_all_scrapers()
         generate_sankey_from_google_sheets()
         send_heartbeat_ping()
