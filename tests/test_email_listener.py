@@ -1,0 +1,34 @@
+import unittest
+
+from email_listener import classify_email_stage, extract_company_name
+
+
+BARCLAYS_ASSESSMENT = """
+Barclays Email Classification: Restricted - External
+
+Dear, Joga,
+
+You have reached the next stage of the assessment process in your application for the position of
+JR-0000129397 2027 Technology Developer Summer Internship Programme London (Evergreen) (Open)
+that requires an online assessment.
+
+We now invite you to our Experience Platform to complete your assessment.
+
+Kind regards,
+Barclays Talent Acquisition Team
+"""
+
+
+class EmailListenerTests(unittest.TestCase):
+    def test_barclays_assessment_is_online_assessment(self):
+        self.assertEqual(classify_email_stage(BARCLAYS_ASSESSMENT), "Online Assessment")
+
+    def test_company_can_be_recovered_from_body_signature(self):
+        self.assertEqual(
+            extract_company_name("Your application update", "noreply@examplemail.com", BARCLAYS_ASSESSMENT),
+            "Barclays",
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()
