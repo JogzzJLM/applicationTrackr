@@ -26,7 +26,8 @@ import threading
 APP_BASE_URL = os.getenv("APP_BASE_URL", f"http://127.0.0.1:{PORT}").rstrip("/")
 APP_TIMEZONE = os.getenv("APP_TIMEZONE", "Europe/London")
 SCRAPER_INTERVAL_SECONDS = int(os.getenv("SCRAPER_INTERVAL_SECONDS", "300"))
-EMAIL_POLL_SECONDS = max(30, int(os.getenv("EMAIL_POLL_SECONDS", "60")))
+# Five-minute minimum keeps old Portainer configs with EMAIL_POLL_SECONDS=60 quiet too.
+EMAIL_POLL_SECONDS = max(300, int(os.getenv("EMAIL_POLL_SECONDS", "300")))
 NTFY_BASE_URL = os.getenv("NTFY_BASE_URL", "https://ntfy.sh").rstrip("/")
 NTFY_TOPIC = os.getenv("NTFY_TOPIC", "")
 NTFY_TOKEN = os.getenv("NTFY_TOKEN", "")
