@@ -42,7 +42,11 @@ HIDDEN_JOBS_FILE = _state_file("hidden_jobs.json")
 SCRAPER_STATUS_FILE = _state_file("scraper_status.json")
 PENDING_EMAILS_FILE = _state_file("pending_email_updates.json")
 
-SETTINGS_SCHEMA_VERSION = 4
+# v5 intentionally migrates existing installs into a precision-first profile.
+# Older persisted settings were able to preserve permissive booleans/thresholds
+# indefinitely, which meant redeploying new relevance code did not necessarily
+# make the live feed stricter.
+SETTINGS_SCHEMA_VERSION = 5
 DEFAULT_SETTINGS = {
     "settings_schema_version": SETTINGS_SCHEMA_VERSION,
     "grad_years_allowed": ["2027", "2028", "2029"],
@@ -51,15 +55,14 @@ DEFAULT_SETTINGS = {
     "strict_location_filter": True,
     "allow_unknown_location": False,
     "allow_special_international": False,
-    # 55 was intentionally high-recall but admitted too many merely technical roles.
-    # 65 keeps clear SWE/ML/quant/cyber titles while requiring evidence for generic titles.
-    "relevance_min_score": 65,
+    "relevance_min_score": 72,
     "exclude_keywords": [
         "vice president", "vp", "director", "head of", "principal", "staff engineer",
         "senior manager", "engineering manager", "lead engineer", "marketing", "social media",
         "accounting", "internal audit", "sales", "public policy", "legal", "human resources",
         "recruiter", "actuarial", "class of 2026", "graduating in 2026", "class of 2025",
         "product manager", "project manager", "business development", "customer success",
+        "operations intern", "business analyst", "commercial", "procurement", "communications",
     ],
     "exclude_locations": [
         "united states", "usa", "canada", "australia", "singapore", "hong kong",
@@ -156,6 +159,7 @@ def _merge_settings(loaded):
     merged.update(loaded)
     merged["settings_schema_version"] = SETTINGS_SCHEMA_VERSION
 
+    # User-added excludes are preserved and strengthened with current defaults.
     for key in ("exclude_keywords", "exclude_locations"):
         saved = loaded.get(key, []) if isinstance(loaded.get(key), list) else []
         combined, seen = [], set()
@@ -165,6 +169,7 @@ def _merge_settings(loaded):
                 seen.add(norm); combined.append(str(value).strip())
         merged[key] = combined
 
+    # Never let an old bare 'remote' setting qualify an unknown-country role.
     locations = merged.get("location_keywords", []) if isinstance(merged.get("location_keywords"), list) else []
     merged["location_keywords"] = [x for x in locations if str(x).strip().lower() not in {"remote", "hybrid", "in-office", "onsite", "on-site"}]
     for value in DEFAULT_SETTINGS["location_keywords"]:
@@ -176,15 +181,27 @@ def _merge_settings(loaded):
         if not old_programmes or set(old_programmes) == {"internship", "placement", "graduate"}:
             merged["target_programmes"] = list(DEFAULT_SETTINGS["target_programmes"])
 
-    # v4 raises the old broad default threshold. Preserve a deliberate custom
-    # threshold above 55, but migrate the previous default automatically.
     if saved_schema < 4:
         try:
             old_threshold = int(loaded.get("relevance_min_score", 55))
         except (TypeError, ValueError):
             old_threshold = 55
         if old_threshold <= 55:
-            merged["relevance_min_score"] = DEFAULT_SETTINGS["relevance_min_score"]
+            merged["relevance_min_score"] = 65
+
+    # v5 is a one-time precision reset for existing deployments. Previous versions
+    # could save permissive values back into /data during ATS auto-discovery, so the
+    # stricter engine appeared not to work after redeploy. These are guardrails, not
+    # ordinary UI preferences, for the current second-year internship/placement use.
+    if saved_schema < 5:
+        merged["target_programmes"] = ["internship", "placement"]
+        merged["strict_location_filter"] = True
+        merged["allow_unknown_location"] = False
+        merged["allow_special_international"] = False
+        try:
+            merged["relevance_min_score"] = max(72, int(merged.get("relevance_min_score", 72)))
+        except (TypeError, ValueError):
+            merged["relevance_min_score"] = 72
 
     return merged
 
