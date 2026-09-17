@@ -8,7 +8,10 @@ BASE = {
     "target_role_categories": ["software", "ai_ml", "quant", "cyber"],
     "strict_location_filter": True, "allow_unknown_location": False,
     "allow_special_international": False, "relevance_min_score": 72,
-    "exclude_keywords": [], "exclude_locations": [],
+    "exclude_keywords": [], "exclude_locations": [
+        "united states", "usa", "netherlands", "switzerland", "denmark",
+        "chicago", "new york", "san francisco", "seattle", "amsterdam", "paris", "zug", "aarhus",
+    ],
     "location_keywords": ["london", "uk", "united kingdom", "birmingham", "cambridge", "manchester"],
     "my_skills": ["python", "java", "sql", "docker", "machine learning", "pytorch", "algorithms"],
 }
@@ -52,12 +55,27 @@ class RelevanceTests(unittest.TestCase):
         d = evaluate_job("Software Engineer Intern", "Example", "New York, NY", {"country":"United States","description":"Python backend engineering","employment_type":"Intern"}, BASE)
         self.assertFalse(d.eligible)
 
+    def test_noisy_non_uk_cities_filtered_even_without_country(self):
+        for location in ("Chicago", "Amsterdam", "Paris", "Zug", "Aarhus", "San Francisco", "Seattle"):
+            d = evaluate_job(
+                "Software Engineer Intern", "Example", location,
+                {"description":"Python backend engineering", "employment_type":"Intern"}, BASE,
+            )
+            self.assertFalse(d.eligible, location)
+
+    def test_mixed_london_and_new_york_location_is_filtered(self):
+        d = evaluate_job(
+            "Software Engineer Intern", "Example", "London / New York",
+            {"description":"Python backend engineering", "employment_type":"Intern"}, BASE,
+        )
+        self.assertFalse(d.eligible)
+
     def test_phd_filtered(self):
         self.assertFalse(evaluate_job("Quantitative Research Intern (PhD) - Summer 2027", "Example", "London, UK", settings=BASE).eligible)
 
-    def test_v5_migrates_permissive_persisted_settings(self):
+    def test_v6_migrates_permissive_persisted_settings(self):
         migrated = _merge_settings({
-            "settings_schema_version": 4,
+            "settings_schema_version": 5,
             "target_programmes": ["internship", "placement", "graduate"],
             "strict_location_filter": False,
             "allow_unknown_location": True,
@@ -74,6 +92,8 @@ class RelevanceTests(unittest.TestCase):
         self.assertFalse(migrated["allow_special_international"])
         self.assertGreaterEqual(migrated["relevance_min_score"], 72)
         self.assertNotIn("remote", [x.lower() for x in migrated["location_keywords"]])
+        for value in ("amsterdam", "new york", "san francisco", "zug"):
+            self.assertIn(value, [x.lower() for x in migrated["exclude_locations"]])
 
 if __name__ == "__main__":
     unittest.main()
