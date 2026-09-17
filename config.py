@@ -31,15 +31,9 @@ NTFY_BASE_URL = os.getenv("NTFY_BASE_URL", "https://ntfy.sh").rstrip("/")
 NTFY_TOPIC = os.getenv("NTFY_TOPIC", "")
 NTFY_TOKEN = os.getenv("NTFY_TOKEN", "")
 
-# Gmail uses an app password over IMAP.
+# Gmail inbox automation.
 GMAIL_USER = os.getenv("GMAIL_USER", "")
 GMAIL_APP_PASS = os.getenv("GMAIL_APP_PASS", "")
-
-# Outlook / Microsoft 365 uses Microsoft Graph + OAuth2 device-code flow.
-# OUTLOOK_USER is only a login hint; no Microsoft password is stored.
-OUTLOOK_USER = os.getenv("OUTLOOK_USER", "")
-MICROSOFT_CLIENT_ID = os.getenv("MICROSOFT_CLIENT_ID", "")
-MICROSOFT_TENANT = os.getenv("MICROSOFT_TENANT", "common")
 
 # Optional generic third-party IMAP mailbox.
 EMAIL_USER = os.getenv("EMAIL_USER", "")
@@ -58,7 +52,7 @@ SCRAPER_LOGS = []
 _in_tee = threading.local()
 
 class TerminalStreamTee:
-    """Tee stream capturing sys.stdout & sys.stderr for rolling web terminal console (docker logs -f output)."""
+    """Tee stream capturing sys.stdout & sys.stderr for rolling web terminal console."""
     def __init__(self, original_stream):
         self.original_stream = original_stream
         self.line_buffer = ""
@@ -67,12 +61,10 @@ class TerminalStreamTee:
         if getattr(_in_tee, 'active', False):
             self.original_stream.write(buf)
             return
-
         try:
             _in_tee.active = True
             self.original_stream.write(buf)
             self.original_stream.flush()
-
             self.line_buffer += str(buf)
             while "\n" in self.line_buffer:
                 line, self.line_buffer = self.line_buffer.split("\n", 1)
@@ -80,7 +72,7 @@ class TerminalStreamTee:
                 if clean_line:
                     with _LOG_LOCK:
                         timestamp = time.strftime("%H:%M:%S")
-                        if not clean_line.startswith("[") and not clean_line.startswith("┌") and not clean_line.startswith("├") and not clean_line.startswith("└") and not clean_line.startswith("│") and not clean_line.startswith("  "):
+                        if not clean_line.startswith(("[", "┌", "├", "└", "│", "  ")):
                             formatted = f"[{timestamp}] {clean_line}"
                         else:
                             formatted = clean_line
@@ -127,7 +119,6 @@ def update_source_status(source_name, status_str):
         SCRAPER_STATUS["source_status"][source_name] = status_str
         save_scraper_status(SCRAPER_STATUS)
 
-# Dynamic ATS lists re-exported from settings for backward compatibility
 _settings = load_settings()
 GREENHOUSE_COMPANIES = _settings.get("greenhouse_companies", [])
 LEVER_COMPANIES = _settings.get("lever_companies", [])
