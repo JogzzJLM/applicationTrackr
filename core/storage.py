@@ -42,11 +42,13 @@ HIDDEN_JOBS_FILE = _state_file("hidden_jobs.json")
 SCRAPER_STATUS_FILE = _state_file("scraper_status.json")
 PENDING_EMAILS_FILE = _state_file("pending_email_updates.json")
 
-SETTINGS_SCHEMA_VERSION = 2
+SETTINGS_SCHEMA_VERSION = 3
 DEFAULT_SETTINGS = {
     "settings_schema_version": SETTINGS_SCHEMA_VERSION,
     "grad_years_allowed": ["2027", "2028", "2029"],
-    "target_programmes": ["internship", "placement", "graduate"],
+    # Current use-case: second-year internship / placement search. Graduate
+    # schemes stay supported by the engine, but are opt-in rather than noise.
+    "target_programmes": ["internship", "placement"],
     "target_role_categories": ["software", "ai_ml", "quant", "cyber"],
     "strict_location_filter": True,
     "allow_unknown_location": False,
@@ -145,9 +147,17 @@ def _merge_settings(loaded):
     merged = dict(DEFAULT_SETTINGS)
     if not isinstance(loaded, dict):
         return merged
+
+    try:
+        saved_schema = int(loaded.get("settings_schema_version", 1) or 1)
+    except (TypeError, ValueError):
+        saved_schema = 1
+
     merged.update(loaded)
     merged["settings_schema_version"] = SETTINGS_SCHEMA_VERSION
-    # Do not let a pre-v2 persisted settings file erase stronger safety/relevance defaults.
+
+    # Do not let an older persisted settings file erase stronger
+    # safety/relevance defaults.
     for key in ("exclude_keywords", "exclude_locations"):
         saved = loaded.get(key, []) if isinstance(loaded.get(key), list) else []
         combined, seen = [], set()
@@ -156,12 +166,23 @@ def _merge_settings(loaded):
             if norm and norm not in seen:
                 seen.add(norm); combined.append(str(value).strip())
         merged[key] = combined
+
     # Migrate the old ambiguous bare Remote location away.
     locations = merged.get("location_keywords", []) if isinstance(merged.get("location_keywords"), list) else []
     merged["location_keywords"] = [x for x in locations if str(x).strip().lower() not in {"remote", "hybrid", "in-office", "onsite", "on-site"}]
     for value in DEFAULT_SETTINGS["location_keywords"]:
         if value not in merged["location_keywords"]:
             merged["location_keywords"].append(value)
+
+    # v2 treated graduate schemes as part of the default second-year feed.
+    # That produced a large technically-related but currently unactionable list.
+    # Preserve an explicit custom programme list, but migrate the old untouched
+    # default to internship + placement only.
+    if saved_schema < 3:
+        old_programmes = loaded.get("target_programmes")
+        if not old_programmes or set(old_programmes) == {"internship", "placement", "graduate"}:
+            merged["target_programmes"] = list(DEFAULT_SETTINGS["target_programmes"])
+
     return merged
 
 
