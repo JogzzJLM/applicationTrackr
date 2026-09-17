@@ -9,13 +9,14 @@ from datetime import datetime, timedelta
 
 from config import (
     GMAIL_USER, GMAIL_APP_PASS,
-    OUTLOOK_USER, OUTLOOK_APP_PASS, OUTLOOK_IMAP_HOST, OUTLOOK_IMAP_PORT,
+    OUTLOOK_USER, MICROSOFT_CLIENT_ID, MICROSOFT_TENANT,
     EMAIL_USER, EMAIL_APP_PASS, EMAIL_IMAP_HOST, EMAIL_IMAP_PORT,
     SEEN_EMAILS_FILE, update_source_status,
 )
 from notifications import send_notification
 from sheets import update_google_sheet_via_webhook, get_detailed_applications, normalize_company
 from core.storage import add_pending_email_update
+from outlook_graph import fetch_recent_inbox_messages
 
 
 GENERIC_DOMAINS = {
@@ -67,7 +68,6 @@ def extract_company_name(subject, from_sender, body_text=""):
         if len(c_name) > 2 and c_name.lower() not in ["your", "the", "a", "an", "our", "us"]:
             return c_name.title()
 
-    # Many recruitment systems use generic mail domains, but the body/signature names the employer.
     body_patterns = (
         r"\b([A-Z][A-Za-z0-9&.'\- ]{2,50}?)\s+Talent Acquisition Team\b",
         r"\b([A-Z][A-Za-z0-9&.'\- ]{2,50}?)\s+Recruitment Team\b",
@@ -105,9 +105,6 @@ def classify_email_stage(text):
     if any(k in text_lower for k in offer_keywords):
         return "Offer"
 
-    # Assessment must come before generic interview/"next step" phrases. Automated
-    # assessment invitations often say "next stage" or "assessment process" and
-    # would otherwise be promoted too far.
     oa_keywords = [
         "online test", "coding assessment", "hackerrank", "codility", "hirevue",
         "online assessment", "numerical reasoning", "logic test", "take-home",
@@ -206,12 +203,10 @@ def handle_incoming_email_update(company_name, detected_stage, subject="", from_
     return False
 
 
-def _configured_inboxes():
+def _configured_imap_inboxes():
     inboxes = []
     if GMAIL_USER and GMAIL_APP_PASS:
         inboxes.append({"key": "gmail", "label": "Gmail", "host": "imap.gmail.com", "port": 993, "user": GMAIL_USER, "password": GMAIL_APP_PASS})
-    if OUTLOOK_USER and OUTLOOK_APP_PASS:
-        inboxes.append({"key": "outlook", "label": "Outlook", "host": OUTLOOK_IMAP_HOST, "port": OUTLOOK_IMAP_PORT, "user": OUTLOOK_USER, "password": OUTLOOK_APP_PASS})
     if EMAIL_USER and EMAIL_APP_PASS and EMAIL_IMAP_HOST:
         inboxes.append({"key": "imap", "label": "IMAP", "host": EMAIL_IMAP_HOST, "port": EMAIL_IMAP_PORT, "user": EMAIL_USER, "password": EMAIL_APP_PASS})
     return inboxes
@@ -241,7 +236,25 @@ def _extract_plain_text(msg):
     return payload.decode(msg.get_content_charset() or "utf-8", errors="ignore")
 
 
-def _check_one_inbox(account, seen_emails):
+def _process_message(label, seen_key, subject, from_sender, body_text, seen_emails):
+    if seen_key in seen_emails:
+        return 0
+    seen_emails.add(seen_key)
+    company_name = extract_company_name(subject, from_sender, body_text)
+    detected_stage = classify_email_stage(f"{subject} {body_text}")
+    if detected_stage:
+        print(f"  │   ↳ {label}: detected {company_name} → {detected_stage} | {subject[:70]}")
+        handle_incoming_email_update(
+            company_name=company_name,
+            detected_stage=detected_stage,
+            subject=subject,
+            from_sender=from_sender,
+            body_text=body_text,
+        )
+    return 1
+
+
+def _check_one_imap_inbox(account, seen_emails):
     label = account["label"]
     source_name = f"{label} Inbox Listener"
     print(f"  ├── 📬 Checking {label} Inbox for application updates (Read & Unread)...")
@@ -258,8 +271,6 @@ def _check_one_inbox(account, seen_emails):
                 time.sleep(2)
                 continue
             message = str(exc)
-            if account["key"] == "outlook" and any(x in message.lower() for x in ("auth", "login", "authenticate")):
-                message += " — Microsoft may require OAuth2 for this account instead of an app password."
             update_source_status(source_name, f"⚠️ Connection failed ({message[:120]})")
             print(f"  ├── ⚠️ {label} listener connection failed: {message}")
             return 0
@@ -278,37 +289,24 @@ def _check_one_inbox(account, seen_emails):
         for e_id in email_ids[-40:]:
             raw_id = e_id.decode()
             seen_key = f"{account['key']}:{raw_id}"
-            # Preserve the old Gmail seen-email format so redeploying does not
-            # replay every Gmail message already processed by older versions.
             if seen_key in seen_emails or (account["key"] == "gmail" and raw_id in seen_emails):
                 continue
-
             status, msg_data = mail.fetch(e_id, "(BODY.PEEK[])")
             if status != "OK":
                 continue
-
-            seen_emails.add(seen_key)
-            processed_new += 1
             for response_part in msg_data:
                 if not isinstance(response_part, tuple):
                     continue
                 msg = email.message_from_bytes(response_part[1])
-                subject = _decode_header_value(msg.get("Subject", ""))
-                from_sender = _decode_header_value(msg.get("From", ""))
-                body_text = _extract_plain_text(msg)
-                combined_text = f"{subject} {body_text}"
-                company_name = extract_company_name(subject, from_sender, body_text)
-                detected_stage = classify_email_stage(combined_text)
-
-                if detected_stage:
-                    print(f"  │   ↳ {label}: detected {company_name} → {detected_stage} | {subject[:70]}")
-                    handle_incoming_email_update(
-                        company_name=company_name,
-                        detected_stage=detected_stage,
-                        subject=subject,
-                        from_sender=from_sender,
-                        body_text=body_text,
-                    )
+                processed_new += _process_message(
+                    label,
+                    seen_key,
+                    _decode_header_value(msg.get("Subject", "")),
+                    _decode_header_value(msg.get("From", "")),
+                    _extract_plain_text(msg),
+                    seen_emails,
+                )
+                break
 
         save_seen_emails(seen_emails)
         update_source_status(source_name, f"🟢 Active • {processed_new} new messages evaluated this check")
@@ -326,9 +324,52 @@ def _check_one_inbox(account, seen_emails):
                 pass
 
 
+def _check_outlook_graph(seen_emails):
+    source_name = "Outlook Inbox Listener"
+    print("  ├── 📬 Checking Outlook Inbox through Microsoft Graph OAuth...")
+
+    result = fetch_recent_inbox_messages(
+        client_id=MICROSOFT_CLIENT_ID,
+        tenant=MICROSOFT_TENANT,
+        login_hint=OUTLOOK_USER,
+        days=3,
+        limit=50,
+    )
+    if not result.get("ok"):
+        auth = result.get("auth") or {}
+        error = result.get("error") or auth.get("error_description") or auth.get("error") or "unknown Microsoft authentication error"
+        update_source_status(source_name, f"⚠️ OAuth/Graph error ({str(error)[:120]})")
+        print(f"  ├── ⚠️ Outlook OAuth/Graph listener error: {error}")
+        return 0
+
+    processed_new = 0
+    # Graph returns newest first; process oldest first so stage progression is chronological.
+    for item in reversed(result.get("messages", [])):
+        raw_id = item.get("internet_message_id") or item.get("id") or ""
+        if not raw_id:
+            continue
+        seen_key = f"outlook:{raw_id}"
+        processed_new += _process_message(
+            "Outlook",
+            seen_key,
+            item.get("subject", ""),
+            item.get("from", ""),
+            item.get("body", ""),
+            seen_emails,
+        )
+
+    save_seen_emails(seen_emails)
+    auth_mode = result.get("auth_mode", "silent")
+    update_source_status(source_name, f"🟢 OAuth active • {processed_new} new messages • auth={auth_mode}")
+    print(f"  ├── ✅ Outlook Graph check complete ({processed_new} new messages evaluated; auth={auth_mode}).")
+    return processed_new
+
+
 def check_email_inbox():
-    inboxes = _configured_inboxes()
-    if not inboxes:
+    imap_inboxes = _configured_imap_inboxes()
+    outlook_enabled = bool(MICROSOFT_CLIENT_ID)
+    source_count = len(imap_inboxes) + (1 if outlook_enabled else 0)
+    if not source_count:
         update_source_status("Email Inbox Listener", "⚪ Offline (No inbox credentials configured)")
         return 0
 
@@ -339,9 +380,12 @@ def check_email_inbox():
 
     seen_emails = load_seen_emails()
     total = 0
-    for account in inboxes:
-        total += _check_one_inbox(account, seen_emails)
+    for account in imap_inboxes:
+        total += _check_one_imap_inbox(account, seen_emails)
+    if outlook_enabled:
+        total += _check_outlook_graph(seen_emails)
+
     save_seen_emails(seen_emails)
-    update_source_status("Email Inbox Listener", f"🟢 Active • {len(inboxes)} inbox(es) • {total} new messages this check")
-    print(f"  └── ✅ Email listener cycle complete ({total} new messages evaluated across {len(inboxes)} inbox(es)).")
+    update_source_status("Email Inbox Listener", f"🟢 Active • {source_count} inbox(es) • {total} new messages this check")
+    print(f"  └── ✅ Email listener cycle complete ({total} new messages evaluated across {source_count} inbox(es)).")
     return total
