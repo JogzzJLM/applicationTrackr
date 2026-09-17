@@ -1,3 +1,7 @@
+from logging_utils import install_quiet_logging
+
+install_quiet_logging()
+
 import time
 import threading
 
