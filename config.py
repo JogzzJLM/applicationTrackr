@@ -31,19 +31,17 @@ NTFY_BASE_URL = os.getenv("NTFY_BASE_URL", "https://ntfy.sh").rstrip("/")
 NTFY_TOPIC = os.getenv("NTFY_TOPIC", "")
 NTFY_TOKEN = os.getenv("NTFY_TOKEN", "")
 
-# Backwards-compatible Gmail inbox settings.
+# Gmail uses an app password over IMAP.
 GMAIL_USER = os.getenv("GMAIL_USER", "")
 GMAIL_APP_PASS = os.getenv("GMAIL_APP_PASS", "")
 
-# Optional Outlook inbox. Outlook.com/Microsoft 365 IMAP endpoint defaults here.
-# Some Microsoft accounts require OAuth rather than an app password; the listener
-# will log an explicit authentication warning rather than silently reporting 0 mail.
+# Outlook / Microsoft 365 uses Microsoft Graph + OAuth2 device-code flow.
+# OUTLOOK_USER is only a login hint; no Microsoft password is stored.
 OUTLOOK_USER = os.getenv("OUTLOOK_USER", "")
-OUTLOOK_APP_PASS = os.getenv("OUTLOOK_APP_PASS", "")
-OUTLOOK_IMAP_HOST = os.getenv("OUTLOOK_IMAP_HOST", "outlook.office365.com")
-OUTLOOK_IMAP_PORT = int(os.getenv("OUTLOOK_IMAP_PORT", "993"))
+MICROSOFT_CLIENT_ID = os.getenv("MICROSOFT_CLIENT_ID", "")
+MICROSOFT_TENANT = os.getenv("MICROSOFT_TENANT", "common")
 
-# Optional generic IMAP mailbox for any other provider.
+# Optional generic third-party IMAP mailbox.
 EMAIL_USER = os.getenv("EMAIL_USER", "")
 EMAIL_APP_PASS = os.getenv("EMAIL_APP_PASS", "")
 EMAIL_IMAP_HOST = os.getenv("EMAIL_IMAP_HOST", "")

@@ -12,11 +12,12 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 TECH_ROLE_PHRASES = {
     "software": (
-        "software engineer", "software developer", "backend engineer", "backend developer",
-        "frontend engineer", "frontend developer", "full stack engineer", "fullstack engineer",
-        "full-stack engineer", "platform engineer", "systems engineer", "systems developer",
-        "site reliability engineer", "sre", "cloud engineer", "devops engineer",
-        "infrastructure engineer", "data engineer", "application engineer",
+        "software engineer", "software engineering", "software developer", "technology developer",
+        "backend engineer", "backend developer", "frontend engineer", "frontend developer",
+        "full stack engineer", "fullstack engineer", "full-stack engineer", "platform engineer",
+        "systems engineer", "systems developer", "site reliability engineer", "sre",
+        "cloud engineer", "devops engineer", "infrastructure engineer", "data engineer",
+        "application engineer", "technology engineering", "technology intern",
     ),
     "ai_ml": (
         "machine learning engineer", "machine learning research", "ml engineer", "ai engineer",
@@ -41,6 +42,10 @@ NON_TARGET_TITLE_PHRASES = (
     "human resources", "people operations", "recruiter", "recruiting", "talent acquisition",
     "actuarial", "retirement consultant", "strategy intern", "commercial intern",
     "finance intern", "tax intern", "procurement", "communications intern", "content intern",
+    "product manager", "project manager", "mechanical engineer", "mechanical engineering",
+    "civil engineer", "civil engineering", "chemical engineer", "chemical engineering",
+    "manufacturing engineer", "manufacturing engineering", "electrical engineering intern",
+    "electrical engineer intern", "hardware engineering intern", "hardware engineer intern",
 )
 
 SENIOR_TITLE_PHRASES = (
@@ -78,6 +83,12 @@ TECHNICAL_EVIDENCE = (
     "docker", "kubernetes", "aws", "gcp", "azure", "api", "distributed systems",
     "algorithms", "data structures", "machine learning", "pytorch", "tensorflow",
     "backend", "frontend", "software", "programming", "computer science",
+)
+
+TITLE_TECH_QUALIFIERS = (
+    "software", "developer", "backend", "frontend", "full stack", "full-stack", "platform",
+    "systems", "cloud", "devops", "infrastructure", "data", "machine learning", "ml", "ai",
+    "quant", "quantitative", "security", "cyber", "technology", "computer science",
 )
 
 
@@ -146,14 +157,23 @@ def _category(title: str, metadata: Dict[str, Any]) -> Tuple[str, int, str]:
     if best[0] != "unknown":
         return best
 
-    generic = contains_any(title_n, ("engineer", "engineering", "developer", "researcher", "research intern"))
     tech_hits = [p for p in TECHNICAL_EVIDENCE if contains_phrase(supporting, p)]
     technical_department = contains_any(
         supporting,
-        ("engineering", "software", "technology", "machine learning", "data science", "research", "security", "infrastructure", "platform"),
+        ("software engineering", "software", "technology", "machine learning", "data science",
+         "security", "infrastructure", "platform", "computer science"),
     )
-    if generic and (technical_department or len(tech_hits) >= 2):
-        return "software", 22, "generic technical title corroborated by job metadata"
+
+    # Generic "Engineer Intern" used to be enough if the description happened to
+    # mention software. That admitted mechanical/electrical/hardware roles. Generic
+    # titles now need a technical qualifier in the title itself, or strong supporting
+    # evidence for a developer/research title.
+    qualified_engineer = contains_any(title_n, ("engineer", "engineering")) and contains_any(title_n, TITLE_TECH_QUALIFIERS)
+    generic_dev_research = contains_any(title_n, ("developer", "researcher", "research intern"))
+    if qualified_engineer and (technical_department or len(tech_hits) >= 1):
+        return "software", 26, "technical engineer title corroborated by job metadata"
+    if generic_dev_research and (technical_department or len(tech_hits) >= 3):
+        return "software", 24, "developer/research title corroborated by strong technical metadata"
     return "unknown", 0, "no target technical role family"
 
 
@@ -232,7 +252,7 @@ def evaluate_job(
             break
 
     program_type, program_reason = _program(title_n, metadata)
-    target_programmes = set(settings.get("target_programmes", ["internship", "placement", "graduate"]))
+    target_programmes = set(settings.get("target_programmes", ["internship", "placement"]))
     if program_type == "unknown":
         rejection.append(program_reason)
     elif target_programmes and program_type not in target_programmes:
@@ -286,9 +306,9 @@ def evaluate_job(
         reasons.append("graduation year aligns")
 
     score = max(0, min(int(round(score)), 100))
-    minimum = int(settings.get("relevance_min_score", 55))
+    minimum = int(settings.get("relevance_min_score", 65))
     if score < minimum:
         return RelevanceDecision(False, score, "filtered", category, program_type, reasons, [f"fit score {score} below threshold {minimum}"], matched_skills)
 
-    tier = "strong" if score >= 82 else ("good" if score >= 68 else "borderline")
+    tier = "strong" if score >= 85 else ("good" if score >= 75 else "borderline")
     return RelevanceDecision(True, score, tier, category, program_type, reasons, [], matched_skills)
