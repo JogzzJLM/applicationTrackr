@@ -24,6 +24,10 @@ GENERIC_DOMAINS = {
     "gmail", "yahoo", "hotmail", "outlook", "icloud", "proton", "mail",
     "googlemail", "live", "msn", "me", "comcast", "aol"
 }
+GENERIC_SUBJECT_COMPANY_WORDS = {
+    "complete an online assessment", "online assessment", "assessment", "application",
+    "application update", "your application", "invitation", "complete", "status update",
+}
 
 
 def load_seen_emails():
@@ -55,7 +59,7 @@ def _decode_header_value(value):
 
 
 def extract_company_name(subject, from_sender, body_text=""):
-    """Extract a likely employer, including from forwarded-email body signatures."""
+    """Extract an employer, preferring forwarded-message body evidence over the Fwd subject."""
     subject = subject or ""
     body_text = body_text or ""
 
@@ -72,15 +76,6 @@ def extract_company_name(subject, from_sender, body_text=""):
             if 2 < len(candidate) <= 50:
                 return candidate
 
-    sub_match = (
-        re.search(r"\b(?:at|with|for|to)\s+([A-Z][a-zA-Z0-9\s&]+?)(?=\s+[-–|]|[.,!?]|$)", subject, re.I)
-        or re.search(r"([A-Z][a-zA-Z0-9\s&]+?)\s+Application\b", subject)
-    )
-    if sub_match:
-        candidate = sub_match.group(1).strip()
-        if len(candidate) > 2 and candidate.lower() not in {"your", "the", "a", "an", "our", "us"}:
-            return candidate.title()
-
     domain_match = re.search(r"@([a-zA-Z0-9\-]+)\.", from_sender or "")
     if domain_match:
         domain = domain_match.group(1).lower()
@@ -91,45 +86,54 @@ def extract_company_name(subject, from_sender, body_text=""):
                 return "Trackr"
             return domain.capitalize()
 
+    # Subjects such as "Fwd: Invitation to complete an online assessment" used to
+    # incorrectly produce "Complete An Online Assessment" as the company.
+    sub_match = (
+        re.search(r"\b(?:at|with|for|to)\s+([A-Z][a-zA-Z0-9\s&]+?)(?=\s+[-–|]|[.,!?]|$)", subject, re.I)
+        or re.search(r"([A-Z][a-zA-Z0-9\s&]+?)\s+Application\b", subject)
+    )
+    if sub_match:
+        candidate = re.sub(r"\s+", " ", sub_match.group(1)).strip()
+        if (
+            len(candidate) > 2
+            and candidate.lower() not in {"your", "the", "a", "an", "our", "us"}
+            and candidate.lower() not in GENERIC_SUBJECT_COMPANY_WORDS
+            and not any(word in candidate.lower() for word in ("assessment", "interview", "application"))
+        ):
+            return candidate.title()
+
     return "Application Company"
 
 
 def classify_email_stage(text):
     text_lower = (text or "").lower()
-
     if any(k in text_lower for k in (
         "offer of employment", "pleased to offer", "congratulations on your offer",
         "job offer", "formal offer", "offer letter", "we would like to offer",
     )):
         return "Offer"
-
-    # Assessment must be checked before generic "next step" interview wording.
     if any(k in text_lower for k in (
         "online test", "coding assessment", "hackerrank", "codility", "hirevue",
         "online assessment", "numerical reasoning", "logic test", "take-home",
         "experience platform", "complete your assessment", "assessment invitation",
     )):
         return "Online Assessment"
-
     if any(k in text_lower for k in (
         "interview", "schedule a call", "invitation to interview", "next step", "speaking with",
         "first round", "final round", "assessment centre", "assessment center", "video call",
     )):
         return "Interview"
-
     if any(k in text_lower for k in (
         "regret to inform", "unable to offer", "not moving forward", "other candidates",
         "unsuccessful", "high volume of applications", "after careful consideration",
         "decided not to proceed", "will not be proceeding",
     )):
         return "Rejected"
-
     if any(k in text_lower for k in (
         "thank you for applying", "application received", "received your application",
         "confirming your application", "application submitted", "successfully submitted",
     )):
         return "Applied"
-
     if any(k in text_lower for k in (
         "application status", "update regarding your", "regarding your application",
     )):
@@ -142,8 +146,9 @@ def _tokens(value):
 
 
 def _rank_apps_from_email(subject, body_text, apps):
-    """Rank logged applications using employer and role evidence from the full email."""
     haystack = f"{subject or ''} {body_text or ''}".lower()
+    compact_haystack = re.sub(r"[^a-z0-9]", "", haystack)
+    normalized_haystack = re.sub(r"[^a-z0-9]+", " ", haystack)
     hay_tokens = _tokens(haystack)
     ranked = []
     for app in apps:
@@ -151,17 +156,15 @@ def _rank_apps_from_email(subject, body_text, apps):
         role = str(app.get("role") or "")
         score = 0
         company_norm = normalize_company(company)
-        if company_norm and company_norm in re.sub(r"[^a-z0-9]", "", haystack):
-            score += 8
-        elif company.lower() and company.lower() in haystack:
-            score += 8
-
-        role_tokens = _tokens(role)
-        overlap = role_tokens & hay_tokens
-        score += min(8, len(overlap))
-        role_norm = re.sub(r"[^a-z0-9]+", " ", role.lower()).strip()
-        if role_norm and role_norm in re.sub(r"[^a-z0-9]+", " ", haystack):
+        if company_norm and company_norm in compact_haystack:
             score += 10
+        elif company.lower() and company.lower() in haystack:
+            score += 10
+        role_tokens = _tokens(role)
+        score += min(10, len(role_tokens & hay_tokens))
+        role_norm = re.sub(r"[^a-z0-9]+", " ", role.lower()).strip()
+        if role_norm and role_norm in normalized_haystack:
+            score += 14
         if score:
             ranked.append((score, app))
     ranked.sort(key=lambda item: item[0], reverse=True)
@@ -181,43 +184,58 @@ def _app_options(apps):
     return options
 
 
-def _refresh_empty_pending_options():
-    """Backfill old pending cards so they always let the user choose an existing application."""
+def _get_sheet_apps_with_retry():
+    """Fetch current applications robustly; keep a short retry for transient published-CSV failures."""
+    apps = []
+    for attempt in range(3):
+        apps = get_detailed_applications(force_refresh=True)
+        if apps:
+            return apps
+        if attempt < 2:
+            time.sleep(1)
+    return apps
+
+
+def refresh_pending_role_choices():
+    """Repair old pending cards in persistent /data using the current Sheet applications."""
     pending = load_pending_email_updates()
-    if not pending:
-        return
-    apps = get_detailed_applications(force_refresh=True)
+    if not isinstance(pending, list) or not pending:
+        return 0
+    apps = _get_sheet_apps_with_retry()
     fallback = _app_options(apps)
-    changed = False
+    if not fallback:
+        print("  ├── ⚠️ Pending role-choice repair skipped: Google Sheet returned no applications.")
+        return 0
+
+    changed = 0
     for item in pending:
-        if not item.get("options") and fallback:
-            item["options"] = fallback
-            changed = True
+        if not isinstance(item, dict):
+            continue
+        options = item.get("options")
+        if not isinstance(options, list) or not options:
+            item["options"] = list(fallback)
+            changed += 1
     if changed:
         save_pending_email_updates(pending)
-        print(f"  ├── 🔧 Backfilled role choices for {sum(1 for x in pending if x.get('options'))} pending email update(s).")
+        print(f"  ├── 🔧 Repaired {changed} pending email update(s) with {len(fallback)} logged role choice(s).")
+    return changed
 
 
 def handle_incoming_email_update(company_name, detected_stage, subject="", from_sender="", body_text=""):
-    apps = get_detailed_applications(force_refresh=True)
+    apps = _get_sheet_apps_with_retry()
     norm_company = normalize_company(company_name)
     matching_apps = [a for a in apps if normalize_company(a.get("company", "")) == norm_company]
 
-    # Forwarded mail can hide the original sender. If normal extraction failed,
-    # use employer + role evidence from the complete message against the Sheet.
-    if not matching_apps:
+    if not matching_apps and apps:
         ranked = _rank_apps_from_email(subject, body_text, apps)
         if ranked:
             best_score = ranked[0][0]
             second_score = ranked[1][0] if len(ranked) > 1 else -1
-            if best_score >= 10 and best_score >= second_score + 3:
+            if best_score >= 12 and best_score >= second_score + 3:
                 matching_apps = [ranked[0][1]]
                 company_name = ranked[0][1].get("company", company_name)
             else:
-                plausible = [app for score, app in ranked if score >= 4][:10]
-                if plausible:
-                    matching_apps = plausible
-                    company_name = plausible[0].get("company", company_name)
+                matching_apps = [app for score, app in ranked if score >= 5][:10]
 
     if len(matching_apps) == 1:
         app = matching_apps[0]
@@ -232,20 +250,13 @@ def handle_incoming_email_update(company_name, detected_stage, subject="", from_
         print(f"  ├── ✅ MATCHED APPLICATION: {exact_company} -> {exact_role} ({detected_stage})")
         return True
 
-    if len(matching_apps) > 1:
-        options = _app_options(matching_apps)
-    else:
-        # Never strand the dashboard with only "new role". Give the user all
-        # currently logged applications as a manual fallback.
-        options = _app_options(apps)
-
+    options = _app_options(matching_apps if len(matching_apps) > 1 else apps)
     if detected_stage in {"Applied", "Offer"} and not matching_apps and company_name != "Application Company":
         update_google_sheet_via_webhook(company_name, detected_stage, role="Software/Quant Role", resolve_sequential=True)
         return True
 
-    update_id = f"pending_{int(time.time()*1000)}"
     add_pending_email_update({
-        "id": update_id,
+        "id": f"pending_{int(time.time()*1000)}",
         "company": company_name,
         "stage": detected_stage,
         "subject": subject[:120] if subject else f"{company_name} Email Update",
@@ -362,25 +373,33 @@ def _check_one_imap_inbox(account, seen_emails):
 
 def check_email_inbox():
     inboxes = _configured_imap_inboxes()
-    if not inboxes:
-        update_source_status("Email Inbox Listener", "⚪ Offline (No inbox credentials configured)")
-        return 0
 
     print("""
 ┌────────────────────────────────────────────────────────────────────────┐
 │ 📧 EMAIL INBOX AUTOMATION & STATUS LISTENER                            │
 └────────────────────────────────────────────────────────────────────────┘""")
 
-    # This also repairs old pending cards created before role fallback existed.
+    # Repair persisted pending cards even when there are no new emails this cycle.
     try:
-        _refresh_empty_pending_options()
+        refresh_pending_role_choices()
     except Exception as exc:
-        print(f"  ├── ⚠️ Could not refresh pending role choices: {exc}")
+        print(f"  ├── ⚠️ Could not repair pending role choices: {exc}")
+
+    if not inboxes:
+        update_source_status("Email Inbox Listener", "⚪ Offline (No inbox credentials configured)")
+        return 0
 
     seen = load_seen_emails()
     total = 0
     for account in inboxes:
         total += _check_one_imap_inbox(account, seen)
+
+    # Try again after inbox processing in case the first Sheet fetch was transient.
+    try:
+        refresh_pending_role_choices()
+    except Exception as exc:
+        print(f"  ├── ⚠️ Could not repair pending role choices after polling: {exc}")
+
     save_seen_emails(seen)
     update_source_status("Email Inbox Listener", f"🟢 Active • {len(inboxes)} inbox(es) • {total} new messages this check")
     print(f"  └── ✅ Email listener cycle complete ({total} new messages evaluated across {len(inboxes)} inbox(es)).")
