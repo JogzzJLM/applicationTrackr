@@ -42,11 +42,11 @@ HIDDEN_JOBS_FILE = _state_file("hidden_jobs.json")
 SCRAPER_STATUS_FILE = _state_file("scraper_status.json")
 PENDING_EMAILS_FILE = _state_file("pending_email_updates.json")
 
-# v5 intentionally migrates existing installs into a precision-first profile.
-# Older persisted settings were able to preserve permissive booleans/thresholds
-# indefinitely, which meant redeploying new relevance code did not necessarily
-# make the live feed stricter.
-SETTINGS_SCHEMA_VERSION = 5
+# v6 forces one more precision migration because some live installs had already
+# persisted schema v5 while still carrying permissive pre-v5 values. It also adds
+# city/country exclusions seen in the noisy ATS feeds so mixed-location postings
+# such as "London / New York" cannot slip through just because London is present.
+SETTINGS_SCHEMA_VERSION = 6
 DEFAULT_SETTINGS = {
     "settings_schema_version": SETTINGS_SCHEMA_VERSION,
     "grad_years_allowed": ["2027", "2028", "2029"],
@@ -66,7 +66,8 @@ DEFAULT_SETTINGS = {
     ],
     "exclude_locations": [
         "united states", "usa", "canada", "australia", "singapore", "hong kong",
-        "japan", "france", "poland", "germany",
+        "japan", "france", "poland", "germany", "netherlands", "switzerland", "denmark",
+        "chicago", "new york", "san francisco", "seattle", "amsterdam", "paris", "zug", "aarhus",
     ],
     "my_skills": ["python", "java", "javascript", "sql", "git", "linux", "docker", "data structures", "algorithms"],
     "role_keywords": ["software", "developer", "engineer", "backend", "frontend", "full stack", "systems", "quant", "quantitative", "machine learning", "data science", "cyber", "security", "cloud", "devops"],
@@ -189,11 +190,11 @@ def _merge_settings(loaded):
         if old_threshold <= 55:
             merged["relevance_min_score"] = 65
 
-    # v5 is a one-time precision reset for existing deployments. Previous versions
-    # could save permissive values back into /data during ATS auto-discovery, so the
-    # stricter engine appeared not to work after redeploy. These are guardrails, not
-    # ordinary UI preferences, for the current second-year internship/placement use.
-    if saved_schema < 5:
+    # v5/v6 precision reset for live deployments. v6 intentionally repeats the
+    # reset because an earlier deployment could persist schema v5 while carrying
+    # old permissive booleans. These are current product guardrails for the user's
+    # internship/placement feed rather than arbitrary historical defaults.
+    if saved_schema < 6:
         merged["target_programmes"] = ["internship", "placement"]
         merged["strict_location_filter"] = True
         merged["allow_unknown_location"] = False
