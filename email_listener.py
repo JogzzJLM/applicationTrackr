@@ -6,8 +6,13 @@ import email
 from email.header import decode_header
 import time
 from datetime import datetime, timedelta
-from urllib.parse import quote
-from config import GMAIL_USER, GMAIL_APP_PASS, SEEN_EMAILS_FILE, update_source_status
+
+from config import (
+    GMAIL_USER, GMAIL_APP_PASS,
+    OUTLOOK_USER, OUTLOOK_APP_PASS, OUTLOOK_IMAP_HOST, OUTLOOK_IMAP_PORT,
+    EMAIL_USER, EMAIL_APP_PASS, EMAIL_IMAP_HOST, EMAIL_IMAP_PORT,
+    SEEN_EMAILS_FILE, update_source_status,
+)
 from notifications import send_notification
 from sheets import update_google_sheet_via_webhook, get_detailed_applications, normalize_company
 from core.storage import add_pending_email_update
@@ -18,6 +23,7 @@ GENERIC_DOMAINS = {
     "googlemail", "live", "msn", "me", "comcast", "aol"
 }
 
+
 def load_seen_emails():
     if os.path.exists(SEEN_EMAILS_FILE):
         try:
@@ -27,6 +33,7 @@ def load_seen_emails():
             pass
     return set()
 
+
 def save_seen_emails(seen):
     try:
         with open(SEEN_EMAILS_FILE, "w") as f:
@@ -34,8 +41,23 @@ def save_seen_emails(seen):
     except Exception:
         pass
 
+
+def _decode_header_value(value):
+    chunks = decode_header(value or "")
+    out = []
+    for chunk, encoding in chunks:
+        if isinstance(chunk, bytes):
+            out.append(chunk.decode(encoding or "utf-8", errors="ignore"))
+        else:
+            out.append(str(chunk))
+    return "".join(out)
+
+
 def extract_company_name(subject, from_sender, body_text=""):
-    """Intelligently extracts the company name from email subject, sender domain, or body."""
+    """Extract a likely company from subject, sender domain, or recognisable body signature."""
+    subject = subject or ""
+    body_text = body_text or ""
+
     sub_match = (
         re.search(r"\b(?:at|with|for|to)\s+([A-Z][a-zA-Z0-9\s\&]+?)(?=\s+[\-\–\|]|[\.\,\!\?]|$)", subject, re.IGNORECASE) or
         re.search(r"([A-Z][a-zA-Z0-9\s\&]+?)\s+Application\b", subject)
@@ -45,21 +67,36 @@ def extract_company_name(subject, from_sender, body_text=""):
         if len(c_name) > 2 and c_name.lower() not in ["your", "the", "a", "an", "our", "us"]:
             return c_name.title()
 
-    domain_match = re.search(r"@([a-zA-Z0-9\-]+)\.", from_sender)
+    # Many recruitment systems use generic mail domains, but the body/signature names the employer.
+    body_patterns = (
+        r"\b([A-Z][A-Za-z0-9&.'\- ]{2,50}?)\s+Talent Acquisition Team\b",
+        r"\b([A-Z][A-Za-z0-9&.'\- ]{2,50}?)\s+Recruitment Team\b",
+        r"\b([A-Z][A-Za-z0-9&.'\- ]{2,50}?)\s+Early Careers Team\b",
+        r"\b([A-Z][A-Za-z0-9&.'\- ]{2,50}?)\s+Email Classification\b",
+    )
+    for pattern in body_patterns:
+        match = re.search(pattern, body_text)
+        if match:
+            candidate = re.sub(r"\s+", " ", match.group(1)).strip(" -–|,.")
+            if 2 < len(candidate) <= 50:
+                return candidate
+
+    domain_match = re.search(r"@([a-zA-Z0-9\-]+)\.", from_sender or "")
     if domain_match:
         dom = domain_match.group(1).lower()
         if dom not in GENERIC_DOMAINS and len(dom) > 2:
-            if dom == "marshallwace" or dom == "mwc":
+            if dom in {"marshallwace", "mwc"}:
                 return "Marshall Wace"
-            elif dom == "the-trackr":
+            if dom == "the-trackr":
                 return "Trackr"
             return dom.capitalize()
 
     return "Application Company"
 
+
 def classify_email_stage(text):
-    """Determines application status from email content."""
-    text_lower = text.lower()
+    """Determine application status from email content."""
+    text_lower = (text or "").lower()
 
     offer_keywords = [
         "offer of employment", "pleased to offer", "congratulations on your offer",
@@ -68,19 +105,23 @@ def classify_email_stage(text):
     if any(k in text_lower for k in offer_keywords):
         return "Offer"
 
+    # Assessment must come before generic interview/"next step" phrases. Automated
+    # assessment invitations often say "next stage" or "assessment process" and
+    # would otherwise be promoted too far.
+    oa_keywords = [
+        "online test", "coding assessment", "hackerrank", "codility", "hirevue",
+        "online assessment", "numerical reasoning", "logic test", "take-home",
+        "experience platform", "complete your assessment", "assessment invitation"
+    ]
+    if any(k in text_lower for k in oa_keywords):
+        return "Online Assessment"
+
     interview_keywords = [
         "interview", "schedule a call", "invitation to interview", "next step", "speaking with",
         "first round", "final round", "assessment centre", "assessment center", "video call"
     ]
     if any(k in text_lower for k in interview_keywords):
         return "Interview"
-
-    oa_keywords = [
-        "online test", "coding assessment", "hackerrank", "codility", "hirevue",
-        "online assessment", "numerical reasoning", "logic test", "take-home"
-    ]
-    if any(k in text_lower for k in oa_keywords):
-        return "Online Assessment"
 
     rejection_keywords = [
         "regret to inform", "unable to offer", "not moving forward", "other candidates",
@@ -105,16 +146,11 @@ def classify_email_stage(text):
 
     return None
 
+
 def handle_incoming_email_update(company_name, detected_stage, subject="", from_sender="", body_text=""):
-    """
-    Intelligently maps incoming email status updates (Rejected, Interview, OA, Offer) to existing applications in Google Sheets.
-    - If 1 application exists for company_name: updates that exact application's role on Google Sheets.
-    - If >1 application exists for company_name: saves a pending update so the user can select which role it belongs to.
-    - If 0 applications exist: logs a new entry or creates a pending update.
-    """
+    """Map an incoming status update onto an existing Google Sheet application."""
     apps = get_detailed_applications(force_refresh=True)
     norm_c = normalize_company(company_name)
-
     matching_apps = [a for a in apps if normalize_company(a.get("company", "")) == norm_c]
 
     if len(matching_apps) == 1:
@@ -124,174 +160,188 @@ def handle_incoming_email_update(company_name, detected_stage, subject="", from_
         send_notification(
             title=f"Update Logged: {exact_company} ({detected_stage})",
             message=f"Automatically updated status to {detected_stage} for exact role: '{exact_role}'.",
-            tags="check-mark",
-            priority=3,
-            sound="chime"
+            tags="check-mark", priority=3, sound="chime"
         )
         print(f"  ├── ✅ MATCHED 1-EXACT APPLICATION: {exact_company} -> {exact_role} ({detected_stage})")
         return True
 
-    elif len(matching_apps) > 1:
+    if len(matching_apps) > 1:
         update_id = f"pending_{int(time.time()*1000)}"
-        pending_obj = {
-            "id": update_id,
-            "company": company_name,
-            "stage": detected_stage,
+        add_pending_email_update({
+            "id": update_id, "company": company_name, "stage": detected_stage,
             "subject": subject[:80] if subject else f"{company_name} Email Update",
             "date_received": datetime.now().strftime("%Y-%m-%d %H:%M"),
-            "options": [
-                {"company": a.get("company", company_name), "role": a.get("role")}
-                for a in matching_apps
-            ]
-        }
-        add_pending_email_update(pending_obj)
+            "options": [{"company": a.get("company", company_name), "role": a.get("role")} for a in matching_apps]
+        })
         send_notification(
             title=f"⚠️ Action Required: {company_name} ({detected_stage})",
             message=f"Email update received from {company_name}. You have {len(matching_apps)} active applications for {company_name}. Click to select which role this update belongs to.",
-            tags="warning,bell",
-            priority=5,
-            sound="fanfare"
+            tags="warning,bell", priority=5, sound="fanfare"
         )
         print(f"  ├── ⚠️ AMBIGUOUS UPDATE ({len(matching_apps)} apps found for {company_name}). Saved to Pending Actions.")
         return False
 
-    else:
-        if detected_stage in ["Applied", "Offer"]:
-            update_google_sheet_via_webhook(company_name, detected_stage, role="Software/Quant Role", resolve_sequential=True)
-            send_notification(
-                title=f"New Application Logged: {company_name}",
-                message=f"Logged new application for {company_name} ({detected_stage}).",
-                tags="check-mark",
-                priority=2,
-                sound="subtle"
-            )
-            print(f"  ├── ✅ LOGGED NEW APPLICATION: {company_name} ({detected_stage})")
-            return True
-        else:
-            update_id = f"pending_{int(time.time()*1000)}"
-            pending_obj = {
-                "id": update_id,
-                "company": company_name,
-                "stage": detected_stage,
-                "subject": subject[:80] if subject else f"{company_name} Email Update",
-                "date_received": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                "options": []
-            }
-            add_pending_email_update(pending_obj)
-            send_notification(
-                title=f"Notice: {company_name} ({detected_stage})",
-                message=f"Email update ({detected_stage}) received from {company_name}, but no active application was logged. Click to resolve on dashboard.",
-                tags="information_source",
-                priority=3,
-                sound="subtle"
-            )
-            print(f"  ├── ℹ️ Email update for unlogged company {company_name}. Saved to Pending Items.")
-            return False
+    if detected_stage in ["Applied", "Offer"]:
+        update_google_sheet_via_webhook(company_name, detected_stage, role="Software/Quant Role", resolve_sequential=True)
+        send_notification(
+            title=f"New Application Logged: {company_name}",
+            message=f"Logged new application for {company_name} ({detected_stage}).",
+            tags="check-mark", priority=2, sound="subtle"
+        )
+        print(f"  ├── ✅ LOGGED NEW APPLICATION: {company_name} ({detected_stage})")
+        return True
 
-def check_email_inbox():
-    if not GMAIL_USER or not GMAIL_APP_PASS:
-        update_source_status("Gmail Inbox Listener", "⚪ Offline (No Credentials Set)")
-        return
+    update_id = f"pending_{int(time.time()*1000)}"
+    add_pending_email_update({
+        "id": update_id, "company": company_name, "stage": detected_stage,
+        "subject": subject[:80] if subject else f"{company_name} Email Update",
+        "date_received": datetime.now().strftime("%Y-%m-%d %H:%M"), "options": []
+    })
+    send_notification(
+        title=f"Notice: {company_name} ({detected_stage})",
+        message=f"Email update ({detected_stage}) received from {company_name}, but no active application was logged. Click to resolve on dashboard.",
+        tags="information_source", priority=3, sound="subtle"
+    )
+    print(f"  ├── ℹ️ Email update for unlogged company {company_name}. Saved to Pending Items.")
+    return False
 
-    print("""
-┌────────────────────────────────────────────────────────────────────────┐
-│ 📧 GMAIL INBOX AUTOMATION & STATUS LISTENER                            │
-└────────────────────────────────────────────────────────────────────────┘""")
-    print("  ├── 📬 Checking Gmail Inbox for application updates (Read & Unread)...")
-    seen_emails = load_seen_emails()
-    is_first_run = len(seen_emails) == 0
+
+def _configured_inboxes():
+    inboxes = []
+    if GMAIL_USER and GMAIL_APP_PASS:
+        inboxes.append({"key": "gmail", "label": "Gmail", "host": "imap.gmail.com", "port": 993, "user": GMAIL_USER, "password": GMAIL_APP_PASS})
+    if OUTLOOK_USER and OUTLOOK_APP_PASS:
+        inboxes.append({"key": "outlook", "label": "Outlook", "host": OUTLOOK_IMAP_HOST, "port": OUTLOOK_IMAP_PORT, "user": OUTLOOK_USER, "password": OUTLOOK_APP_PASS})
+    if EMAIL_USER and EMAIL_APP_PASS and EMAIL_IMAP_HOST:
+        inboxes.append({"key": "imap", "label": "IMAP", "host": EMAIL_IMAP_HOST, "port": EMAIL_IMAP_PORT, "user": EMAIL_USER, "password": EMAIL_APP_PASS})
+    return inboxes
+
+
+def _extract_plain_text(msg):
+    if msg.is_multipart():
+        fallback_html = ""
+        for part in msg.walk():
+            disposition = str(part.get("Content-Disposition", "")).lower()
+            if "attachment" in disposition:
+                continue
+            ctype = part.get_content_type()
+            payload = part.get_payload(decode=True)
+            if not payload:
+                continue
+            charset = part.get_content_charset() or "utf-8"
+            text = payload.decode(charset, errors="ignore")
+            if ctype == "text/plain":
+                return text
+            if ctype == "text/html" and not fallback_html:
+                fallback_html = re.sub(r"<[^>]+>", " ", text)
+        return re.sub(r"\s+", " ", fallback_html)
+    payload = msg.get_payload(decode=True)
+    if not payload:
+        return ""
+    return payload.decode(msg.get_content_charset() or "utf-8", errors="ignore")
+
+
+def _check_one_inbox(account, seen_emails):
+    label = account["label"]
+    source_name = f"{label} Inbox Listener"
+    print(f"  ├── 📬 Checking {label} Inbox for application updates (Read & Unread)...")
 
     mail = None
     for attempt in range(2):
         try:
-            mail = imaplib.IMAP4_SSL("imap.gmail.com", timeout=10)
-            mail.login(GMAIL_USER, GMAIL_APP_PASS)
+            mail = imaplib.IMAP4_SSL(account["host"], account["port"], timeout=12)
+            mail.login(account["user"], account["password"])
             mail.select("inbox")
             break
-        except Exception as e:
+        except Exception as exc:
             if attempt == 0:
                 time.sleep(2)
-            else:
-                update_source_status("Gmail Inbox Listener", f"⚠️ Connection Skipped ({e})")
-                print(f"  └── ⚠️ Email Listener Notice: IMAP connection offline/retry skipped ({e})")
-                return
+                continue
+            message = str(exc)
+            if account["key"] == "outlook" and any(x in message.lower() for x in ("auth", "login", "authenticate")):
+                message += " — Microsoft may require OAuth2 for this account instead of an app password."
+            update_source_status(source_name, f"⚠️ Connection failed ({message[:120]})")
+            print(f"  ├── ⚠️ {label} listener connection failed: {message}")
+            return 0
 
+    processed_new = 0
     try:
         since_date = (datetime.now() - timedelta(days=3)).strftime("%d-%b-%Y")
         status, messages = mail.search(None, f'(SINCE "{since_date}")')
         if status != "OK" or not messages[0]:
-            status, messages = mail.search(None, 'ALL')
-
+            status, messages = mail.search(None, "ALL")
         if status != "OK" or not messages[0]:
-            update_source_status("Gmail Inbox Listener", f"🟢 Active • {len(seen_emails)} emails tracked")
-            print("  └── ℹ️ Inbox up to date (0 new application emails).")
-            mail.logout()
-            return
+            update_source_status(source_name, f"🟢 Active • {label} inbox up to date")
+            return 0
 
         email_ids = messages[0].split()
-
-        if is_first_run:
-            print(f"  └── 📦 Initialized email tracker with {len(email_ids)} existing inbox messages.")
-            for e_id in email_ids:
-                seen_emails.add(e_id.decode())
-            save_seen_emails(seen_emails)
-            update_source_status("Gmail Inbox Listener", f"🟢 Active • {len(seen_emails)} emails tracked")
-            mail.logout()
-            return
-
-        processed_new = 0
-        for e_id in email_ids[-30:]:
-            str_id = e_id.decode()
-            if str_id in seen_emails:
+        for e_id in email_ids[-40:]:
+            raw_id = e_id.decode()
+            seen_key = f"{account['key']}:{raw_id}"
+            # Preserve the old Gmail seen-email format so redeploying does not
+            # replay every Gmail message already processed by older versions.
+            if seen_key in seen_emails or (account["key"] == "gmail" and raw_id in seen_emails):
                 continue
 
-            seen_emails.add(str_id)
-            processed_new += 1
-
             status, msg_data = mail.fetch(e_id, "(BODY.PEEK[])")
+            if status != "OK":
+                continue
+
+            seen_emails.add(seen_key)
+            processed_new += 1
             for response_part in msg_data:
-                if isinstance(response_part, tuple):
-                    msg = email.message_from_bytes(response_part[1])
-                    subject, encoding = decode_header(msg.get("Subject", ""))[0]
-                    if isinstance(subject, bytes):
-                        subject = subject.decode(encoding or "utf-8", errors="ignore")
+                if not isinstance(response_part, tuple):
+                    continue
+                msg = email.message_from_bytes(response_part[1])
+                subject = _decode_header_value(msg.get("Subject", ""))
+                from_sender = _decode_header_value(msg.get("From", ""))
+                body_text = _extract_plain_text(msg)
+                combined_text = f"{subject} {body_text}"
+                company_name = extract_company_name(subject, from_sender, body_text)
+                detected_stage = classify_email_stage(combined_text)
 
-                    from_sender, encoding = decode_header(msg.get("From", ""))[0]
-                    if isinstance(from_sender, bytes):
-                        from_sender = from_sender.decode(encoding or "utf-8", errors="ignore")
+                if detected_stage:
+                    print(f"  │   ↳ {label}: detected {company_name} → {detected_stage} | {subject[:70]}")
+                    handle_incoming_email_update(
+                        company_name=company_name,
+                        detected_stage=detected_stage,
+                        subject=subject,
+                        from_sender=from_sender,
+                        body_text=body_text,
+                    )
 
-                    body_text = ""
-                    if msg.is_multipart():
-                        for part in msg.walk():
-                            if part.get_content_type() == "text/plain":
-                                body_text = part.get_payload(decode=True).decode("utf-8", errors="ignore")
-                                break
-                    else:
-                        body_text = msg.get_payload(decode=True).decode("utf-8", errors="ignore")
-
-                    combined_text = f"{subject} {body_text}".lower()
-                    company_name = extract_company_name(subject, from_sender, body_text)
-                    detected_stage = classify_email_stage(combined_text)
-
-                    if detected_stage:
-                        handle_incoming_email_update(
-                            company_name=company_name,
-                            detected_stage=detected_stage,
-                            subject=subject,
-                            from_sender=from_sender,
-                            body_text=body_text
-                        )
-
-        mail.logout()
         save_seen_emails(seen_emails)
-        update_source_status("Gmail Inbox Listener", f"🟢 Active • {len(seen_emails)} emails tracked")
-        print(f"  └── ✅ Gmail check complete ({processed_new} new messages evaluated).")
-
-    except Exception as e:
-        update_source_status("Gmail Inbox Listener", f"⚠️ Check Notice ({e})")
-        print(f"  └── ⚠️ Email Listener Notice: Error reading inbox messages ({e})")
+        update_source_status(source_name, f"🟢 Active • {processed_new} new messages evaluated this check")
+        print(f"  ├── ✅ {label} check complete ({processed_new} new messages evaluated).")
+        return processed_new
+    except Exception as exc:
+        update_source_status(source_name, f"⚠️ Check error ({str(exc)[:120]})")
+        print(f"  ├── ⚠️ {label} listener error: {exc}")
+        return 0
+    finally:
         if mail:
             try:
                 mail.logout()
             except Exception:
                 pass
+
+
+def check_email_inbox():
+    inboxes = _configured_inboxes()
+    if not inboxes:
+        update_source_status("Email Inbox Listener", "⚪ Offline (No inbox credentials configured)")
+        return 0
+
+    print("""
+┌────────────────────────────────────────────────────────────────────────┐
+│ 📧 EMAIL INBOX AUTOMATION & STATUS LISTENER                            │
+└────────────────────────────────────────────────────────────────────────┘""")
+
+    seen_emails = load_seen_emails()
+    total = 0
+    for account in inboxes:
+        total += _check_one_inbox(account, seen_emails)
+    save_seen_emails(seen_emails)
+    update_source_status("Email Inbox Listener", f"🟢 Active • {len(inboxes)} inbox(es) • {total} new messages this check")
+    print(f"  └── ✅ Email listener cycle complete ({total} new messages evaluated across {len(inboxes)} inbox(es)).")
+    return total
