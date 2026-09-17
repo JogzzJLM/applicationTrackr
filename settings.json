@@ -1,19 +1,20 @@
 {
-  "settings_schema_version": 4,
+  "settings_schema_version": 5,
   "grad_years_allowed": ["2027", "2028", "2029"],
   "target_programmes": ["internship", "placement"],
   "target_role_categories": ["software", "ai_ml", "quant", "cyber"],
   "strict_location_filter": true,
   "allow_unknown_location": false,
   "allow_special_international": false,
-  "relevance_min_score": 65,
+  "relevance_min_score": 72,
   "exclude_keywords": [
     "vice president", "vp", "director", "head of", "principal", "staff engineer",
     "senior manager", "engineering manager", "lead engineer", "marketing",
     "social media", "accounting", "internal audit", "sales", "public policy",
     "legal", "human resources", "recruiter", "actuarial", "class of 2026",
     "graduating in 2026", "class of 2025", "product manager", "project manager",
-    "business development", "customer success"
+    "business development", "customer success", "operations intern", "business analyst",
+    "commercial", "procurement", "communications"
   ],
   "exclude_locations": [
     "united states", "usa", "canada", "australia", "singapore", "hong kong",
