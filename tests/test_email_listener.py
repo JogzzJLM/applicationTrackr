@@ -1,6 +1,6 @@
 import unittest
 
-from email_listener import classify_email_stage, extract_company_name
+from email_listener import classify_email_stage, extract_company_name, _rank_apps_from_email
 
 
 BARCLAYS_ASSESSMENT = """
@@ -25,9 +25,23 @@ class EmailListenerTests(unittest.TestCase):
 
     def test_company_can_be_recovered_from_body_signature(self):
         self.assertEqual(
-            extract_company_name("Your application update", "noreply@examplemail.com", BARCLAYS_ASSESSMENT),
+            extract_company_name("Fwd: Invitation to complete an online assessment", "me@gmail.com", BARCLAYS_ASSESSMENT),
             "Barclays",
         )
+
+    def test_forwarded_barclays_email_matches_logged_role(self):
+        apps = [
+            {"company": "Barclays", "role": "2027 Technology Developer Summer Internship Programme London"},
+            {"company": "Cohere", "role": "Software Engineer Intern"},
+        ]
+        ranked = _rank_apps_from_email(
+            "Fwd: Invitation to complete an online assessment",
+            BARCLAYS_ASSESSMENT,
+            apps,
+        )
+        self.assertTrue(ranked)
+        self.assertEqual(ranked[0][1]["company"], "Barclays")
+        self.assertGreaterEqual(ranked[0][0], 10)
 
 
 if __name__ == "__main__":
