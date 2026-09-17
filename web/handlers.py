@@ -12,7 +12,14 @@ from scrapers_engine.audit import run_all_scrapers, recheck_existing_open_jobs_f
 from web.autoapply_view import render_autoapply_html
 from web.views import render_unified_dashboard_html
 from autoapply.learning import learn_answer, learn_mapping
-from autoapply.service import get_run, start_application_run, status as autoapply_status
+from autoapply.service import (
+    autopilot_candidates,
+    get_batch,
+    get_run,
+    start_application_run,
+    start_autopilot_batch,
+    status as autoapply_status,
+)
 
 
 class ThreadedHTTPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
@@ -93,9 +100,20 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             return self._json({"status": "ok"})
         if path == "/api/autoapply/status":
             return self._json(autoapply_status())
+        if path == "/api/autoapply/candidates":
+            limit = qs.get("limit", ["20"])[0]
+            try:
+                limit = max(1, min(100, int(limit)))
+            except Exception:
+                limit = 20
+            return self._json({"candidates": autopilot_candidates(limit)})
         if path == "/api/autoapply/run":
             run_id = qs.get("id", [""])[0]
             payload = get_run(run_id) if run_id else None
+            return self._json(payload or {"status": "not_found"}, 200 if payload else 404)
+        if path == "/api/autoapply/batch":
+            batch_id = qs.get("id", [""])[0]
+            payload = get_batch(batch_id) if batch_id else None
             return self._json(payload or {"status": "not_found"}, 200 if payload else 404)
         if path == "/api/relevance-audit":
             return self._json({"status": "ok", "removed": purge_irrelevant_jobs()})
@@ -178,14 +196,31 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
         if path == "/api/autoapply/run":
             run_id = start_application_run(job_id=form.get("job_id",[""])[0], url=form.get("url",[""])[0], auto_submit=form.get("auto_submit",["false"])[0].lower() in {"1","true","yes"})
             return self._json({"status":"queued","run_id":run_id})
+        if path == "/api/autoapply/autopilot":
+            try:
+                limit = int(form.get("limit", ["0"])[0] or 0) or None
+            except Exception:
+                limit = None
+            batch_id = start_autopilot_batch(
+                limit=limit,
+                auto_submit=form.get("auto_submit",["false"])[0].lower() in {"1","true","yes"},
+            )
+            return self._json({"status":"queued","batch_id":batch_id})
         if path == "/api/autoapply/learn-mapping":
             label, key = form.get("label",[""])[0], form.get("profile_key",[""])[0]
             if not label or not key: return self._json({"status":"error","message":"label and profile_key required"},400)
-            learn_mapping(label,key); return self._json({"status":"ok"})
+            learn_mapping(
+                label,
+                key,
+                context=form.get("context",[""])[0],
+                domain=form.get("domain",[""])[0],
+            )
+            return self._json({"status":"ok"})
         if path == "/api/autoapply/learn-answer":
             question, answer = form.get("question",[""])[0], form.get("answer",[""])[0]
             if not question: return self._json({"status":"error","message":"question required"},400)
-            learn_answer(question,answer); return self._json({"status":"ok"})
+            learn_answer(question, answer, domain=form.get("domain",[""])[0])
+            return self._json({"status":"ok"})
         return self._json({"status":"not_found","path":path},404)
 
 
