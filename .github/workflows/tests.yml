@@ -5,7 +5,7 @@ on:
   push:
     branches:
       - main
-      - feature/relevance-autoapply-agent
+      - fix/outlook-oauth-relevance-v4
 
 jobs:
   unit-tests:
@@ -16,5 +16,5 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install -r requirements.txt
-      - run: python -m py_compile core/relevance.py core/scoring.py core/storage.py scrapers_engine/ats_scrapers.py scrapers_engine/audit.py web/components.py web/handlers.py web/autoapply_view.py autoapply/*.py
+      - run: python -m py_compile config.py email_listener.py outlook_graph.py core/relevance.py core/scoring.py core/storage.py scrapers_engine/ats_scrapers.py scrapers_engine/audit.py web/components.py web/handlers.py web/autoapply_view.py autoapply/*.py
       - run: DATA_DIR=/tmp/applicationtrackr-test-data python -m unittest discover -s tests -v
