@@ -26,11 +26,29 @@ import threading
 APP_BASE_URL = os.getenv("APP_BASE_URL", f"http://127.0.0.1:{PORT}").rstrip("/")
 APP_TIMEZONE = os.getenv("APP_TIMEZONE", "Europe/London")
 SCRAPER_INTERVAL_SECONDS = int(os.getenv("SCRAPER_INTERVAL_SECONDS", "300"))
+EMAIL_POLL_SECONDS = max(30, int(os.getenv("EMAIL_POLL_SECONDS", "60")))
 NTFY_BASE_URL = os.getenv("NTFY_BASE_URL", "https://ntfy.sh").rstrip("/")
 NTFY_TOPIC = os.getenv("NTFY_TOPIC", "")
 NTFY_TOKEN = os.getenv("NTFY_TOKEN", "")
+
+# Backwards-compatible Gmail inbox settings.
 GMAIL_USER = os.getenv("GMAIL_USER", "")
 GMAIL_APP_PASS = os.getenv("GMAIL_APP_PASS", "")
+
+# Optional Outlook inbox. Outlook.com/Microsoft 365 IMAP endpoint defaults here.
+# Some Microsoft accounts require OAuth rather than an app password; the listener
+# will log an explicit authentication warning rather than silently reporting 0 mail.
+OUTLOOK_USER = os.getenv("OUTLOOK_USER", "")
+OUTLOOK_APP_PASS = os.getenv("OUTLOOK_APP_PASS", "")
+OUTLOOK_IMAP_HOST = os.getenv("OUTLOOK_IMAP_HOST", "outlook.office365.com")
+OUTLOOK_IMAP_PORT = int(os.getenv("OUTLOOK_IMAP_PORT", "993"))
+
+# Optional generic IMAP mailbox for any other provider.
+EMAIL_USER = os.getenv("EMAIL_USER", "")
+EMAIL_APP_PASS = os.getenv("EMAIL_APP_PASS", "")
+EMAIL_IMAP_HOST = os.getenv("EMAIL_IMAP_HOST", "")
+EMAIL_IMAP_PORT = int(os.getenv("EMAIL_IMAP_PORT", "993"))
+
 GOOGLE_SHEET_WEBHOOK_URL = os.getenv("GOOGLE_SHEET_WEBHOOK_URL", "")
 GOOGLE_SHEET_CSV_URL = os.getenv("GOOGLE_SHEET_CSV_URL", "")
 HEALTHCHECKS_PING_URL = os.getenv("HEALTHCHECKS_PING_URL", "")
