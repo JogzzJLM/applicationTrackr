@@ -42,23 +42,24 @@ HIDDEN_JOBS_FILE = _state_file("hidden_jobs.json")
 SCRAPER_STATUS_FILE = _state_file("scraper_status.json")
 PENDING_EMAILS_FILE = _state_file("pending_email_updates.json")
 
-SETTINGS_SCHEMA_VERSION = 3
+SETTINGS_SCHEMA_VERSION = 4
 DEFAULT_SETTINGS = {
     "settings_schema_version": SETTINGS_SCHEMA_VERSION,
     "grad_years_allowed": ["2027", "2028", "2029"],
-    # Current use-case: second-year internship / placement search. Graduate
-    # schemes stay supported by the engine, but are opt-in rather than noise.
     "target_programmes": ["internship", "placement"],
     "target_role_categories": ["software", "ai_ml", "quant", "cyber"],
     "strict_location_filter": True,
     "allow_unknown_location": False,
     "allow_special_international": False,
-    "relevance_min_score": 55,
+    # 55 was intentionally high-recall but admitted too many merely technical roles.
+    # 65 keeps clear SWE/ML/quant/cyber titles while requiring evidence for generic titles.
+    "relevance_min_score": 65,
     "exclude_keywords": [
         "vice president", "vp", "director", "head of", "principal", "staff engineer",
         "senior manager", "engineering manager", "lead engineer", "marketing", "social media",
         "accounting", "internal audit", "sales", "public policy", "legal", "human resources",
         "recruiter", "actuarial", "class of 2026", "graduating in 2026", "class of 2025",
+        "product manager", "project manager", "business development", "customer success",
     ],
     "exclude_locations": [
         "united states", "usa", "canada", "australia", "singapore", "hong kong",
@@ -67,7 +68,6 @@ DEFAULT_SETTINGS = {
     "my_skills": ["python", "java", "javascript", "sql", "git", "linux", "docker", "data structures", "algorithms"],
     "role_keywords": ["software", "developer", "engineer", "backend", "frontend", "full stack", "systems", "quant", "quantitative", "machine learning", "data science", "cyber", "security", "cloud", "devops"],
     "level_keywords": ["intern", "internship", "placement", "industrial placement", "sandwich", "spring week", "insight week", "graduate", "early career", "undergrad"],
-    # Deliberately does not include bare 'remote': remote without a country is ambiguous.
     "location_keywords": ["london", "birmingham", "oxford", "aylesbury", "west midlands", "uk", "united kingdom", "england", "scotland", "wales", "cambridge", "manchester", "edinburgh", "bristol", "leeds", "glasgow", "reading", "uk remote", "remote uk"],
     "special_intl_companies": ["beamng", "janestreet", "optiver", "citadel", "hudsonrivertrading", "hrt", "twosigma", "imc", "flowtraders", "wayve", "samsara", "quadrature", "millennium"],
     "auto_hide_applied_company_jobs": False,
@@ -87,7 +87,7 @@ DEFAULT_SCRAPER_STATUS = {
         "SmartRecruiters API": "🟢 Active • target companies configured",
         "The Trackr API": "🟢 Active • UK Tech source",
         "Gradcracker API": "🟢 Active • Computing & Maths sectors",
-        "Gmail Inbox Listener": "🟢 Active • Email auto-tracker active",
+        "Email Inbox Listener": "🟢 Active • email auto-tracker active",
     },
 }
 
@@ -156,8 +156,6 @@ def _merge_settings(loaded):
     merged.update(loaded)
     merged["settings_schema_version"] = SETTINGS_SCHEMA_VERSION
 
-    # Do not let an older persisted settings file erase stronger
-    # safety/relevance defaults.
     for key in ("exclude_keywords", "exclude_locations"):
         saved = loaded.get(key, []) if isinstance(loaded.get(key), list) else []
         combined, seen = [], set()
@@ -167,21 +165,26 @@ def _merge_settings(loaded):
                 seen.add(norm); combined.append(str(value).strip())
         merged[key] = combined
 
-    # Migrate the old ambiguous bare Remote location away.
     locations = merged.get("location_keywords", []) if isinstance(merged.get("location_keywords"), list) else []
     merged["location_keywords"] = [x for x in locations if str(x).strip().lower() not in {"remote", "hybrid", "in-office", "onsite", "on-site"}]
     for value in DEFAULT_SETTINGS["location_keywords"]:
         if value not in merged["location_keywords"]:
             merged["location_keywords"].append(value)
 
-    # v2 treated graduate schemes as part of the default second-year feed.
-    # That produced a large technically-related but currently unactionable list.
-    # Preserve an explicit custom programme list, but migrate the old untouched
-    # default to internship + placement only.
     if saved_schema < 3:
         old_programmes = loaded.get("target_programmes")
         if not old_programmes or set(old_programmes) == {"internship", "placement", "graduate"}:
             merged["target_programmes"] = list(DEFAULT_SETTINGS["target_programmes"])
+
+    # v4 raises the old broad default threshold. Preserve a deliberate custom
+    # threshold above 55, but migrate the previous default automatically.
+    if saved_schema < 4:
+        try:
+            old_threshold = int(loaded.get("relevance_min_score", 55))
+        except (TypeError, ValueError):
+            old_threshold = 55
+        if old_threshold <= 55:
+            merged["relevance_min_score"] = DEFAULT_SETTINGS["relevance_min_score"]
 
     return merged
 
