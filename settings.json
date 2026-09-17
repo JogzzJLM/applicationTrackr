@@ -1,89 +1,50 @@
 {
-  "grad_years_allowed": [
-    "2027",
-    "2028"
-  ],
+  "grad_years_allowed": ["2027", "2028", "2029"],
+  "target_programmes": ["internship", "placement", "graduate"],
+  "target_role_categories": ["software", "ai_ml", "quant", "cyber"],
+  "strict_location_filter": true,
+  "allow_unknown_location": false,
+  "allow_special_international": false,
+  "relevance_min_score": 55,
   "exclude_keywords": [
-    "Senior",
-    "Lead",
-    "Manager"
+    "vice president", "director", "head of", "principal", "staff engineer",
+    "senior manager", "engineering manager", "lead engineer", "marketing",
+    "social media", "accounting", "internal audit", "sales", "public policy",
+    "legal", "human resources", "recruiter", "actuarial"
   ],
   "exclude_locations": [
-    "Germany",
-    "US"
+    "united states", "usa", "canada", "australia", "singapore", "hong kong",
+    "japan", "poland", "france", "germany"
   ],
   "my_skills": [
-    "Python",
-    "C++",
-    "PyTorch"
+    "python", "java", "javascript", "sql", "git", "linux", "docker",
+    "data structures", "algorithms", "machine learning", "pytorch", "maths"
   ],
   "role_keywords": [
-    "software",
-    "developer",
-    "engineer",
-    "engineering",
-    "backend",
-    "fullstack",
-    "full-stack",
-    "systems",
-    "quant",
-    "quantitative",
-    "trader",
-    "trading",
-    "research",
-    "machine learning",
-    "ml",
-    "ai",
-    "data science",
-    "cyber",
-    "security",
-    "cloud",
-    "devops",
-    "technology",
-    "collaboration"
+    "software", "developer", "engineer", "backend", "frontend", "full stack",
+    "systems", "quant", "quantitative", "machine learning", "data science",
+    "cyber", "security", "cloud", "devops"
   ],
   "level_keywords": [
-    "intern",
-    "internship",
-    "placement",
-    "industrial placement",
-    "sandwich",
-    "spring week",
-    "insight week",
-    "graduate",
-    "grad",
-    "early talent",
-    "early career",
-    "undergrad"
+    "intern", "internship", "placement", "industrial placement", "sandwich",
+    "spring week", "insight week", "graduate", "early career", "undergrad"
   ],
   "location_keywords": [
-    "london",
-    "birmingham",
-    "oxford",
-    "aylesbury",
-    "west midlands",
-    "remote",
-    "uk",
-    "united kingdom",
-    "cambridge",
-    "manchester",
-    "edinburgh"
+    "london", "birmingham", "oxford", "aylesbury", "west midlands", "uk",
+    "united kingdom", "england", "scotland", "wales", "cambridge", "manchester",
+    "edinburgh", "bristol", "leeds", "glasgow", "reading", "uk remote", "remote uk"
   ],
   "special_intl_companies": [
-    "beamng",
-    "janestreet",
-    "optiver",
-    "citadel",
-    "hudsonrivertrading",
-    "hrt",
-    "twosigma",
-    "imc",
-    "flowtraders",
-    "wayve",
-    "samsara",
-    "quadrature",
-    "millennium"
+    "beamng", "janestreet", "optiver", "citadel", "hudsonrivertrading", "hrt",
+    "twosigma", "imc", "flowtraders", "wayve", "samsara", "quadrature", "millennium"
   ],
   "auto_hide_applied_company_jobs": false,
-  "auto_hide_company_jobs": true
+  "greenhouse_companies": [
+    "deliveroo", "cloudflare", "snyk", "monzo", "starlingbank", "janestreet",
+    "optiver", "canonical", "citadel", "hudsonrivertrading", "palantir", "millennium",
+    "quadrature", "samsara", "imc", "bloomberg", "two-sigma", "jump-trading", "barclays"
+  ],
+  "lever_companies": ["spotify", "revolut", "checkout", "beamng", "wayve", "palantir", "five-ai"],
+  "ashby_companies": ["mistral", "synthesia", "multiverse", "ramp", "huggingface", "cohere", "notion", "scaleai"],
+  "smartrecruiters_companies": ["squarepointcapital", "visa", "ubisoft", "zalando", "bosch"]
 }

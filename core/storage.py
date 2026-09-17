@@ -6,16 +6,19 @@ from pathlib import Path
 
 _FILE_LOCK = threading.Lock()
 
+
 def _env_int(name, default):
     try:
         return int(os.getenv(name, str(default)))
     except (TypeError, ValueError):
         return default
 
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = Path(os.getenv("DATA_DIR", str(PROJECT_ROOT / "data"))).expanduser().resolve()
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 PORT = _env_int("PORT", 5000)
+
 
 def _state_file(filename):
     target = DATA_DIR / filename
@@ -23,9 +26,10 @@ def _state_file(filename):
     if not target.exists() and seed.exists() and seed.resolve() != target.resolve():
         try:
             shutil.copy2(seed, target)
-        except Exception as e:
-            print(f"⚠️ Could not seed {filename} into {DATA_DIR}: {e}")
+        except Exception as exc:
+            print(f"⚠️ Could not seed {filename} into {DATA_DIR}: {exc}")
     return str(target)
+
 
 SEEN_JOBS_FILE = _state_file("seen_jobs.json")
 SEEN_EMAILS_FILE = _state_file("seen_emails.json")
@@ -38,144 +42,138 @@ HIDDEN_JOBS_FILE = _state_file("hidden_jobs.json")
 SCRAPER_STATUS_FILE = _state_file("scraper_status.json")
 PENDING_EMAILS_FILE = _state_file("pending_email_updates.json")
 
+SETTINGS_SCHEMA_VERSION = 2
 DEFAULT_SETTINGS = {
+    "settings_schema_version": SETTINGS_SCHEMA_VERSION,
     "grad_years_allowed": ["2027", "2028", "2029"],
+    "target_programmes": ["internship", "placement", "graduate"],
+    "target_role_categories": ["software", "ai_ml", "quant", "cyber"],
+    "strict_location_filter": True,
+    "allow_unknown_location": False,
+    "allow_special_international": False,
+    "relevance_min_score": 55,
     "exclude_keywords": [
-        "vice president", "vp", "director", "head of", "principal", "senior manager",
-        "sales development", "account executive", "recruiter", "marketing", "legal",
-        "class of 2026", "graduating in 2026", "graduating 2026", "class of 2025", "graduating in 2025"
+        "vice president", "vp", "director", "head of", "principal", "staff engineer",
+        "senior manager", "engineering manager", "lead engineer", "marketing", "social media",
+        "accounting", "internal audit", "sales", "public policy", "legal", "human resources",
+        "recruiter", "actuarial", "class of 2026", "graduating in 2026", "class of 2025",
     ],
-    "exclude_locations": ["us government", "aus government", "poland", "france", "japan", "canada", "australia", "singapore", "usg", "us defense", "defense tech - us"],
-    "my_skills": ["python", "java", "javascript", "html", "css", "sql"],
-    "role_keywords": ["software", "developer", "engineer", "engineering", "backend", "fullstack", "full-stack", "systems", "quant", "quantitative", "trader", "trading", "research", "machine learning", "ml", "ai", "data science", "cyber", "security", "cloud", "devops", "technology", "collaboration"],
-    "level_keywords": ["intern", "internship", "placement", "industrial placement", "sandwich", "spring week", "insight week", "graduate", "grad", "early talent", "early career", "undergrad"],
-    "location_keywords": ["london", "birmingham", "oxford", "aylesbury", "west midlands", "remote", "uk", "united kingdom", "cambridge", "manchester", "edinburgh"],
+    "exclude_locations": [
+        "united states", "usa", "canada", "australia", "singapore", "hong kong",
+        "japan", "france", "poland", "germany",
+    ],
+    "my_skills": ["python", "java", "javascript", "sql", "git", "linux", "docker", "data structures", "algorithms"],
+    "role_keywords": ["software", "developer", "engineer", "backend", "frontend", "full stack", "systems", "quant", "quantitative", "machine learning", "data science", "cyber", "security", "cloud", "devops"],
+    "level_keywords": ["intern", "internship", "placement", "industrial placement", "sandwich", "spring week", "insight week", "graduate", "early career", "undergrad"],
+    # Deliberately does not include bare 'remote': remote without a country is ambiguous.
+    "location_keywords": ["london", "birmingham", "oxford", "aylesbury", "west midlands", "uk", "united kingdom", "england", "scotland", "wales", "cambridge", "manchester", "edinburgh", "bristol", "leeds", "glasgow", "reading", "uk remote", "remote uk"],
     "special_intl_companies": ["beamng", "janestreet", "optiver", "citadel", "hudsonrivertrading", "hrt", "twosigma", "imc", "flowtraders", "wayve", "samsara", "quadrature", "millennium"],
     "auto_hide_applied_company_jobs": False,
-    "greenhouse_companies": [
-        "deliveroo", "cloudflare", "snyk", "monzo", "starlingbank",
-        "janestreet", "optiver", "canonical", "citadel", "hudsonrivertrading",
-        "palantir", "millennium", "quadrature", "samsara", "imc", "bloomberg",
-        "two-sigma", "jump-trading", "barclays"
-    ],
+    "greenhouse_companies": ["deliveroo", "cloudflare", "snyk", "monzo", "starlingbank", "janestreet", "optiver", "canonical", "citadel", "hudsonrivertrading", "palantir", "millennium", "quadrature", "samsara", "imc", "bloomberg", "two-sigma", "jump-trading", "barclays"],
     "lever_companies": ["spotify", "revolut", "checkout", "beamng", "wayve", "palantir", "five-ai"],
     "ashby_companies": ["mistral", "synthesia", "multiverse", "ramp", "huggingface", "cohere", "notion", "scaleai"],
-    "smartrecruiters_companies": ["squarepointcapital", "visa", "ubisoft", "zalando", "bosch"]
+    "smartrecruiters_companies": ["squarepointcapital", "visa", "ubisoft", "zalando", "bosch"],
 }
 
 DEFAULT_SCRAPER_STATUS = {
-    "last_run": "Never",
-    "total_seen_jobs": 0,
-    "total_discovered_jobs": 0,
-    "last_new_jobs_found": 0,
+    "last_run": "Never", "total_seen_jobs": 0, "total_discovered_jobs": 0,
+    "last_new_jobs_found": 0, "last_irrelevant_pruned": 0,
     "source_status": {
-        "Greenhouse API": "🟢 Active • 19/19 target companies online",
-        "Lever API": "🟢 Active • 7/7 target companies online",
-        "Ashby API": "🟢 Active • 8/8 target companies online",
-        "SmartRecruiters API": "🟢 Active • 5/5 target companies online",
-        "The Trackr API": "🟢 Active • Tier-1 Direct Egress",
-        "Gradcracker API": "🟢 Active • 4 STEM Sectors Online",
-        "Gmail Inbox Listener": "🟢 Active • Email auto-tracker active"
-    }
+        "Greenhouse API": "🟢 Active • target companies configured",
+        "Lever API": "🟢 Active • target companies configured",
+        "Ashby API": "🟢 Active • target companies configured",
+        "SmartRecruiters API": "🟢 Active • target companies configured",
+        "The Trackr API": "🟢 Active • UK Tech source",
+        "Gradcracker API": "🟢 Active • Computing & Maths sectors",
+        "Gmail Inbox Listener": "🟢 Active • Email auto-tracker active",
+    },
 }
 
+
 def atomic_write_json(filepath, data, indent=2):
-    """Atomic write to JSON file using a temp file and os.replace to prevent corruption."""
+    filepath = str(filepath)
+    os.makedirs(os.path.dirname(filepath) or ".", exist_ok=True)
     with _FILE_LOCK:
-        tmp_filepath = f"{filepath}.tmp"
+        tmp = f"{filepath}.tmp"
         try:
-            with open(tmp_filepath, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=indent, ensure_ascii=False)
-            os.replace(tmp_filepath, filepath)
-        except Exception as e:
-            if os.path.exists(tmp_filepath):
-                try:
-                    os.remove(tmp_filepath)
-                except Exception:
-                    pass
-            print(f"⚠️ Error performing atomic JSON write to {filepath}: {e}")
+            with open(tmp, "w", encoding="utf-8") as handle:
+                json.dump(data, handle, indent=indent, ensure_ascii=False)
+            os.replace(tmp, filepath)
+        except Exception as exc:
+            if os.path.exists(tmp):
+                try: os.remove(tmp)
+                except Exception: pass
+            print(f"⚠️ Error performing atomic JSON write to {filepath}: {exc}")
+
 
 def load_json_safe(filepath, default_val):
     if os.path.exists(filepath):
         try:
-            with open(filepath, "r", encoding="utf-8") as f:
-                return json.load(f)
+            with open(filepath, "r", encoding="utf-8") as handle:
+                return json.load(handle)
         except Exception:
             pass
     return default_val
 
-def load_reported_closed_jobs():
-    return load_json_safe(REPORTED_CLOSED_FILE, {})
 
-def save_reported_closed_jobs(closed_map):
-    atomic_write_json(REPORTED_CLOSED_FILE, closed_map)
-
+def load_reported_closed_jobs(): return load_json_safe(REPORTED_CLOSED_FILE, {})
+def save_reported_closed_jobs(value): atomic_write_json(REPORTED_CLOSED_FILE, value)
 def load_closed_urls_cache():
-    data = load_json_safe(CLOSED_URLS_CACHE_FILE, [])
-    return set(data) if isinstance(data, list) else set()
-
-def save_closed_urls_cache(closed_set):
-    atomic_write_json(CLOSED_URLS_CACHE_FILE, list(closed_set))
-
+    value = load_json_safe(CLOSED_URLS_CACHE_FILE, [])
+    return set(value) if isinstance(value, list) else set()
+def save_closed_urls_cache(value): atomic_write_json(CLOSED_URLS_CACHE_FILE, list(value))
 def mark_url_as_closed(url):
-    if not url or not isinstance(url, str) or not url.startswith("http"):
-        return
-    closed = load_closed_urls_cache()
-    if url not in closed:
-        closed.add(url)
-        save_closed_urls_cache(closed)
-
+    if url and isinstance(url, str) and url.startswith("http"):
+        values = load_closed_urls_cache()
+        if url not in values:
+            values.add(url); save_closed_urls_cache(values)
 def load_hidden_jobs():
-    data = load_json_safe(HIDDEN_JOBS_FILE, [])
-    return set(data) if isinstance(data, list) else set()
-
-def save_hidden_jobs(hidden_set):
-    atomic_write_json(HIDDEN_JOBS_FILE, list(hidden_set))
-
+    value = load_json_safe(HIDDEN_JOBS_FILE, [])
+    return set(value) if isinstance(value, list) else set()
+def save_hidden_jobs(value): atomic_write_json(HIDDEN_JOBS_FILE, list(value))
 def hide_job(job_id):
-    hidden = load_hidden_jobs()
-    hidden.add(job_id)
-    save_hidden_jobs(hidden)
-
-def load_pending_email_updates():
-    return load_json_safe(PENDING_EMAILS_FILE, [])
-
-def save_pending_email_updates(updates):
-    atomic_write_json(PENDING_EMAILS_FILE, updates)
-
-def add_pending_email_update(update_obj):
-    updates = load_pending_email_updates()
-    updates.append(update_obj)
-    save_pending_email_updates(updates)
-
+    values = load_hidden_jobs(); values.add(job_id); save_hidden_jobs(values)
+def load_pending_email_updates(): return load_json_safe(PENDING_EMAILS_FILE, [])
+def save_pending_email_updates(value): atomic_write_json(PENDING_EMAILS_FILE, value)
+def add_pending_email_update(value):
+    values = load_pending_email_updates(); values.append(value); save_pending_email_updates(values)
 def remove_pending_email_update(update_id):
-    updates = load_pending_email_updates()
-    filtered = [u for u in updates if u.get("id") != update_id]
-    save_pending_email_updates(filtered)
-    return len(updates) - len(filtered)
+    values = load_pending_email_updates(); filtered = [v for v in values if v.get("id") != update_id]; save_pending_email_updates(filtered); return len(values)-len(filtered)
 
-def load_settings():
-    loaded = load_json_safe(SETTINGS_FILE, None)
-    if loaded and isinstance(loaded, dict):
-        merged = dict(DEFAULT_SETTINGS)
-        merged.update(loaded)
+
+def _merge_settings(loaded):
+    merged = dict(DEFAULT_SETTINGS)
+    if not isinstance(loaded, dict):
         return merged
-    return dict(DEFAULT_SETTINGS)
+    merged.update(loaded)
+    merged["settings_schema_version"] = SETTINGS_SCHEMA_VERSION
+    # Do not let a pre-v2 persisted settings file erase stronger safety/relevance defaults.
+    for key in ("exclude_keywords", "exclude_locations"):
+        saved = loaded.get(key, []) if isinstance(loaded.get(key), list) else []
+        combined, seen = [], set()
+        for value in list(saved) + list(DEFAULT_SETTINGS[key]):
+            norm = str(value).strip().lower()
+            if norm and norm not in seen:
+                seen.add(norm); combined.append(str(value).strip())
+        merged[key] = combined
+    # Migrate the old ambiguous bare Remote location away.
+    locations = merged.get("location_keywords", []) if isinstance(merged.get("location_keywords"), list) else []
+    merged["location_keywords"] = [x for x in locations if str(x).strip().lower() not in {"remote", "hybrid", "in-office", "onsite", "on-site"}]
+    for value in DEFAULT_SETTINGS["location_keywords"]:
+        if value not in merged["location_keywords"]:
+            merged["location_keywords"].append(value)
+    return merged
 
+
+def load_settings(): return _merge_settings(load_json_safe(SETTINGS_FILE, None))
 def save_settings(data):
-    atomic_write_json(SETTINGS_FILE, data)
-    print("💾 Saved updated filter settings to settings.json")
-
-def save_scraper_status(status_dict):
-    atomic_write_json(SCRAPER_STATUS_FILE, status_dict)
-
+    atomic_write_json(SETTINGS_FILE, _merge_settings(data)); print("💾 Saved updated filter settings to settings.json")
+def save_scraper_status(value): atomic_write_json(SCRAPER_STATUS_FILE, value)
 def load_scraper_status():
     loaded = load_json_safe(SCRAPER_STATUS_FILE, None)
     if loaded and isinstance(loaded, dict):
-        merged = dict(DEFAULT_SCRAPER_STATUS)
-        merged.update(loaded)
-        if "source_status" in loaded:
-            merged["source_status"] = dict(DEFAULT_SCRAPER_STATUS["source_status"])
-            merged["source_status"].update(loaded["source_status"])
+        merged = dict(DEFAULT_SCRAPER_STATUS); merged.update(loaded)
+        merged["source_status"] = dict(DEFAULT_SCRAPER_STATUS["source_status"])
+        merged["source_status"].update(loaded.get("source_status", {}))
         return merged
     return dict(DEFAULT_SCRAPER_STATUS)
