@@ -5,8 +5,15 @@ import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
-from autoapply.learning import normalize_label, predict_answer, predict_mapping
+from autoapply.learning import (
+    normalize_label,
+    predict_answer,
+    predict_mapping,
+    preferred_navigation,
+    record_navigation,
+)
 from autoapply.profile import flatten_profile
 
 REVIEW_PATTERNS = (
@@ -27,6 +34,8 @@ class FieldResult:
     action: str = ""
     confidence: float = 0.0
     note: str = ""
+    context: str = ""
+    domain: str = ""
 
 
 @dataclass
@@ -69,6 +78,10 @@ def _make_driver():
     return webdriver.Chrome(options=options)
 
 
+def _domain(url: str) -> str:
+    return (urlparse(url).hostname or "").lower().removeprefix("www.")
+
+
 def _element_label(driver, element) -> str:
     pieces: List[str] = []
     element_id = element.get_attribute("id") or ""
@@ -90,6 +103,26 @@ def _element_label(driver, element) -> str:
     return normalize_label(" ".join(pieces))
 
 
+def _element_context(element) -> str:
+    """Capture nearby form text to help the online classifier disambiguate fields."""
+    pieces: List[str] = []
+    for xpath in ("ancestor::fieldset[1]", "ancestor::*[self::div or self::section][1]"):
+        try:
+            text = element.find_element("xpath", xpath).text
+            if text:
+                pieces.append(text[:500])
+                break
+        except Exception:
+            pass
+    try:
+        if element.tag_name.lower() == "select":
+            from selenium.webdriver.support.ui import Select
+            pieces.append("options " + " ".join(o.text for o in Select(element).options[:12]))
+    except Exception:
+        pass
+    return normalize_label(" ".join(pieces))[:700]
+
+
 def _discover_fields(driver):
     fields = []
     for element in driver.find_elements("css selector", "input, textarea, select"):
@@ -101,7 +134,7 @@ def _discover_fields(driver):
         element_type = (element.get_attribute("type") or element.tag_name).lower()
         if element_type in {"hidden", "submit", "button", "reset", "image"}:
             continue
-        fields.append((element, _element_label(driver, element), element_type))
+        fields.append((element, _element_label(driver, element), element_type, _element_context(element)))
     return fields
 
 
@@ -146,32 +179,56 @@ def _page_has_captcha(driver) -> bool:
     return any(marker in source for marker in CAPTCHA_MARKERS)
 
 
-def _find_progress_button(driver):
-    for element in driver.find_elements("css selector", "button, input[type=button], a[role=button]"):
-        try:
-            text = normalize_label(element.text or element.get_attribute("value") or element.get_attribute("aria-label"))
-            if text in {"next", "continue", "save and continue", "continue application", "next step"}:
-                return element
-        except Exception:
-            pass
-    return None
+def _button_text(element) -> str:
+    try:
+        return normalize_label(element.text or element.get_attribute("value") or element.get_attribute("aria-label"))
+    except Exception:
+        return ""
 
 
-def _find_submit_button(driver):
-    for element in driver.find_elements("css selector", "button, input[type=submit]"):
-        try:
-            text = normalize_label(element.text or element.get_attribute("value") or element.get_attribute("aria-label"))
-            if any(x in text for x in ("submit application", "submit", "apply now", "send application")):
-                return element
-        except Exception:
-            pass
-    return None
+def _button_candidates(driver):
+    try:
+        return driver.find_elements("css selector", "button, input[type=button], input[type=submit], a[role=button], a.btn")
+    except Exception:
+        return []
+
+
+def _find_progress_button(driver, domain: str, has_fields: bool):
+    learned = preferred_navigation(domain, "progress")
+    defaults = [
+        "next", "continue", "save and continue", "continue application", "next step",
+        "start application", "start your application",
+    ]
+    # "Apply now" usually opens the real form from a landing page. Treat it as
+    # progress only when there are no form fields yet, never as final submit.
+    if not has_fields:
+        defaults += ["apply now", "apply", "start", "begin application"]
+    wanted = learned + defaults
+    buttons = _button_candidates(driver)
+    for expected in wanted:
+        for element in buttons:
+            text = _button_text(element)
+            if text == expected or (expected and expected in text):
+                return element, text
+    return None, ""
+
+
+def _find_submit_button(driver, domain: str):
+    learned = preferred_navigation(domain, "submit")
+    defaults = ["submit application", "send application", "submit"]
+    buttons = _button_candidates(driver)
+    for expected in learned + defaults:
+        for element in buttons:
+            text = _button_text(element)
+            if text == expected or (expected and expected in text):
+                return element, text
+    return None, ""
 
 
 def run_application(url: str, profile: Dict[str, Any], auto_submit: bool = False, screenshot_dir: Optional[str] = None) -> ApplicationRunResult:
     result = ApplicationRunResult(url=url, status="starting")
     flat_profile = flatten_profile(profile)
-    max_steps = max(1, int(os.getenv("AUTOAPPLY_MAX_STEPS", "5")))
+    max_steps = max(1, int(os.getenv("AUTOAPPLY_MAX_STEPS", "8")))
     page_timeout = max(10, int(os.getenv("AUTOAPPLY_PAGE_TIMEOUT", "30")))
     env_submit = os.getenv("AUTOAPPLY_AUTO_SUBMIT", "false").lower() in {"1", "true", "yes"}
     driver = _make_driver()
@@ -181,21 +238,27 @@ def run_application(url: str, profile: Dict[str, Any], auto_submit: bool = False
         time.sleep(1.5)
         for step in range(max_steps):
             result.steps_completed = step + 1
+            current_domain = _domain(driver.current_url or url)
             if _page_has_captcha(driver):
                 result.blockers.append("CAPTCHA detected; agent will not bypass it")
                 result.status = "blocked"
                 break
+
+            discovered = _discover_fields(driver)
             page_unresolved: List[FieldResult] = []
             page_review: List[FieldResult] = []
-            for element, label, element_type in _discover_fields(driver):
+            for element, label, element_type, context in discovered:
                 if not label:
-                    page_unresolved.append(FieldResult("unlabelled field", element_type, action="unresolved", note="no usable label"))
+                    page_unresolved.append(FieldResult("unlabelled field", element_type, action="unresolved", note="no usable label", context=context, domain=current_domain))
                     continue
-                profile_key, confidence, mapping_note = predict_mapping(label)
+                profile_key, confidence, mapping_note = predict_mapping(label, context=context, domain=current_domain)
                 explicit_value = flat_profile.get(profile_key) if profile_key else None
-                learned_answer, answer_conf, answer_note = predict_answer(label)
+                learned_answer, answer_conf, answer_note = predict_answer(label, domain=current_domain)
                 value = explicit_value if str(explicit_value or "").strip() else learned_answer
-                item = FieldResult(label, element_type, profile_key or "", confidence=max(confidence, answer_conf), note=mapping_note if explicit_value else answer_note)
+                item = FieldResult(
+                    label, element_type, profile_key or "", confidence=max(confidence, answer_conf),
+                    note=mapping_note if explicit_value else answer_note, context=context, domain=current_domain,
+                )
                 if _is_review_label(label):
                     if value and _set_value(element, element_type, value):
                         item.action = "filled-explicit-review"
@@ -214,28 +277,35 @@ def run_application(url: str, profile: Dict[str, Any], auto_submit: bool = False
                     item.action = "unresolved"
                     item.note = (item.note + "; could not set value").strip("; ")
                     page_unresolved.append(item)
+
             result.unresolved.extend(page_unresolved)
             result.review_required.extend(page_review)
             if page_unresolved or page_review:
                 result.status = "needs_review"
                 break
-            progress = _find_progress_button(driver)
+
+            progress, progress_text = _find_progress_button(driver, current_domain, bool(discovered))
             if progress:
                 progress.click()
-                time.sleep(1.2)
+                record_navigation(current_domain, "progress", progress_text)
+                time.sleep(1.4)
                 continue
-            submit = _find_submit_button(driver)
+
+            submit, submit_text = _find_submit_button(driver, current_domain)
             if submit:
                 if auto_submit and env_submit and not result.unresolved and not result.review_required:
                     submit.click()
+                    record_navigation(current_domain, "submit", submit_text)
                     time.sleep(1.5)
                     result.submitted = True
                     result.status = "submitted"
                 else:
                     result.status = "ready_for_review"
                 break
+
             result.status = "filled_no_submit_found"
             break
+
         if screenshot_dir:
             Path(screenshot_dir).mkdir(parents=True, exist_ok=True)
             path = str(Path(screenshot_dir) / f"run-{int(time.time())}.png")
