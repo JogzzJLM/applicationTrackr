@@ -1003,7 +1003,7 @@ def render_unified_dashboard_html(active_tab="flow"):
                 <div id="applications-grid" class="applications-grid is-collapsed">
                     {apps_cards_html}
                 </div>
-                ${"<button id='applications-toggle' class='btn btn-ghost mobile-only' style='width:100%;justify-content:center;margin-top:10px;' onclick=\"toggleApplications(this)\">Show all " + str(total) + " applications</button>" if total > 4 else ""}
+                {applications_toggle_html}
             </div>
         </div>
 
