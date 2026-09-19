@@ -1376,7 +1376,7 @@ def render_unified_dashboard_html(active_tab="flow"):
 
         document.querySelectorAll('[data-tab="' + tabId + '"]').forEach(el => el.classList.add('active'));
 
-        var tabPaths = { flow: '/', jobs: '/jobs', settings: '/settings', diagnostics: '/diagnostics', closed: '/closed' };
+        var tabPaths = {{ flow: '/', jobs: '/jobs', settings: '/settings', diagnostics: '/diagnostics', closed: '/closed' }};
         if (tabPaths[tabId] && window.location.pathname !== tabPaths[tabId]) {
             history.replaceState(null, '', tabPaths[tabId]);
         }
