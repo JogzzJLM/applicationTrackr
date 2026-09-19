@@ -58,6 +58,16 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.safe_write(payload.encode("utf-8"))
 
+    def _raw(self, payload, content_type, cache_control="public, max-age=3600"):
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Cache-Control", cache_control)
+        self.send_cors_headers()
+        self.end_headers()
+        if isinstance(payload, str):
+            payload = payload.encode("utf-8")
+        self.safe_write(payload)
+
     def do_OPTIONS(self):
         self.send_response(200)
         self.send_cors_headers()
@@ -66,6 +76,36 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         path, qs = parsed.path, parse_qs(parsed.query)
+        if path == "/manifest.webmanifest":
+            manifest = {
+                "name": "ApplicationTrackr",
+                "short_name": "AppTrackr",
+                "description": "Application tracking and UK early-career job discovery",
+                "start_url": "/",
+                "scope": "/",
+                "display": "standalone",
+                "background_color": "#f5f7fa",
+                "theme_color": "#ffffff",
+                "icons": [
+                    {
+                        "src": "/app-icon.svg",
+                        "sizes": "any",
+                        "type": "image/svg+xml",
+                        "purpose": "any maskable"
+                    }
+                ]
+            }
+            return self._raw(
+                json.dumps(manifest, separators=(",", ":")),
+                "application/manifest+json; charset=utf-8",
+            )
+        if path == "/app-icon.svg":
+            icon = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180">
+<rect width="180" height="180" rx="38" fill="#ffffff"/>
+<rect x="12" y="12" width="156" height="156" rx="31" fill="#ff8000"/>
+<path d="M90 38v104M116 53H77c-17 0-27 9-27 23s10 23 27 23h27c17 0 27 9 27 23s-10 23-27 23H60" fill="none" stroke="#fff" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>"""
+            return self._raw(icon, "image/svg+xml; charset=utf-8", "public, max-age=86400")
         if path == "/":
             return self._html(render_unified_dashboard_html("flow"))
         if path in ("/jobs", "/discovered"):
