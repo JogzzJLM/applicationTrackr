@@ -16,7 +16,7 @@ from sheets import (
     get_applied_jobs_set
 )
 from scrapers_engine.audit import load_discovered_jobs
-from web.components import render_job_card
+from web.components import render_application_card, render_job_card
 
 def render_unified_dashboard_html(active_tab="flow"):
     csv_text = fetch_google_sheet_csv()
@@ -154,51 +154,26 @@ def render_unified_dashboard_html(active_tab="flow"):
     cnt_offer = 0
     cnt_rejected = 0
 
-    apps_table_rows = ""
+    apps_cards_html = ""
     if not apps:
-        apps_table_rows = '<tr><td colspan="5" class="empty-state">No applications logged yet. Click "+ Log Application" to track your first role!</td></tr>'
+        apps_cards_html = '<div class="empty-state">No applications logged yet. Tap "+ Log App" to track your first role.</div>'
     else:
         for a in apps:
-            st = a.get("status_type", "active")
             latest_stage = a.get("latest_stage", "Applied")
             latest_lower = latest_stage.lower()
 
             if "offer" in latest_lower:
                 cnt_offer += 1
-                badge_cls = "badge-green"
             elif "reject" in latest_lower or "fail" in latest_lower:
                 cnt_rejected += 1
-                badge_cls = "badge-red"
             elif "interview" in latest_lower:
                 cnt_interview += 1
-                badge_cls = "badge-papaya"
             elif "assessment" in latest_lower or "oa" in latest_lower or "test" in latest_lower:
                 cnt_assessment += 1
-                badge_cls = "badge-cyan"
             else:
                 cnt_applied += 1
-                badge_cls = "badge-yellow"
 
-            comp_clean = clean_company_display_name(a['company'])
-            comp_js = comp_clean.replace("'", "\\'").replace('"', '&quot;')
-            role_js = a['role'].replace("'", "\\'").replace('"', '&quot;')
-
-            action_html = f"""
-            <div style="display:flex; gap:4px;">
-                <button onclick="quickUpdateStage('{comp_js}', 'Interview', '{role_js}')" class="btn btn-tinted" style="font-size:11px; padding:3px 8px;" title="Promote to Interview">+ Interview</button>
-                <button onclick="quickUpdateStage('{comp_js}', 'Rejected', '{role_js}')" class="btn btn-ghost btn-danger-text" style="font-size:11px; padding:3px 8px;" title="Mark Rejected">Reject</button>
-            </div>
-            """
-
-            apps_table_rows += f"""
-            <tr>
-                <td class="td-company">{comp_clean}</td>
-                <td class="td-role">{a['role']}</td>
-                <td><span class="badge {badge_cls}">{latest_stage}</span></td>
-                <td><span class="badge {badge_cls}">{a['status']}</span></td>
-                <td>{action_html}</td>
-            </tr>
-            """
+            apps_cards_html += render_application_card(a)
 
     tot_apps = len(apps) if apps else 1
     pct_applied = round((cnt_applied / tot_apps) * 100, 1)
@@ -351,6 +326,14 @@ def render_unified_dashboard_html(active_tab="flow"):
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>ApplicationTrackr // UK Early Career Dashboard</title>
     <meta name="description" content="UK graduate scheme application tracker and job discovery engine">
+    <meta name="theme-color" content="#ffffff">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="ApplicationTrackr">
+    <meta name="format-detection" content="telephone=no">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="icon" href="/app-icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/app-icon.svg">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -636,6 +619,261 @@ def render_unified_dashboard_html(active_tab="flow"):
         .diag-label {{ font-weight: 700; color: var(--text-primary); }}
         .diag-value {{ color: var(--green); font-weight: 700; font-family: var(--font-mono); font-size: 13px; }}
         .kb-tag {{ display: inline-block; padding: 4px 10px; background: rgba(0,0,0,0.04); border: 1px solid rgba(0,0,0,0.08); border-radius: 6px; font-size: 12px; font-weight: 600; color: var(--text-secondary); margin: 3px; }}
+        /* ─── Responsive / installed-web-app layer ─── */
+        html, body {{ width: 100%; max-width: 100%; overflow-x: hidden; }}
+        body {{ min-height: 100dvh; padding-bottom: env(safe-area-inset-bottom); }}
+        button, input, select, textarea {{ font: inherit; }}
+        .mobile-only, .mobile-nav {{ display: none; }}
+
+        .applications-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 12px;
+        }}
+        .application-card {{
+            background: #fff;
+            border: 1px solid var(--border-card);
+            border-radius: var(--radius);
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            min-width: 0;
+        }}
+        .application-card-head {{
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+            min-width: 0;
+        }}
+        .application-card-head > div {{ min-width: 0; }}
+        .application-company {{ font-size: 15px; font-weight: 800; color: var(--text-primary); }}
+        .application-role {{
+            margin-top: 3px;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            overflow-wrap: anywhere;
+        }}
+        .application-card-foot {{
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }}
+        .application-status {{ color: var(--text-tertiary); font-size: 12px; font-weight: 700; }}
+        .application-actions {{ display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }}
+        .application-actions .btn {{ padding: 6px 10px; font-size: 11.5px; }}
+
+        .card, .application-card, .section-card, .hero-stat-card {{ min-width: 0; }}
+        .card-role, .card-company, .card-meta, .card-source, .card-reasons {{ overflow-wrap: anywhere; }}
+        .card-detail {{ display: flex; flex-direction: column; gap: 7px; }}
+        .card-reasons {{ font-size: 11.5px; color: var(--text-secondary); line-height: 1.45; }}
+        .card-primary-action {{ justify-content: center; }}
+
+        .flow-sankey {{ order: 1; }}
+        .flow-apps {{ order: 2; }}
+
+        @media (max-width: 700px) {{
+            :root {{ --radius: 11px; --radius-lg: 13px; }}
+
+            body {{
+                overscroll-behavior-x: none;
+                padding-bottom: calc(72px + env(safe-area-inset-bottom));
+            }}
+            .shell {{
+                width: 100%;
+                padding: 0 12px calc(18px + env(safe-area-inset-bottom)) 12px;
+            }}
+            .topbar {{
+                padding: calc(8px + env(safe-area-inset-top)) 12px 8px 12px;
+                gap: 8px;
+            }}
+            .topbar-brand {{
+                font-size: 16px;
+                gap: 6px;
+                min-width: 0;
+                white-space: nowrap;
+            }}
+            .topbar-brand svg {{ width: 19px; height: 19px; flex: 0 0 auto; }}
+            .topbar-right {{ gap: 5px; }}
+            .status-pill {{
+                width: 32px;
+                height: 32px;
+                padding: 0;
+                justify-content: center;
+                border-radius: 50%;
+            }}
+            .status-pill .status-label {{ display: none; }}
+            .topbar .btn {{
+                width: 34px;
+                height: 34px;
+                padding: 0;
+                justify-content: center;
+                font-size: 16px;
+            }}
+            .topbar .desktop-label {{ display: none; }}
+
+            .hero-stats-grid {{
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 8px;
+                margin: 12px 0;
+            }}
+            .hero-stat-card {{ padding: 12px; min-height: 108px; }}
+            .stat-header {{ align-items: flex-start; gap: 5px; }}
+            .stat-title {{ font-size: 10px; line-height: 1.2; }}
+            .stat-badge {{ font-size: 8.5px; padding: 2px 5px; }}
+            .stat-number {{ font-size: 24px; margin: 4px 0 6px; }}
+            .stat-number span {{ font-size: 10px !important; }}
+            .stat-sub {{ font-size: 10.5px; line-height: 1.25; }}
+            .stat-meter {{ height: 4px; }}
+
+            .tab-bar {{ display: none; }}
+            .mobile-nav {{
+                display: grid;
+                grid-template-columns: repeat(5, minmax(0, 1fr));
+                position: fixed;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                z-index: 500;
+                padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
+                background: rgba(255,255,255,0.96);
+                border-top: 1px solid var(--border-card);
+                backdrop-filter: blur(18px);
+                box-shadow: 0 -5px 20px rgba(0,0,0,0.07);
+            }}
+            .mobile-tab {{
+                border: 0;
+                background: transparent;
+                color: var(--text-tertiary);
+                border-radius: 10px;
+                padding: 5px 2px 4px;
+                min-height: 48px;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                gap: 2px;
+                font-family: var(--font);
+                font-size: 9.5px;
+                font-weight: 700;
+            }}
+            .mobile-tab .nav-icon {{ font-size: 18px; line-height: 1; }}
+            .mobile-tab.active {{ color: var(--papaya); background: var(--papaya-light); }}
+
+            .section-card {{
+                padding: 14px;
+                margin-bottom: 12px;
+                border-radius: var(--radius-lg);
+            }}
+            .section-title {{
+                font-size: 15px;
+                margin-bottom: 12px;
+                gap: 8px;
+                align-items: flex-start;
+            }}
+            .section-title .btn {{ flex: 0 0 auto; padding: 7px 10px; }}
+            .pipeline-grid {{ display: flex; flex-direction: column; gap: 0; }}
+            .flow-apps {{ order: 1; }}
+            .flow-sankey {{ order: 2; }}
+            .sankey-frame {{ height: 300px; }}
+            .mobile-only {{ display: inline-flex; }}
+            .mobile-collapsible-content {{ display: none; }}
+            .mobile-collapsible-content.open {{ display: block; margin-top: 10px; }}
+
+            .applications-grid {{
+                grid-template-columns: 1fr;
+                gap: 8px;
+            }}
+            .applications-grid.is-collapsed .application-card:nth-child(n+5) {{ display: none; }}
+            .application-card {{ padding: 12px; gap: 9px; }}
+            .application-card-head {{ gap: 8px; }}
+            .application-company {{ font-size: 14px; }}
+            .application-role {{ font-size: 12px; }}
+            .application-card-foot {{ align-items: flex-end; }}
+            .application-actions {{ gap: 5px; }}
+            .application-actions .btn {{ min-height: 36px; padding: 6px 9px; }}
+
+            .toolbar {{
+                display: grid;
+                grid-template-columns: minmax(0, 1fr) auto;
+                gap: 8px;
+                align-items: stretch;
+            }}
+            .search-wrap {{ min-width: 0; grid-column: 1 / -1; }}
+            .search-input {{ min-height: 44px; font-size: 16px; }}
+            .sort-select {{ width: 100%; min-width: 0; min-height: 42px; }}
+            .filter-toggle {{ min-height: 42px; justify-content: center; }}
+            .mobile-filter-panel {{ display: none; margin-bottom: 12px; }}
+            .mobile-filter-panel.open {{ display: flex; }}
+            .filter-chips {{
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 6px;
+                overflow: visible;
+                padding: 0;
+            }}
+            .chip {{
+                width: 100%;
+                min-width: 0;
+                padding: 7px 6px;
+                font-size: 11px;
+                line-height: 1.2;
+                white-space: normal;
+            }}
+            .filter-group-label {{ margin-top: 2px !important; font-size: 10px; }}
+
+            .grid {{ grid-template-columns: 1fr; gap: 10px; }}
+            .card {{ padding: 14px; gap: 7px; }}
+            .card:hover {{ transform: none; }}
+            .card-top {{ align-items: flex-start; gap: 8px; }}
+            .card-status {{ flex-wrap: wrap; gap: 4px; }}
+            .card-match {{ flex: 0 0 auto; font-size: 10.5px; }}
+            .card-company {{ font-size: 15px; }}
+            .card-role {{ font-size: 13.5px; line-height: 1.25; }}
+            .card-meta {{ font-size: 11.5px; }}
+            .card-detail {{ display: none; }}
+            .card-actions {{
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 6px;
+                margin-top: 5px;
+            }}
+            .card-actions .btn {{
+                min-width: 0;
+                min-height: 40px;
+                padding: 7px 8px;
+                justify-content: center;
+                text-align: center;
+                font-size: 11.5px;
+            }}
+            .card-primary-action {{ grid-column: 1 / -1; min-height: 44px !important; font-size: 13px !important; }}
+            .badge {{ font-size: 9.5px; padding: 3px 6px; }}
+
+            .action-items-grid {{ grid-template-columns: 1fr; gap: 8px; }}
+            .action-item-card {{ padding: 12px; }}
+            .diag-row {{ align-items: flex-start; gap: 12px; font-size: 12px; }}
+            .diag-value {{ text-align: right; overflow-wrap: anywhere; font-size: 11px; max-width: 58%; }}
+            #live-log-container {{ height: 280px !important; padding: 12px !important; font-size: 11px !important; }}
+            .modal-backdrop {{
+                align-items: flex-end;
+                padding: 0;
+            }}
+            .modal-card {{
+                max-width: none;
+                border-radius: 18px 18px 0 0;
+                padding: 18px 16px calc(18px + env(safe-area-inset-bottom));
+                max-height: 88dvh;
+                overflow-y: auto;
+            }}
+            .form-input {{ font-size: 16px; min-height: 44px; }}
+        }}
+
+        @media (min-width: 701px) {{
+            .applications-grid {{ grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }}
+        }}
     </style>
 </head>
 <body>
@@ -647,10 +885,10 @@ def render_unified_dashboard_html(active_tab="flow"):
         <span>Application</span>Trackr
     </div>
     <div class="topbar-right">
-        <div class="status-pill"><span class="dot"></span> Engine Online</div>
-        <button onclick="openLogModal()" class="btn btn-filled">+ Log App</button>
-        <button onclick="syncSheetAndReload()" class="btn btn-tinted">Sync Sheet</button>
-        <a href="/api/rescan" class="btn btn-ghost">Rescan</a>
+        <div class="status-pill" title="Engine Online"><span class="dot"></span><span class="status-label">Engine Online</span></div>
+        <button onclick="openLogModal()" class="btn btn-filled" aria-label="Log application" title="Log application">+<span class="desktop-label"> Log App</span></button>
+        <button onclick="syncSheetAndReload()" class="btn btn-tinted" aria-label="Sync Google Sheet" title="Sync Google Sheet">↻<span class="desktop-label"> Sync Sheet</span></button>
+        <a href="/api/rescan" class="btn btn-ghost" aria-label="Rescan jobs" title="Rescan jobs">⚡<span class="desktop-label"> Rescan</span></a>
     </div>
 </div>
 
@@ -721,15 +959,18 @@ def render_unified_dashboard_html(active_tab="flow"):
         {pending_updates_banner_html}
 
         <div class="pipeline-grid">
-            <div class="section-card">
+            <div class="section-card flow-sankey">
                 <div class="section-title">
                     <span>Application Flow Pipeline</span>
                     <button onclick="reloadSankeyIframe()" class="btn btn-tinted" style="font-size:12px;">🔄 Reload Diagram</button>
                 </div>
-                <iframe src="/sankey-embed" class="sankey-frame" id="sankey-iframe"></iframe>
+                <button class="btn btn-ghost mobile-only" onclick="toggleMobileSection('sankey-mobile-wrap', this, 'Show diagram', 'Hide diagram')">Show diagram</button>
+                <div id="sankey-mobile-wrap" class="mobile-collapsible-content open-desktop">
+                    <iframe src="/sankey-embed" class="sankey-frame" id="sankey-iframe"></iframe>
+                </div>
             </div>
 
-            <div class="section-card">
+            <div class="section-card flow-apps">
                 <div class="section-title">
                     <span>Logged Applications ({total})</span>
                     <button onclick="openLogModal()" class="btn btn-filled" style="font-size:12px;">+ Log App</button>
@@ -749,22 +990,10 @@ def render_unified_dashboard_html(active_tab="flow"):
                     </div>
                 </div>
 
-                <div style="overflow-x:auto;">
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Company</th>
-                                <th>Role</th>
-                                <th>Stage</th>
-                                <th>Status</th>
-                                <th>Action</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {apps_table_rows}
-                        </tbody>
-                    </table>
+                <div id="applications-grid" class="applications-grid is-collapsed">
+                    {apps_cards_html}
                 </div>
+                ${"<button id='applications-toggle' class='btn btn-ghost mobile-only' style='width:100%;justify-content:center;margin-top:10px;' onclick=\"toggleApplications(this)\">Show all " + str(total) + " applications</button>" if total > 4 else ""}
             </div>
         </div>
 
@@ -787,9 +1016,10 @@ def render_unified_dashboard_html(active_tab="flow"):
                 <option value="company_asc">Company A-Z</option>
                 <option value="title_asc">Role A-Z</option>
             </select>
+            <button class="btn btn-ghost mobile-only filter-toggle" onclick="toggleMobileFilters(this)">Filters</button>
         </div>
 
-        <div class="filter-chips-wrap">
+        <div id="mobile-filters" class="filter-chips-wrap mobile-filter-panel">
             <div class="filter-group-label">Programme Type (Year Target)</div>
             <div class="filter-chips">
                 <button class="chip active" data-prog-chip="all" onclick="filterProgram('all', this)">All Programmes ({discovered_count})</button>
@@ -916,6 +1146,14 @@ def render_unified_dashboard_html(active_tab="flow"):
 
 </div>
 
+<nav class="mobile-nav" aria-label="Primary navigation">
+    <button class="mobile-tab ${tab_flow}" data-tab="flow" onclick="switchTab('flow')"><span class="nav-icon">⌂</span><span>Home</span></button>
+    <button class="mobile-tab ${tab_jobs}" data-tab="jobs" onclick="switchTab('jobs')"><span class="nav-icon">⌕</span><span>Jobs</span></button>
+    <button class="mobile-tab ${tab_closed}" data-tab="closed" onclick="switchTab('closed')"><span class="nav-icon">✓</span><span>Closed</span></button>
+    <button class="mobile-tab ${tab_settings}" data-tab="settings" onclick="switchTab('settings')"><span class="nav-icon">⚙</span><span>Settings</span></button>
+    <button class="mobile-tab ${tab_status}" data-tab="diagnostics" onclick="switchTab('diagnostics')"><span class="nav-icon">◉</span><span>Status</span></button>
+</nav>
+
 <!-- Modal: Log New Application -->
 <div id="log-modal" class="modal-backdrop" style="display:none;">
     <div class="modal-card">
@@ -953,6 +1191,28 @@ def render_unified_dashboard_html(active_tab="flow"):
     var logInterval = null;
     var statusInterval = null;
     var kbInterval = null;
+
+
+    function toggleMobileSection(id, button, closedLabel, openLabel) {{
+        var target = document.getElementById(id);
+        if (!target) return;
+        var isOpen = target.classList.toggle('open');
+        if (button) button.innerText = isOpen ? openLabel : closedLabel;
+    }}
+
+    function toggleApplications(button) {{
+        var grid = document.getElementById('applications-grid');
+        if (!grid) return;
+        var collapsed = grid.classList.toggle('is-collapsed');
+        if (button) button.innerText = collapsed ? 'Show all {total} applications' : 'Show fewer applications';
+    }}
+
+    function toggleMobileFilters(button) {{
+        var panel = document.getElementById('mobile-filters');
+        if (!panel) return;
+        var open = panel.classList.toggle('open');
+        if (button) button.innerText = open ? 'Hide filters' : 'Filters';
+    }}
 
     function openLogModal() {{
         document.getElementById('log-modal').style.display = 'flex';
@@ -1099,13 +1359,17 @@ def render_unified_dashboard_html(active_tab="flow"):
 
     function switchTab(tabId) {{
         document.querySelectorAll('.panel').forEach(el => el.style.display = 'none');
-        document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.tab, .mobile-tab').forEach(el => el.classList.remove('active'));
 
         var targetView = document.getElementById('view-' + tabId);
         if (targetView) targetView.style.display = 'block';
 
-        var activeBtn = document.querySelector('.tab[data-tab="' + tabId + '"]');
-        if (activeBtn) activeBtn.classList.add('active');
+        document.querySelectorAll('[data-tab="' + tabId + '"]').forEach(el => el.classList.add('active'));
+
+        var tabPaths = { flow: '/', jobs: '/jobs', settings: '/settings', diagnostics: '/diagnostics', closed: '/closed' };
+        if (tabPaths[tabId] && window.location.pathname !== tabPaths[tabId]) {
+            history.replaceState(null, '', tabPaths[tabId]);
+        }
 
         if (tabId === 'diagnostics') {{
             startLivePolling();
