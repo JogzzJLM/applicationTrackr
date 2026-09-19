@@ -315,6 +315,14 @@ def render_unified_dashboard_html(active_tab="flow"):
     sr_comp = ", ".join(settings.get("smartrecruiters_companies", []))
     auto_hide_chk = "checked" if settings.get("auto_hide_applied_company_jobs", False) else ""
 
+    applications_toggle_html = ""
+    if total > 4:
+        applications_toggle_html = (
+            f'<button id="applications-toggle" class="btn btn-ghost mobile-only" '
+            f'style="width:100%;justify-content:center;margin-top:10px;" '
+            f'onclick="toggleApplications(this)">Show all {total} applications</button>'
+        )
+
     src_status_html = ""
     for s_name, s_msg in SCRAPER_STATUS.get("source_status", {}).items():
         src_status_html += f'<div class="diag-row"><span class="diag-label">{s_name}</span><span class="diag-value">{s_msg}</span></div>'
@@ -775,6 +783,7 @@ def render_unified_dashboard_html(active_tab="flow"):
                 align-items: flex-start;
             }}
             .section-title .btn {{ flex: 0 0 auto; padding: 7px 10px; }}
+            .section-card .btn {{ max-width: 100%; white-space: normal; }}
             .pipeline-grid {{ display: flex; flex-direction: column; gap: 0; }}
             .flow-apps {{ order: 1; }}
             .flow-sankey {{ order: 2; }}
