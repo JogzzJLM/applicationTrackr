@@ -795,6 +795,7 @@ def render_unified_dashboard_html(active_tab="flow"):
             .application-card-foot {{ align-items: flex-end; }}
             .application-actions {{ gap: 5px; }}
             .application-actions .btn {{ min-height: 36px; padding: 6px 9px; }}
+            .stage-distribution-row {{ flex-wrap: wrap; gap: 4px 10px; font-size: 10.5px !important; }}
 
             .toolbar {{
                 display: grid;
@@ -977,7 +978,7 @@ def render_unified_dashboard_html(active_tab="flow"):
                 </div>
 
                 <div style="margin-bottom:16px;">
-                    <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:700; color:var(--text-tertiary); margin-bottom:6px;">
+                    <div class="stage-distribution-row" style="display:flex; justify-content:space-between; font-size:12px; font-weight:700; color:var(--text-tertiary); margin-bottom:6px;">
                         <span>Stage Distribution</span>
                         <span>{cnt_applied} Applied · {cnt_assessment} OA · {cnt_interview} Int · {cnt_offer} Offer</span>
                     </div>
@@ -1147,11 +1148,11 @@ def render_unified_dashboard_html(active_tab="flow"):
 </div>
 
 <nav class="mobile-nav" aria-label="Primary navigation">
-    <button class="mobile-tab ${tab_flow}" data-tab="flow" onclick="switchTab('flow')"><span class="nav-icon">⌂</span><span>Home</span></button>
-    <button class="mobile-tab ${tab_jobs}" data-tab="jobs" onclick="switchTab('jobs')"><span class="nav-icon">⌕</span><span>Jobs</span></button>
-    <button class="mobile-tab ${tab_closed}" data-tab="closed" onclick="switchTab('closed')"><span class="nav-icon">✓</span><span>Closed</span></button>
-    <button class="mobile-tab ${tab_settings}" data-tab="settings" onclick="switchTab('settings')"><span class="nav-icon">⚙</span><span>Settings</span></button>
-    <button class="mobile-tab ${tab_status}" data-tab="diagnostics" onclick="switchTab('diagnostics')"><span class="nav-icon">◉</span><span>Status</span></button>
+    <button class="mobile-tab {tab_flow}" data-tab="flow" onclick="switchTab('flow')"><span class="nav-icon">⌂</span><span>Home</span></button>
+    <button class="mobile-tab {tab_jobs}" data-tab="jobs" onclick="switchTab('jobs')"><span class="nav-icon">⌕</span><span>Jobs</span></button>
+    <button class="mobile-tab {tab_closed}" data-tab="closed" onclick="switchTab('closed')"><span class="nav-icon">✓</span><span>Closed</span></button>
+    <button class="mobile-tab {tab_settings}" data-tab="settings" onclick="switchTab('settings')"><span class="nav-icon">⚙</span><span>Settings</span></button>
+    <button class="mobile-tab {tab_status}" data-tab="diagnostics" onclick="switchTab('diagnostics')"><span class="nav-icon">◉</span><span>Status</span></button>
 </nav>
 
 <!-- Modal: Log New Application -->
