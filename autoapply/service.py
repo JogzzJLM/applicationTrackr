@@ -159,7 +159,8 @@ def _execute_run(run_id: str, initial: Dict[str, Any], job: Optional[Dict[str, A
         return
     _save_run(run_id, {**initial, "status": "running", "url": target_url})
     profile["_application_company"] = (job or {}).get("company", "")
-    result = run_application(target_url, profile, auto_submit=auto_submit, screenshot_dir=str(Path(AUTOAPPLY_DIR) / "screenshots"))
+    result = run_application(target_url, profile, auto_submit=auto_submit, screenshot_dir=str(Path(AUTOAPPLY_DIR) / "screenshots"),
+        progress=lambda state: _save_run(run_id, {**initial, "status": "running", "url": target_url, **state}))
     _save_run(run_id, {**initial, **result.to_dict(), "created_at": initial["created_at"], "finished_at": time.time(), "job_id": initial.get("job_id", "")})
 
 
@@ -184,7 +185,8 @@ def start_application_run(job_id: str = "", url: str = "", auto_submit: bool = F
         try:
             if inspect_only:
                 _save_run(run_id, {**initial, "status": "running", "inspect_only": True})
-                result = run_application(target_url, {}, screenshot_dir=str(Path(AUTOAPPLY_DIR) / "screenshots"), inspect_only=True)
+                result = run_application(target_url, {}, screenshot_dir=str(Path(AUTOAPPLY_DIR) / "screenshots"), inspect_only=True,
+                    progress=lambda state: _save_run(run_id, {**initial, "status": "running", "url": target_url, **state}))
                 _save_run(run_id, {**initial, **result.to_dict(), "inspect_only": True, "finished_at": time.time()})
             else:
                 _execute_run(run_id, initial, job, target_url, auto_submit)
@@ -273,4 +275,19 @@ def guided_questions(run_id: str) -> Dict[str, Any]:
         questions.append({**item, "type": kind, "profile_key": key or "", "answer": value or ""})
     return {"status": run.get("status"), "run_id": run_id, "url": run.get("url", ""),
             "job_id": run.get("job_id", ""), "company": job.get("company", ""), "title": job.get("title", ""),
+            "phase": run.get("phase", ""), "field_label": run.get("field_label", ""),
             "context": run.get("page_context", ""), "questions": questions}
+
+
+def recover_interrupted_runs() -> None:
+    """A browser session cannot survive a container restart; make that visible."""
+    for run_id, payload in _load_runs().items():
+        if payload.get("status") not in {"queued", "running"}:
+            continue
+        uncertain = bool(payload.get("auto_submit_requested")) and not payload.get("inspect_only")
+        _save_run(run_id, {**payload, "status": "submission_unconfirmed" if uncertain else "interrupted",
+            "message": "The service restarted during this run. Check before retrying." if uncertain else "The service restarted during this run. You can restart it with your saved answers.",
+            "finished_at": time.time()})
+
+
+recover_interrupted_runs()

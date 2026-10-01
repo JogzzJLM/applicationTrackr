@@ -89,6 +89,10 @@ def _make_driver():
     binary = os.getenv("CHROMIUM_BINARY", "/usr/bin/chromium")
     if os.path.exists(binary):
         options.binary_location = binary
+    driver_binary = os.getenv("CHROMEDRIVER_BINARY", "/usr/bin/chromedriver")
+    if os.path.isfile(driver_binary):
+        from selenium.webdriver.chrome.service import Service
+        return webdriver.Chrome(service=Service(driver_binary), options=options)
     return webdriver.Chrome(options=options)
 
 
@@ -164,7 +168,26 @@ def _choice_field(element) -> bool:
         return False
 
 
+@dataclass
+class _NamedOption:
+    element: Any
+    text: str
+
+    def click(self):
+        self.element.click()
+
+
 def _visible_options(element):
+    # Read the menu in one browser request rather than hundreds of per-option requests.
+    try:
+        rows = element.parent.execute_script("""
+            return Array.from(document.querySelectorAll('[role="option"], [class*="select__option"], [id*="-option-"]'))
+                .filter(e => e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden' && e.innerText.trim())
+                .map(e => ({element:e, text:e.innerText.trim()}));
+        """)
+        return [_NamedOption(row["element"], row["text"]) for row in rows]
+    except Exception:
+        pass
     return [o for o in element.find_elements("xpath", "//*[@role='option' or contains(@class,'select__option') or contains(@id,'-option-')]") if o.is_displayed() and o.text.strip()]
 
 
@@ -319,16 +342,21 @@ def _find_submit_button(driver, domain: str):
     return None, ""
 
 
-def run_application(url: str, profile: Dict[str, Any], auto_submit: bool = False, screenshot_dir: Optional[str] = None, inspect_only: bool = False) -> ApplicationRunResult:
+def run_application(url: str, profile: Dict[str, Any], auto_submit: bool = False, screenshot_dir: Optional[str] = None, inspect_only: bool = False, progress=None) -> ApplicationRunResult:
     result = ApplicationRunResult(url=url, status="starting")
     flat_profile = {} if inspect_only else flatten_profile(profile)
     max_steps = max(1, int(os.getenv("AUTOAPPLY_MAX_STEPS", "8")))
     page_timeout = max(10, int(os.getenv("AUTOAPPLY_PAGE_TIMEOUT", "30")))
     env_submit = os.getenv("AUTOAPPLY_AUTO_SUBMIT", "false").lower() in {"1", "true", "yes"}
     driver = None
+    def report(phase, field_label=""):
+        if progress:
+            progress({"phase": phase, "field_label": field_label})
     try:
+        report("Opening browser")
         driver = _make_driver()
         driver.set_page_load_timeout(page_timeout)
+        report("Loading application page")
         driver.get(url)
         time.sleep(1.5)
         for step in range(max_steps):
@@ -339,10 +367,12 @@ def run_application(url: str, profile: Dict[str, Any], auto_submit: bool = False
                 result.status = "blocked"
                 break
 
+            report("Reading application questions")
             discovered = _discover_fields(driver)
             result.page_context = driver.find_element("tag name", "body").text
             result.inspected_fields = []
             for element, label, element_type, context in discovered:
+                report("Reading question choices", label)
                 result.inspected_fields.append({"label": label, "type": element_type, "context": context,
                     "options": _field_options(element),
                     "required": element.get_attribute("required") is not None or element.get_attribute("aria-required") == "true"})
@@ -353,6 +383,7 @@ def run_application(url: str, profile: Dict[str, Any], auto_submit: bool = False
             page_unresolved: List[FieldResult] = []
             page_review: List[FieldResult] = []
             for element, label, element_type, context in discovered:
+                report("Filling saved answers", label)
                 if not label:
                     page_unresolved.append(FieldResult("unlabelled field", element_type, action="unresolved", note="no usable label", context=context, domain=current_domain))
                     continue

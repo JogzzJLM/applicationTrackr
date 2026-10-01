@@ -113,3 +113,34 @@ def test_supplied_graduation_date_can_choose_month_and_year():
     previous, expected = Option('June 2027'), Option('June 2028')
     assert _matching_option([previous, expected], '23/06/2028') is expected
     assert _matching_option([previous], '23/06/2028') is None
+
+
+def test_menu_text_is_read_in_one_browser_request():
+    from autoapply.browser_agent import _visible_options
+    class Option:
+        def __init__(self): self.clicked = False
+        def click(self): self.clicked = True
+    option = Option()
+    class Driver:
+        calls = 0
+        def execute_script(self, script):
+            self.calls += 1
+            return [{'element': option, 'text': 'Backend/Infrastructure'}]
+    class Field:
+        parent = Driver()
+        def find_elements(self, *args): raise AssertionError('Should not inspect options one by one')
+    element = Field()
+    result = _visible_options(element)
+    assert result[0].text == 'Backend/Infrastructure'
+    result[0].click()
+    assert option.clicked and element.parent.calls == 1
+
+
+def test_restart_does_not_leave_runs_stuck_or_allow_uncertain_submit_retry(monkeypatch):
+    from autoapply import service
+    saved = {}
+    monkeypatch.setattr(service, '_load_runs', lambda: {'draft': {'status': 'running', 'auto_submit_requested': False}, 'submit': {'status': 'running', 'auto_submit_requested': True}})
+    monkeypatch.setattr(service, '_save_run', lambda rid, data: saved.update({rid: data}))
+    service.recover_interrupted_runs()
+    assert saved['draft']['status'] == 'interrupted'
+    assert saved['submit']['status'] == 'submission_unconfirmed'
