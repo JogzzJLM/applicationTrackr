@@ -15,8 +15,9 @@ LEARNING_FILE = AUTOAPPLY_DIR / "field_learning.json"
 
 BUILTIN_ALIASES = {
     "personal.first_name": ["first name", "given name", "forename"],
+    "personal.middle_names": ["middle names", "middle name"],
     "personal.last_name": ["last name", "surname", "family name"],
-    "personal.preferred_name": ["preferred name", "known as"],
+    "personal.preferred_name": ["preferred first name", "preferred name", "known as"],
     "personal.email": ["email", "email address", "e-mail"],
     "personal.phone": ["phone", "phone number", "mobile", "telephone"],
     "personal.address_line1": ["address line 1", "street address", "address"],
@@ -27,7 +28,8 @@ BUILTIN_ALIASES = {
     "education.university": ["university", "school", "college", "institution"],
     "education.degree": ["degree", "degree type", "qualification"],
     "education.course": ["course", "major", "field of study", "subject"],
-    "education.graduation_year": ["graduation year", "expected graduation", "graduating year"],
+    "education.graduation_date": ["expected graduation date", "graduation date"],
+    "education.graduation_year": ["graduation year", "graduating year"],
     "education.grade": ["grade", "gpa", "classification"],
     "links.linkedin": ["linkedin", "linkedin url", "linkedin profile"],
     "links.github": ["github", "github url", "github profile"],
@@ -196,11 +198,11 @@ def predict_mapping(label: str, context: str = "", domain: str = "") -> Tuple[Op
     # Strong deterministic aliases are intentionally ahead of ML. They are
     # precise and prevent a small personal dataset from unlearning obvious
     # fields such as email or CV upload.
-    for key, aliases in BUILTIN_ALIASES.items():
-        for alias in aliases:
-            alias_n = normalize_label(alias)
-            if label_n == alias_n or re.search(rf"\b{re.escape(alias_n)}\b", label_n):
-                return key, 0.98, f"builtin alias: {alias}"
+    alias_pairs = sorted(((key, alias) for key, aliases in BUILTIN_ALIASES.items() for alias in aliases), key=lambda pair: len(pair[1]), reverse=True)
+    for key, alias in alias_pairs:
+        alias_n = normalize_label(alias)
+        if label_n == alias_n or re.search(rf"\b{re.escape(alias_n)}\b", label_n):
+            return key, 0.98, f"builtin alias: {alias}"
 
     feature_text = _feature_text(label_n, context_n, domain_n)
     ml_key, ml_conf = _nb_predict(feature_text, _training_examples(data))
@@ -245,6 +247,8 @@ def predict_answer(question: str, domain: str = "") -> Tuple[Optional[str], floa
     for item in data["question_answers"]:
         item_q = item.get("question", "")
         item_domain = normalize_label(item.get("domain", ""))
+        if item_domain and item_domain != domain_n:
+            continue
         if normalize_label(item_q) == q and (not item_domain or item_domain == domain_n):
             return str(item.get("answer", "")), 1.0, "learned exact answer"
         score = _similarity(q, item_q)

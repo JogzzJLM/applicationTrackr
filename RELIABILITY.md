@@ -35,3 +35,5 @@ external service is healthy.
 
 Validation: `uv pip install --python .venv/bin/python pytest -r requirements.txt`
 and `.venv/bin/python -m pytest -q`.
+
+Guided applications can save chat-supplied profile details with `POST /api/autoapply/profile` (`values` is a JSON object of dotted profile fields). Updates merge with existing details. Upload a CV or cover letter from `/autoapply` using the document upload control; documents are retained in the persistent volume with private filesystem permissions. PDF/DOC/DOCX uploads are bounded to 10 MB and use server-controlled filenames. Answers learned with an application URL as their domain stay scoped to that application, including fuzzy lookup, so another employer cannot inherit its answers. Form inspection now includes required flags, context and native select choices. Low-confidence field guesses are left unanswered.

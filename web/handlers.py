@@ -15,6 +15,7 @@ from scrapers_engine.audit import run_all_scrapers, recheck_existing_open_jobs_f
 from web.autoapply_view import render_autoapply_html
 from web.views import render_unified_dashboard_html
 from autoapply.learning import learn_answer, learn_mapping
+from autoapply.profile import ensure_profile, update_profile, save_document
 from autoapply.service import (
     autopilot_candidates,
     get_batch,
@@ -46,10 +47,12 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
-    def _json(self, payload, status=200):
+    def _json(self, payload, status=200, private=False):
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
-        self.send_cors_headers()
+        self.send_header("Cache-Control", "no-store")
+        if not private:
+            self.send_cors_headers()
         self.end_headers()
         self.safe_write(json.dumps(payload, indent=2).encode("utf-8"))
 
@@ -151,6 +154,8 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             from config import clear_scraper_logs
             clear_scraper_logs()
             return self._json({"status": "ok"})
+        if path == "/api/autoapply/profile":
+            return self._json(ensure_profile(), private=True)
         if path == "/api/autoapply/status":
             return self._json(autoapply_status())
         if path == "/api/autoapply/candidates":
@@ -250,9 +255,37 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", 0))
         except ValueError:
             return self._json({"status": "error", "message": "Invalid request length"}, 400)
+        if path in {"/api/autoapply/profile", "/api/autoapply/document"}:
+            origin = self.headers.get("Origin")
+            if origin and urlparse(origin).netloc != self.headers.get("Host"):
+                return self._json({"status": "error", "message": "Use the ApplicationTrackr page to save private data."}, 403)
+        if path == "/api/autoapply/document":
+            if length <= 0 or length > 10 * 1024 * 1024 + 65536:
+                return self._json({"status": "error", "message": "Upload limit is 10 MB."}, 413)
+            from email.parser import BytesParser
+            from email.policy import default
+            message = BytesParser(policy=default).parsebytes(
+                ("Content-Type: " + self.headers.get("Content-Type", "") + "\r\nMIME-Version: 1.0\r\n\r\n").encode() + self.rfile.read(length))
+            if not message.is_multipart():
+                return self._json({"status": "error", "message": "A multipart file upload is required."}, 400)
+            parts = list(message.iter_parts())
+            upload = next((p for p in parts if p.get_param("name", header="content-disposition") == "file"), None)
+            kind = next((p.get_payload(decode=True).decode() for p in parts if p.get_param("name", header="content-disposition") == "kind"), "resume")
+            try:
+                if upload is None: raise ValueError("Select a file to upload.")
+                target = save_document(kind, upload.get_filename() or "", upload.get_payload(decode=True) or b"")
+                return self._json({"status": "ok", "path": target})
+            except (ValueError, TypeError) as exc:
+                return self._json({"status": "error", "message": str(exc)}, 400)
         if length < 0 or length > 65536:
             return self._json({"status": "error", "message": "Request too large"}, 413)
         form = parse_qs(self.rfile.read(length).decode("utf-8") if length else "")
+        if path == "/api/autoapply/profile":
+            try:
+                update_profile(json.loads(form.get("values", ["{}"]) [0]))
+                return self._json({"status": "ok"})
+            except (ValueError, TypeError) as exc:
+                return self._json({"status": "error", "message": str(exc)}, 400)
         if path == "/api/test-notification":
             from notifications import send_notification
             ok = send_notification('ApplicationTrackr notification test',

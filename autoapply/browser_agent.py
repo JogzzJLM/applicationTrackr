@@ -102,7 +102,7 @@ def _element_label(driver, element) -> str:
         value = element.get_attribute(attr)
         if value:
             pieces.append(value)
-    return normalize_label(" ".join(pieces))
+    return normalize_label(next((p for p in pieces if str(p).strip()), ""))
 
 
 def _element_context(element) -> str:
@@ -261,7 +261,14 @@ def run_application(url: str, profile: Dict[str, Any], auto_submit: bool = False
 
             discovered = _discover_fields(driver)
             if inspect_only:
-                result.inspected_fields = [{"label": label, "type": element_type} for _, label, element_type, _ in discovered]
+                result.inspected_fields = []
+                for element, label, element_type, context in discovered:
+                    choices = []
+                    if element.tag_name.lower() == "select":
+                        from selenium.webdriver.support.ui import Select
+                        choices = [o.text for o in Select(element).options if o.text.strip()]
+                    result.inspected_fields.append({"label": label, "type": element_type, "context": context,
+                        "options": choices, "required": element.get_attribute("required") is not None or element.get_attribute("aria-required") == "true"})
                 result.status = "form_inspected" if discovered else "no_form_found"
                 # Read the application page only; never fill, upload or submit in inspection mode.
                 break
@@ -272,8 +279,8 @@ def run_application(url: str, profile: Dict[str, Any], auto_submit: bool = False
                     page_unresolved.append(FieldResult("unlabelled field", element_type, action="unresolved", note="no usable label", context=context, domain=current_domain))
                     continue
                 profile_key, confidence, mapping_note = predict_mapping(label, context=context, domain=current_domain)
-                explicit_value = flat_profile.get(profile_key) if profile_key else None
-                learned_answer, answer_conf, answer_note = predict_answer(label, domain=current_domain)
+                explicit_value = flat_profile.get(profile_key) if profile_key and confidence >= 0.95 else None
+                learned_answer, answer_conf, answer_note = predict_answer(label, domain=url)
                 value = explicit_value if str(explicit_value or "").strip() else learned_answer
                 item = FieldResult(
                     label, element_type, profile_key or "", confidence=max(confidence, answer_conf),
