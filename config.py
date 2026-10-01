@@ -23,14 +23,14 @@ import sys
 import time
 import threading
 
-APP_BASE_URL = os.getenv("APP_BASE_URL", f"http://127.0.0.1:{PORT}").rstrip("/")
+APP_BASE_URL = (os.getenv("APP_BASE_URL") or f"http://127.0.0.1:{PORT}").rstrip("/")
 APP_TIMEZONE = os.getenv("APP_TIMEZONE", "Europe/London")
 SCRAPER_INTERVAL_SECONDS = int(os.getenv("SCRAPER_INTERVAL_SECONDS", "300"))
 # Five-minute minimum keeps old Portainer configs with EMAIL_POLL_SECONDS=60 quiet too.
 EMAIL_POLL_SECONDS = max(300, int(os.getenv("EMAIL_POLL_SECONDS", "300")))
-NTFY_BASE_URL = os.getenv("NTFY_BASE_URL", "https://ntfy.sh").rstrip("/")
-NTFY_TOPIC = os.getenv("NTFY_TOPIC", "")
-NTFY_TOKEN = os.getenv("NTFY_TOKEN", "")
+NTFY_BASE_URL = (os.getenv("NTFY_BASE_URL") or "https://ntfy.sh").strip().rstrip("/")
+NTFY_TOPIC = os.getenv("NTFY_TOPIC", "").strip()
+NTFY_TOKEN = (os.getenv("NTFY_TOKEN") or os.getenv("NTFY_AUTH_TOKEN", "")).strip()
 
 # Gmail inbox automation.
 GMAIL_USER = os.getenv("GMAIL_USER", "")
@@ -125,3 +125,5 @@ GREENHOUSE_COMPANIES = _settings.get("greenhouse_companies", [])
 LEVER_COMPANIES = _settings.get("lever_companies", [])
 ASHBY_COMPANIES = _settings.get("ashby_companies", [])
 SMARTRECRUITERS_COMPANIES = _settings.get("smartrecruiters_companies", [])
+
+GOOGLE_SHEET_EDIT_URL = os.getenv("GOOGLE_SHEET_EDIT_URL", "").strip()

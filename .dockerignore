@@ -1,0 +1,13 @@
+.git
+.venv
+.env
+.env.*
+!.env.example
+data
+__pycache__
+**/__pycache__
+.pytest_cache
+.DS_Store
+*.patch
+tests
+sankey_diagram.html

@@ -1,3 +1,4 @@
+import re
 import csv
 import time
 import io
@@ -58,6 +59,8 @@ def resolve_smart_stage(company, stage, role=None):
         return stage
 
     stage_lower = stage.lower()
+    if re.search(r"\d", stage):
+        return None if stage in existing_stages else stage
 
     if "interview" in stage_lower:
         count = sum(1 for s in existing_stages if "interview" in s.lower())
@@ -85,13 +88,13 @@ def resolve_smart_stage(company, stage, role=None):
 
 def update_google_sheet_via_webhook(company, stage, role="Software/Quant Role", link="", resolve_sequential=True):
     if not GOOGLE_SHEET_WEBHOOK_URL or "YOUR_WEBHOOK_ID" in GOOGLE_SHEET_WEBHOOK_URL:
-        return
+        return False
 
     if resolve_sequential:
         final_stage = resolve_smart_stage(company, stage, role=role)
         if final_stage is None:
             print(f"📊 Sheet Notice: Stage '{stage}' for {company} already recorded. Skipping duplicate.")
-            return
+            return True
     else:
         final_stage = stage
 
@@ -99,13 +102,25 @@ def update_google_sheet_via_webhook(company, stage, role="Software/Quant Role", 
     try:
         resp = requests.post(GOOGLE_SHEET_WEBHOOK_URL, json=payload, timeout=6)
         if resp.status_code in [200, 201]:
+            if 'text/html' in resp.headers.get('Content-Type', '').lower():
+                print("Sheet webhook returned HTML instead of an acknowledgement.")
+                return False
+            try:
+                result = resp.json()
+            except ValueError:
+                result = None
+            if result is None and resp.text.strip().lower() not in ("ok", "success"):
+                print("Sheet webhook returned no success acknowledgement.")
+                return False
+            if isinstance(result, dict) and (result.get('success') is False or result.get('error') or str(result.get('status', '')).lower() in ('error', 'failed')):
+                return False
             print(f"✅ Logged to Google Sheet: {company} -> {final_stage}")
             fetch_google_sheet_csv(force_refresh=True)
             return True
         else:
             print(f"⚠️ Google Sheet Webhook returned HTTP {resp.status_code}")
     except Exception as e:
-        print(f"⚠️ Webhook dispatch notice ({e})")
+        print(f"⚠️ Webhook dispatch failed ({type(e).__name__})")
     return False
 
 def get_applied_jobs_set(csv_text=None):
@@ -205,6 +220,7 @@ def get_detailed_applications(csv_text=None, force_refresh=False):
                 apps.append({
                     "company": company,
                     "role": role,
+                    "link": row.get("Link", "").strip(),
                     "latest_stage": latest_stage,
                     "stages": stages,
                     "status": status,
@@ -378,3 +394,14 @@ def generate_sankey_from_google_sheets(force_refresh=False):
     except Exception as e:
         print(f"Error generating Sankey diagram: {e}")
         generate_default_sankey()
+
+def get_sheet_edit_url():
+    from config import GOOGLE_SHEET_EDIT_URL
+    from urllib.parse import urlparse
+    if GOOGLE_SHEET_EDIT_URL:
+        url = GOOGLE_SHEET_EDIT_URL
+    else:
+        match = re.search(r"/spreadsheets/d/(?!e/)([A-Za-z0-9_-]+)", GOOGLE_SHEET_CSV_URL)
+        url = f"https://docs.google.com/spreadsheets/d/{match.group(1)}/edit" if match else ''
+    parsed = urlparse(url)
+    return url if parsed.scheme == 'https' and parsed.hostname == 'docs.google.com' else ''

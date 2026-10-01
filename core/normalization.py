@@ -67,7 +67,7 @@ def clean_company_display_name(name):
         if key == norm or key in norm:
             return display_val
 
-    for suffix in ["internshipprogram", "careers", "jobs", "program", "limited", "ltd", "inc", "plc", "llc"]:
+    for suffix in ["internshipprogram", "careers", "jobs", "program"]:
         if cleaned.lower().endswith(suffix) and len(cleaned) > len(suffix) + 2:
             cleaned = cleaned[:-len(suffix)].strip()
 
@@ -87,10 +87,6 @@ def normalize_company(name):
 
     if cleaned in COMPANY_ALIASES:
         return COMPANY_ALIASES[cleaned]
-
-    for alias, canonical in COMPANY_ALIASES.items():
-        if alias in cleaned or cleaned in alias:
-            return canonical
 
     return cleaned
 

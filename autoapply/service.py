@@ -43,7 +43,8 @@ def _save_run(run_id: str, payload: Dict[str, Any]) -> None:
 
 
 def _load_jobs() -> List[Dict[str, Any]]:
-    jobs = load_json_safe(DISCOVERED_JOBS_FILE, [])
+    from scrapers_engine.audit import load_discovered_jobs
+    jobs = load_discovered_jobs()
     return jobs if isinstance(jobs, list) else []
 
 
@@ -65,8 +66,10 @@ def _decision(job: Dict[str, Any]):
 def _attempted_job_ids() -> set[str]:
     attempted = set()
     for payload in _load_runs().values():
+        if payload.get("inspect_only"):
+            continue
         if payload.get("job_id") and payload.get("status") in {
-            "submitted", "ready_for_review", "needs_review", "filled_no_submit_found", "running", "queued"
+            "submitted", "submission_unconfirmed", "ready_for_review", "needs_review", "filled_no_submit_found", "running", "queued"
         }:
             attempted.add(str(payload["job_id"]))
     return attempted
@@ -101,6 +104,8 @@ def _today_attempt_count() -> int:
     today = datetime.now().date()
     count = 0
     for payload in _load_runs().values():
+        if payload.get("inspect_only") or payload.get("status") in {"disabled", "needs_profile"}:
+            continue
         created = payload.get("created_at")
         if not created:
             continue
@@ -157,14 +162,14 @@ def _execute_run(run_id: str, initial: Dict[str, Any], job: Optional[Dict[str, A
     _save_run(run_id, {**initial, **result.to_dict(), "created_at": initial["created_at"], "finished_at": time.time(), "job_id": initial.get("job_id", "")})
 
 
-def start_application_run(job_id: str = "", url: str = "", auto_submit: bool = False) -> str:
+def start_application_run(job_id: str = "", url: str = "", auto_submit: bool = False, inspect_only: bool = False) -> str:
     run_id = uuid.uuid4().hex[:12]
     created = time.time()
-    initial = {"created_at": created, "status": "queued", "job_id": job_id, "url": url, "auto_submit_requested": bool(auto_submit)}
+    initial = {"created_at": created, "status": "queued", "job_id": job_id, "url": url, "auto_submit_requested": bool(auto_submit), "inspect_only": bool(inspect_only)}
     _save_run(run_id, initial)
 
     def worker():
-        if not _enabled():
+        if not _enabled() and not inspect_only:
             _save_run(run_id, {**initial, "status": "disabled", "message": "Set AUTOAPPLY_ENABLED=true after configuring your profile."})
             return
         job = _find_job(job_id) if job_id else None
@@ -172,7 +177,18 @@ def start_application_run(job_id: str = "", url: str = "", auto_submit: bool = F
         if not target_url.startswith("http"):
             _save_run(run_id, {**initial, "status": "error", "message": "No valid application URL supplied."})
             return
-        _execute_run(run_id, initial, job, target_url, auto_submit)
+        if job_id and not job:
+            _save_run(run_id, {**initial, "status": "error", "message": "Job not found."})
+            return
+        try:
+            if inspect_only:
+                _save_run(run_id, {**initial, "status": "running", "inspect_only": True})
+                result = run_application(target_url, {}, screenshot_dir=str(Path(AUTOAPPLY_DIR) / "screenshots"), inspect_only=True)
+                _save_run(run_id, {**initial, **result.to_dict(), "inspect_only": True, "finished_at": time.time()})
+            else:
+                _execute_run(run_id, initial, job, target_url, auto_submit)
+        except Exception as exc:
+            _save_run(run_id, {**initial, "status": "error", "message": f"Application agent failed ({type(exc).__name__})."})
 
     threading.Thread(target=worker, daemon=True, name=f"autoapply-{run_id}").start()
     return run_id

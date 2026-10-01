@@ -55,7 +55,10 @@ if __name__ == "__main__":
     )
 
     while True:
-        run_all_scrapers()
-        generate_sankey_from_google_sheets()
-        send_heartbeat_ping()
+        try:
+            run_all_scrapers()
+            generate_sankey_from_google_sheets()
+            send_heartbeat_ping()
+        except Exception as exc:
+            print(f"Scraper cycle failed ({type(exc).__name__}); will retry next cycle.")
         time.sleep(SCRAPER_INTERVAL_SECONDS)

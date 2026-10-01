@@ -7,7 +7,10 @@ import socketserver
 from config import APP_BASE_URL, PORT, add_scraper_log
 from core.storage import hide_job, load_reported_closed_jobs, load_settings, save_reported_closed_jobs, save_settings
 from core.kb import load_closed_keywords_kb, save_closed_keywords_kb, extract_generic_closure_phrases
-from sheets import generate_sankey_from_google_sheets, update_google_sheet_via_webhook
+from sheets import generate_sankey_from_google_sheets, update_google_sheet_via_webhook, get_detailed_applications
+from core.jobs import JobRepository, add_manual_job, save_job_details
+from scrapers_engine.audit import load_discovered_jobs
+from core.storage import load_pending_email_updates, remove_pending_email_update
 from scrapers_engine.audit import run_all_scrapers, recheck_existing_open_jobs_for_closure, purge_irrelevant_jobs
 from web.autoapply_view import render_autoapply_html
 from web.views import render_unified_dashboard_html
@@ -125,6 +128,16 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             except Exception:
                 page = "<html><body><h3>Sankey Diagram Loading...</h3></body></html>"
             return self._html(page)
+        if path == "/api/health":
+            from config import NTFY_TOPIC, GOOGLE_SHEET_CSV_URL, GOOGLE_SHEET_WEBHOOK_URL, SCRAPER_STATUS
+            return self._json({"status": "ok", "integrations": {
+                "ntfy_configured": bool(NTFY_TOPIC), "ntfy": SCRAPER_STATUS.get("ntfy", {}),
+                "sheet_read_configured": bool(GOOGLE_SHEET_CSV_URL),
+                "sheet_write_configured": bool(GOOGLE_SHEET_WEBHOOK_URL)}})
+        if path == "/api/jobs":
+            jobs = JobRepository().sync(load_discovered_jobs(), get_detailed_applications())
+            from dataclasses import asdict
+            return self._json({"jobs": [asdict(j) for j in jobs]})
         if path == "/api/status":
             from config import SCRAPER_STATUS
             return self._json(SCRAPER_STATUS)
@@ -162,7 +175,8 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             title = qs.get("title", ["Software/Quant Role"])[0]
             stage = qs.get("stage", ["Applied"])[0]
             if comp:
-                update_google_sheet_via_webhook(comp, stage, role=title, resolve_sequential=True)
+                if not update_google_sheet_via_webhook(comp, stage, role=title, resolve_sequential=True):
+                    return self._json({"status": "error", "message": "Sheet update failed. Check webhook configuration and logs."}, 502)
                 add_scraper_log(f"📊 Web UI logged application: {comp} -> {stage}")
                 try: generate_sankey_from_google_sheets(force_refresh=True)
                 except Exception: pass
@@ -173,9 +187,20 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             comp = qs.get("company", [""])[0]
             title = qs.get("role", ["Software/Quant Role"])[0]
             stage = qs.get("stage", ["Rejected"])[0]
+            if not comp or not title:
+                return self._json({"status": "error", "message": "Company and role required."}, 400)
             if comp and title:
-                update_google_sheet_via_webhook(comp, stage, role=title, resolve_sequential=True)
-                if u_id: remove_pending_email_update(u_id)
+                if not update_google_sheet_via_webhook(comp, stage, role=title, resolve_sequential=True):
+                    return self._json({"status": "error", "message": "Sheet update failed. Check webhook configuration and logs."}, 502)
+                pending = next((p for p in load_pending_email_updates() if p.get('id') == u_id), None)
+                if pending:
+                    repo = JobRepository()
+                    jobs = repo.sync(load_discovered_jobs(), get_detailed_applications())
+                    from core.normalization import normalize_company, normalize_role
+                    job = next((j for j in jobs if normalize_company(j.company) == normalize_company(comp) and normalize_role(j.title) == normalize_role(title)), None)
+                    if job:
+                        repo.record_email(job, pending.get('event_id', u_id), stage, pending.get('subject', ''), synced=True)
+                    remove_pending_email_update(u_id)
             return self._json({"status": "ok"})
         if path == "/api/dismiss-pending-update":
             from core.storage import remove_pending_email_update
@@ -221,8 +246,34 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
-        length = int(self.headers.get("Content-Length", 0))
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+        except ValueError:
+            return self._json({"status": "error", "message": "Invalid request length"}, 400)
+        if length < 0 or length > 65536:
+            return self._json({"status": "error", "message": "Request too large"}, 413)
         form = parse_qs(self.rfile.read(length).decode("utf-8") if length else "")
+        if path == "/api/test-notification":
+            from notifications import send_notification
+            ok = send_notification('ApplicationTrackr notification test',
+                'Notifications are working. Open your dashboard to track applications.', link=f'{APP_BASE_URL}/')
+            return self._json({"status": "ok" if ok else "error", "message": "Accepted by ntfy; check your subscribed device." if ok else "Notification failed. Check Diagnostics for details."}, 200 if ok else 502)
+        if path == "/api/manual-job":
+            try:
+                fields = json.loads(form.get('custom_fields', ['{}'])[0] or '{}')
+                job = add_manual_job(form.get('company', [''])[0], form.get('title', [''])[0],
+                    form.get('link', [''])[0], form.get('location', [''])[0], form.get('notes', [''])[0], fields)
+                JobRepository().sync(load_discovered_jobs(), get_detailed_applications())
+                return self._json({"status": "ok", "job": job}, 201)
+            except (ValueError, TypeError) as exc:
+                return self._json({"status": "error", "message": str(exc)}, 400)
+        if path == "/api/job-details":
+            try:
+                job = save_job_details(form.get('id', [''])[0], form.get('notes', [''])[0],
+                    json.loads(form.get('custom_fields', ['{}'])[0] or '{}'))
+                return self._json({"status": "ok", "job": job})
+            except (ValueError, TypeError) as exc:
+                return self._json({"status": "error", "message": str(exc)}, 400)
         if path == "/api/settings":
             settings = load_settings()
             def csv(key): return [x.strip() for x in form.get(key,[""])[0].split(",") if x.strip()]
@@ -233,6 +284,9 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             removed = purge_irrelevant_jobs()
             add_scraper_log(f"⚙️ Saved filter settings; relevance audit removed {removed} listings")
             self.send_response(302); self.send_header("Location", "/settings"); self.end_headers(); return
+        if path == "/api/autoapply/inspect":
+            run_id = start_application_run(job_id=form.get("job_id",[""])[0], url=form.get("url",[""])[0], inspect_only=True)
+            return self._json({"status":"queued","run_id":run_id})
         if path == "/api/autoapply/run":
             run_id = start_application_run(job_id=form.get("job_id",[""])[0], url=form.get("url",[""])[0], auto_submit=form.get("auto_submit",["false"])[0].lower() in {"1","true","yes"})
             return self._json({"status":"queued","run_id":run_id})

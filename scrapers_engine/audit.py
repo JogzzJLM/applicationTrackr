@@ -28,11 +28,12 @@ def save_seen_jobs(seen_jobs):
 
 
 def load_discovered_jobs():
-    return load_json_safe(DISCOVERED_JOBS_FILE, [])
+    from core.jobs import MANUAL_JOBS_FILE
+    return load_json_safe(DISCOVERED_JOBS_FILE, []) + load_json_safe(MANUAL_JOBS_FILE, [])
 
 
 def save_discovered_jobs(discovered_jobs):
-    atomic_write_json(DISCOVERED_JOBS_FILE, deduplicate_job_list(discovered_jobs)[:1000])
+    atomic_write_json(DISCOVERED_JOBS_FILE, deduplicate_job_list([j for j in discovered_jobs if j.get("source") != "Manual"])[:1000])
 
 
 def purge_irrelevant_jobs():
@@ -41,6 +42,9 @@ def purge_irrelevant_jobs():
     settings = load_settings()
     kept, reason_counts = [], {}
     for job in discovered:
+        if job.get("source") == "Manual":
+            kept.append(job)
+            continue
         metadata = job.get("metadata") if isinstance(job.get("metadata"), dict) else {}
         decision = evaluate_job(job.get("title", ""), job.get("company", ""), job.get("location", ""), metadata=metadata, settings=settings)
         if decision.eligible:
@@ -74,6 +78,8 @@ def purge_expired_jobs():
     valid_jobs = []
 
     def check_job(job):
+        if job.get("source") == "Manual":
+            return job
         link = job.get("link", "")
         if not link or not link.startswith("http"):
             return None

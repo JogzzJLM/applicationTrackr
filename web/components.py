@@ -224,6 +224,7 @@ data-title="{html.escape(self.title.lower(), quote=True)}">
         {agent_action}
         {sheet_action}
         {report_action}
+        <button class="btn btn-ghost card-secondary-action" onclick="openJobDetails({_js_literal(self.raw.get("object_id") or self.job_id)})">Details / Notes</button>
     </div>
 </article>'''
 
@@ -275,6 +276,7 @@ class ApplicationCardViewModel:
     <div class="application-card-foot">
         <span class="application-status">{html.escape(self.status)}</span>
         <div class="application-actions">
+            <button onclick="openJobDetails({_js_literal(self.raw.get("object_id", ""))})" class="btn btn-ghost">Details / Notes</button>
             <button onclick="quickUpdateStage({_js_literal(self.company)}, 'Interview', {_js_literal(self.role)})" class="btn btn-tinted">+ Interview</button>
             <button onclick="quickUpdateStage({_js_literal(self.company)}, 'Rejected', {_js_literal(self.role)})" class="btn btn-ghost btn-danger-text">Reject</button>
         </div>

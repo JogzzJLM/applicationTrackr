@@ -4,7 +4,7 @@ import threading
 import shutil
 from pathlib import Path
 
-_FILE_LOCK = threading.Lock()
+_FILE_LOCK = threading.RLock()
 
 
 def _env_int(name, default):
@@ -109,7 +109,7 @@ def atomic_write_json(filepath, data, indent=2):
             if os.path.exists(tmp):
                 try: os.remove(tmp)
                 except Exception: pass
-            print(f"⚠️ Error performing atomic JSON write to {filepath}: {exc}")
+            raise OSError(f"Could not persist {Path(filepath).name}") from exc
 
 
 def load_json_safe(filepath, default_val):
@@ -142,9 +142,17 @@ def hide_job(job_id):
 def load_pending_email_updates(): return load_json_safe(PENDING_EMAILS_FILE, [])
 def save_pending_email_updates(value): atomic_write_json(PENDING_EMAILS_FILE, value)
 def add_pending_email_update(value):
-    values = load_pending_email_updates(); values.append(value); save_pending_email_updates(values)
+    with _FILE_LOCK:
+        values = load_pending_email_updates()
+        if not any(v.get("id") == value.get("id") for v in values):
+            values.append(value)
+        save_pending_email_updates(values)
 def remove_pending_email_update(update_id):
-    values = load_pending_email_updates(); filtered = [v for v in values if v.get("id") != update_id]; save_pending_email_updates(filtered); return len(values)-len(filtered)
+    with _FILE_LOCK:
+        values = load_pending_email_updates()
+        filtered = [v for v in values if v.get("id") != update_id]
+        save_pending_email_updates(filtered)
+        return len(values) - len(filtered)
 
 
 def _merge_settings(loaded):

@@ -1,6 +1,7 @@
 services:
   applicationtrackr:
     build: .
+    pull_policy: build
     container_name: applicationtrackr
     restart: unless-stopped
     ports:
@@ -20,6 +21,7 @@ services:
       EMAIL_APP_PASS: "${EMAIL_APP_PASS}"
       EMAIL_IMAP_HOST: "${EMAIL_IMAP_HOST}"
       EMAIL_IMAP_PORT: "${EMAIL_IMAP_PORT:-993}"
+      GOOGLE_SHEET_EDIT_URL: "${GOOGLE_SHEET_EDIT_URL:-https://docs.google.com/spreadsheets/d/1nBGU53s6ICcv6M9SooMBnN5xIlwqDmDbnu_l0zmVlSI/edit}"
       GOOGLE_SHEET_CSV_URL: "${GOOGLE_SHEET_CSV_URL}"
       GOOGLE_SHEET_WEBHOOK_URL: "${GOOGLE_SHEET_WEBHOOK_URL}"
       NTFY_BASE_URL: "${NTFY_BASE_URL:-https://ntfy.sh}"
@@ -35,6 +37,12 @@ services:
       AUTOAPPLY_MAX_STEPS: "${AUTOAPPLY_MAX_STEPS:-8}"
       AUTOAPPLY_PAGE_TIMEOUT: "${AUTOAPPLY_PAGE_TIMEOUT:-30}"
       CHROMIUM_BINARY: "${CHROMIUM_BINARY:-/usr/bin/chromium}"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,os; urllib.request.urlopen('http://127.0.0.1:'+os.getenv('PORT','5000')+'/api/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
     volumes:
       - applicationtrackr_data:/data
 

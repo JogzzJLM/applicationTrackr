@@ -4,6 +4,11 @@ import re
 import imaplib
 import email
 from email.header import decode_header
+from hashlib import sha256
+from bs4 import BeautifulSoup
+from core.jobs import JobRepository, match_email_to_job
+from core.storage import atomic_write_json
+from config import APP_BASE_URL
 import time
 from datetime import datetime, timedelta
 
@@ -22,7 +27,8 @@ from core.storage import (
 
 GENERIC_DOMAINS = {
     "gmail", "yahoo", "hotmail", "outlook", "icloud", "proton", "mail",
-    "googlemail", "live", "msn", "me", "comcast", "aol"
+    "googlemail", "live", "msn", "me", "comcast", "aol",
+    "greenhouse", "lever", "ashbyhq", "myworkdayjobs", "icims", "smartrecruiters"
 }
 GENERIC_SUBJECT_COMPANY_WORDS = {
     "complete an online assessment", "online assessment", "assessment", "application",
@@ -41,12 +47,7 @@ def load_seen_emails():
 
 
 def save_seen_emails(seen):
-    try:
-        with open(SEEN_EMAILS_FILE, "w", encoding="utf-8") as handle:
-            json.dump(list(seen), handle)
-    except Exception:
-        pass
-
+    atomic_write_json(SEEN_EMAILS_FILE, sorted(seen))
 
 def _decode_header_value(value):
     out = []
@@ -108,6 +109,12 @@ def extract_company_name(subject, from_sender, body_text=""):
 def classify_email_stage(text):
     text_lower = (text or "").lower()
     if any(k in text_lower for k in (
+        "regret to inform", "unable to offer", "not moving forward", "other candidates",
+        "unsuccessful", "application was rejected",
+        "decided not to proceed", "will not be proceeding",
+    )):
+        return "Rejected"
+    if any(k in text_lower for k in (
         "offer of employment", "pleased to offer", "congratulations on your offer",
         "job offer", "formal offer", "offer letter", "we would like to offer",
     )):
@@ -122,13 +129,10 @@ def classify_email_stage(text):
         "interview", "schedule a call", "invitation to interview", "next step", "speaking with",
         "first round", "final round", "assessment centre", "assessment center", "video call",
     )):
+        round_match = re.search(r"(?:interview|round)\s*(\d+)", text_lower)
+        if round_match:
+            return f"Interview {round_match.group(1)}"
         return "Interview"
-    if any(k in text_lower for k in (
-        "regret to inform", "unable to offer", "not moving forward", "other candidates",
-        "unsuccessful", "high volume of applications", "after careful consideration",
-        "decided not to proceed", "will not be proceeding",
-    )):
-        return "Rejected"
     if any(k in text_lower for k in (
         "thank you for applying", "application received", "received your application",
         "confirming your application", "application submitted", "successfully submitted",
@@ -221,55 +225,38 @@ def refresh_pending_role_choices():
     return changed
 
 
-def handle_incoming_email_update(company_name, detected_stage, subject="", from_sender="", body_text=""):
-    apps = _get_sheet_apps_with_retry()
-    norm_company = normalize_company(company_name)
-    matching_apps = [a for a in apps if normalize_company(a.get("company", "")) == norm_company]
-
-    if not matching_apps and apps:
-        ranked = _rank_apps_from_email(subject, body_text, apps)
-        if ranked:
-            best_score = ranked[0][0]
-            second_score = ranked[1][0] if len(ranked) > 1 else -1
-            if best_score >= 12 and best_score >= second_score + 3:
-                matching_apps = [ranked[0][1]]
-                company_name = ranked[0][1].get("company", company_name)
-            else:
-                matching_apps = [app for score, app in ranked if score >= 5][:10]
-
-    if len(matching_apps) == 1:
-        app = matching_apps[0]
-        exact_role = app.get("role", "Software/Quant Role")
-        exact_company = app.get("company", company_name)
-        update_google_sheet_via_webhook(exact_company, detected_stage, role=exact_role, resolve_sequential=True)
-        send_notification(
-            title=f"Update Logged: {exact_company} ({detected_stage})",
-            message=f"Automatically updated status to {detected_stage} for exact role: '{exact_role}'.",
-            tags="check-mark", priority=3, sound="chime",
-        )
-        print(f"  ├── ✅ MATCHED APPLICATION: {exact_company} -> {exact_role} ({detected_stage})")
+def handle_incoming_email_update(company_name, detected_stage, subject="", from_sender="", body_text="", event_id=None):
+    from scrapers_engine.audit import load_discovered_jobs
+    event_id = event_id or sha256(f"{from_sender}|{subject}|{body_text}".encode()).hexdigest()
+    repo = JobRepository()
+    jobs = repo.sync(load_discovered_jobs(), _get_sheet_apps_with_retry())
+    job, candidates, reason = match_email_to_job(jobs, company_name, subject, from_sender, body_text)
+    if job and repo.email_synced(job, event_id):
         return True
-
-    options = _app_options(matching_apps if len(matching_apps) > 1 else apps)
-    if detected_stage in {"Applied", "Offer"} and not matching_apps and company_name != "Application Company":
-        update_google_sheet_via_webhook(company_name, detected_stage, role="Software/Quant Role", resolve_sequential=True)
-        return True
-
+    if job:
+        repo.record_email(job, event_id, detected_stage, subject)
+        # Ordinary follow-up emails must not manufacture additional interview rounds.
+        same_stage = detected_stage in job.stages or (detected_stage == 'Interview' and any(s.lower().startswith('interview') for s in job.stages)) or (detected_stage == 'Online Assessment' and any(s.lower().startswith(('assessment', 'online assessment')) for s in job.stages))
+        success = update_google_sheet_via_webhook(job.company, detected_stage, role=job.title,
+            link=job.link, resolve_sequential=False) if not same_stage else True
+        if success:
+            repo.record_email(job, event_id, detected_stage, subject, synced=True)
+            send_notification(f"Update Logged: {job.company} ({detected_stage})",
+                f"{job.title}: {detected_stage}", link=f"{APP_BASE_URL}/")
+            return True
+        reason = 'Sheet update failed; retry or assign on the dashboard'
     add_pending_email_update({
-        "id": f"pending_{int(time.time()*1000)}",
-        "company": company_name,
-        "stage": detected_stage,
-        "subject": subject[:120] if subject else f"{company_name} Email Update",
+        "id": 'email_' + sha256(event_id.encode()).hexdigest()[:24],
+        "event_id": event_id, "job_id": job.id if job else None,
+        "company": job.company if job else company_name, "stage": detected_stage,
+        "subject": subject[:200], "reason": reason,
         "date_received": datetime.now().strftime("%Y-%m-%d %H:%M"),
-        "options": options,
+        "options": [{"company": j.company, "role": j.title, "job_id": j.id} for j in (candidates or jobs) if j.stages]
     })
-    send_notification(
-        title=f"Action Required: {company_name} ({detected_stage})",
-        message="Email update received. Select the matching logged application on the dashboard.",
-        tags="warning,bell", priority=4, sound="chime",
-    )
-    print(f"  ├── ⚠️ Email update needs confirmation; {len(options)} role choice(s) available.")
-    return False
+    send_notification(f"Assign email: {company_name} ({detected_stage})",
+        f"{subject[:150]} — {reason}", link=f"{APP_BASE_URL}/", tags="warning", priority=4)
+    # Durably queued is a successful ingestion, even though assignment is pending.
+    return True
 
 
 def _configured_imap_inboxes():
@@ -288,35 +275,40 @@ def _configured_imap_inboxes():
 
 
 def _extract_plain_text(msg):
-    if msg.is_multipart():
-        html_fallback = ""
-        for part in msg.walk():
-            if "attachment" in str(part.get("Content-Disposition", "")).lower():
-                continue
-            payload = part.get_payload(decode=True)
-            if not payload:
-                continue
-            text = payload.decode(part.get_content_charset() or "utf-8", errors="ignore")
-            if part.get_content_type() == "text/plain":
-                return text
-            if part.get_content_type() == "text/html" and not html_fallback:
-                html_fallback = re.sub(r"<[^>]+>", " ", text)
-        return re.sub(r"\s+", " ", html_fallback)
-    payload = msg.get_payload(decode=True)
-    if not payload:
-        return ""
-    return payload.decode(msg.get_content_charset() or "utf-8", errors="ignore")
-
+    plain, html = [], []
+    for part in msg.walk():
+        if part.get_content_disposition() == 'attachment':
+            continue
+        content_type = part.get_content_type()
+        if content_type not in ('text/plain', 'text/html'):
+            continue
+        payload = part.get_payload(decode=True)
+        if payload is None:
+            continue
+        charset = part.get_content_charset() or 'utf-8'
+        try:
+            text = payload.decode(charset, errors='replace')
+        except LookupError:
+            text = payload.decode('utf-8', errors='replace')
+        if content_type == 'text/plain':
+            plain.append(text)
+        else:
+            soup = BeautifulSoup(text, 'html.parser')
+            for tag in soup(['script', 'style']):
+                tag.decompose()
+            html.append(soup.get_text(' ', strip=True) + ' ' + ' '.join(a.get('href', '') for a in soup.find_all('a')))
+    return '\n'.join(plain or html)
 
 def _process_message(label, seen_key, subject, from_sender, body_text, seen_emails):
     if seen_key in seen_emails:
         return 0
-    seen_emails.add(seen_key)
     stage = classify_email_stage(f"{subject} {body_text}")
     if stage:
         company = extract_company_name(subject, from_sender, body_text)
         print(f"  │   ↳ {label}: detected {company} → {stage} | {subject[:70]}")
-        handle_incoming_email_update(company, stage, subject, from_sender, body_text)
+        handle_incoming_email_update(company, stage, subject, from_sender, body_text, event_id=seen_key)
+    seen_emails.add(seen_key)
+    save_seen_emails(seen_emails)
     return 1
 
 
@@ -328,32 +320,34 @@ def _check_one_imap_inbox(account, seen_emails):
     try:
         mail = imaplib.IMAP4_SSL(account["host"], account["port"], timeout=12)
         mail.login(account["user"], account["password"])
-        mail.select("inbox")
+        mail.select("inbox", readonly=True)
+        validity = mail.response("UIDVALIDITY")[1]
+        generation = validity[0].decode() if validity and validity[0] else "unknown"
         since_date = (datetime.now() - timedelta(days=3)).strftime("%d-%b-%Y")
-        status, messages = mail.search(None, f'(SINCE "{since_date}")')
-        if status != "OK" or not messages[0]:
-            status, messages = mail.search(None, "ALL")
+        status, messages = mail.uid("search", None, f'(SINCE "{since_date}")')
         if status != "OK" or not messages[0]:
             return 0
 
         processed = 0
-        for e_id in messages[0].split()[-50:]:
+        for e_id in messages[0].split():
             raw_id = e_id.decode()
-            seen_key = f"{account['key']}:{raw_id}"
-            if seen_key in seen_emails or (account["key"] == "gmail" and raw_id in seen_emails):
+            seen_key = f"uid:{account['key']}:{generation}:{raw_id}"
+            if seen_key in seen_emails:
                 continue
-            status, msg_data = mail.fetch(e_id, "(BODY.PEEK[])")
+            status, msg_data = mail.uid("fetch", e_id, "(BODY.PEEK[])")
             if status != "OK":
                 continue
             for response_part in msg_data:
                 if isinstance(response_part, tuple):
                     msg = email.message_from_bytes(response_part[1])
                     processed += _process_message(
-                        label, seen_key,
+                        label, f"message:{account['key']}:{msg.get('Message-ID') or seen_key}",
                         _decode_header_value(msg.get("Subject", "")),
                         _decode_header_value(msg.get("From", "")),
                         _extract_plain_text(msg), seen_emails,
                     )
+                    seen_emails.add(seen_key)
+                    save_seen_emails(seen_emails)
                     break
         save_seen_emails(seen_emails)
         update_source_status(source_name, f"🟢 Active • {processed} new messages evaluated this check")

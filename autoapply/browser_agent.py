@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import time
+from uuid import uuid4
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -49,6 +50,7 @@ class ApplicationRunResult:
     review_required: List[FieldResult] = field(default_factory=list)
     blockers: List[str] = field(default_factory=list)
     screenshot_path: str = ""
+    inspected_fields: List[Dict[str, str]] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -208,7 +210,7 @@ def _find_progress_button(driver, domain: str, has_fields: bool):
     for expected in wanted:
         for element in buttons:
             text = _button_text(element)
-            if text == expected or (expected and expected in text):
+            if text == expected:
                 return element, text
     return None, ""
 
@@ -220,20 +222,21 @@ def _find_submit_button(driver, domain: str):
     for expected in learned + defaults:
         for element in buttons:
             text = _button_text(element)
-            if text == expected or (expected and expected in text):
+            if text == expected:
                 return element, text
     return None, ""
 
 
-def run_application(url: str, profile: Dict[str, Any], auto_submit: bool = False, screenshot_dir: Optional[str] = None) -> ApplicationRunResult:
+def run_application(url: str, profile: Dict[str, Any], auto_submit: bool = False, screenshot_dir: Optional[str] = None, inspect_only: bool = False) -> ApplicationRunResult:
     result = ApplicationRunResult(url=url, status="starting")
-    flat_profile = flatten_profile(profile)
+    flat_profile = {} if inspect_only else flatten_profile(profile)
     max_steps = max(1, int(os.getenv("AUTOAPPLY_MAX_STEPS", "8")))
     page_timeout = max(10, int(os.getenv("AUTOAPPLY_PAGE_TIMEOUT", "30")))
     env_submit = os.getenv("AUTOAPPLY_AUTO_SUBMIT", "false").lower() in {"1", "true", "yes"}
-    driver = _make_driver()
-    driver.set_page_load_timeout(page_timeout)
+    driver = None
     try:
+        driver = _make_driver()
+        driver.set_page_load_timeout(page_timeout)
         driver.get(url)
         time.sleep(1.5)
         for step in range(max_steps):
@@ -245,6 +248,11 @@ def run_application(url: str, profile: Dict[str, Any], auto_submit: bool = False
                 break
 
             discovered = _discover_fields(driver)
+            if inspect_only:
+                result.inspected_fields = [{"label": label, "type": element_type} for _, label, element_type, _ in discovered]
+                result.status = "form_inspected" if discovered else "no_form_found"
+                # Read the application page only; never fill, upload or submit in inspection mode.
+                break
             page_unresolved: List[FieldResult] = []
             page_review: List[FieldResult] = []
             for element, label, element_type, context in discovered:
@@ -297,8 +305,14 @@ def run_application(url: str, profile: Dict[str, Any], auto_submit: bool = False
                     submit.click()
                     record_navigation(current_domain, "submit", submit_text)
                     time.sleep(1.5)
-                    result.submitted = True
-                    result.status = "submitted"
+                    text = driver.find_element("tag name", "body").text.lower()
+                    confirmed = any(phrase in text for phrase in (
+                        "application has been submitted", "application was submitted",
+                        "application successfully submitted", "thank you for applying", "application received"))
+                    result.submitted = confirmed
+                    result.status = "submitted" if confirmed else "submission_unconfirmed"
+                    if not confirmed:
+                        result.blockers.append("Submit was clicked but no success acknowledgement was found. Check before retrying.")
                 else:
                     result.status = "ready_for_review"
                 break
@@ -308,7 +322,7 @@ def run_application(url: str, profile: Dict[str, Any], auto_submit: bool = False
 
         if screenshot_dir:
             Path(screenshot_dir).mkdir(parents=True, exist_ok=True)
-            path = str(Path(screenshot_dir) / f"run-{int(time.time())}.png")
+            path = str(Path(screenshot_dir) / f"run-{uuid4().hex[:12]}.png")
             try:
                 driver.save_screenshot(path)
                 result.screenshot_path = path

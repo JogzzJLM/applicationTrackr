@@ -64,5 +64,5 @@ def profile_completeness(profile: Dict[str, Any] | None = None) -> Tuple[int, li
         "personal.city", "personal.postcode", "education.university", "education.course",
         "education.graduation_year", "links.linkedin", "links.github", "documents.resume_path",
     ]
-    missing = [key for key in required if not str(flat.get(key, "")).strip()]
+    missing = [key for key in required if not str(flat.get(key, "")).strip() or (key == "documents.resume_path" and not Path(str(flat.get(key, ""))).is_file())]
     return round((len(required) - len(missing)) / len(required) * 100), missing

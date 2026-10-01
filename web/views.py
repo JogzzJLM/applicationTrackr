@@ -1,3 +1,4 @@
+from html import escape
 import urllib.parse
 from config import SCRAPER_STATUS
 from core.storage import (
@@ -13,7 +14,7 @@ from core.normalization import (
 from core.scoring import calculate_skill_match_score
 from sheets import (
     fetch_google_sheet_csv, parse_sheet_stats, get_detailed_applications,
-    get_applied_jobs_set
+    get_applied_jobs_set, get_sheet_edit_url
 )
 from scrapers_engine.audit import load_discovered_jobs
 from web.components import render_application_card, render_job_card
@@ -23,76 +24,28 @@ def render_unified_dashboard_html(active_tab="flow"):
     stats = parse_sheet_stats(csv_text=csv_text)
     apps = get_detailed_applications(csv_text=csv_text)
     all_jobs = load_discovered_jobs()
+    from core.jobs import JobRepository
+    job_objects = JobRepository().sync(all_jobs, apps)
+    details = {j.id: j for j in job_objects}
+    for listing in all_jobs:
+        obj = details.get(listing.get('id')) or next((j for j in job_objects if normalize_company(j.company) == normalize_company(listing.get('company')) and normalize_role(j.title) == normalize_role(listing.get('title'))), None)
+        if obj:
+            listing['object_id'] = obj.id
+            listing['notes'] = obj.notes
+            listing['custom_fields'] = obj.custom_fields
+    for application in apps:
+        obj = next((j for j in job_objects if normalize_company(j.company) == normalize_company(application.get('company')) and normalize_role(j.title) == normalize_role(application.get('role'))), None)
+        if obj:
+            application['object_id'] = obj.id
+    sheet_url = get_sheet_edit_url()
+    ntfy_status = escape(str(SCRAPER_STATUS.get("ntfy", {"ok": False, "error": "No notification receipt recorded yet."})))
+    sheet_button = f'<a href="{escape(sheet_url, quote=True)}" target="_blank" rel="noopener noreferrer" class="btn btn-tinted">Open Sheet ↗</a>' if sheet_url else '<span class="btn btn-ghost" title="Set GOOGLE_SHEET_EDIT_URL in Portainer">Sheet URL needed</span>'
     applied_jobs, applied_companies = get_applied_jobs_set(csv_text=csv_text)
     settings = load_settings()
     hidden_jobs = load_hidden_jobs()
 
-    pending_updates = load_pending_email_updates()
-    pending_updates_banner_html = ""
-    if pending_updates:
-        items_html = ""
-        for u in pending_updates:
-            u_id = u.get("id", "")
-            comp = u.get("company", "Company")
-            stage = u.get("stage", "Update")
-            subj = u.get("subject", "")
-            date_rec = u.get("date_received", "")
-            options = u.get("options", [])
-
-            opt_btns = ""
-            if options:
-                for opt in options:
-                    opt_role = opt.get("role", "Software/Quant Role")
-                    opt_comp = opt.get("company", comp)
-                    opt_role_js = opt_role.replace("'", "\\'").replace('"', '&quot;')
-                    opt_comp_js = opt_comp.replace("'", "\\'").replace('"', '&quot;')
-                    opt_btns += f"""
-                    <button onclick="resolvePendingUpdate('{u_id}', '{opt_comp_js}', '{opt_role_js}', '{stage}')" class="btn btn-filled" style="font-size:12px; margin-right:6px; margin-top:6px;">
-                        Assign to: {opt_role}
-                    </button>
-                    """
-            else:
-                comp_js = comp.replace("'", "\\'").replace('"', '&quot;')
-
-                opt_btns += f"""
-                <button onclick="openLogModalForPending('{u_id}', '{comp_js}', '{stage}')" class="btn btn-filled" style="font-size:12px; margin-right:6px; margin-top:6px;">
-                    + Assign to New Role
-                </button>
-                """
-
-            opt_btns += f"""
-            <button onclick="dismissPendingUpdate('{u_id}')" class="btn btn-ghost" style="font-size:12px; margin-top:6px;">
-                Dismiss
-            </button>
-            """
-
-            items_html += f"""
-            <div style="background:#fff; border:1px solid rgba(255,128,0,0.4); border-radius:12px; padding:16px; margin-top:12px;">
-                <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-                    <div>
-                        <span class="badge badge-papaya">ACTION REQUIRED</span>
-                        <strong style="font-size:15px; margin-left:8px; color:var(--text-primary);">{comp}</strong>
-                        <span style="color:var(--red); font-weight:800; margin-left:6px;">[{stage}]</span>
-                    </div>
-                    <span style="font-size:12px; color:var(--text-tertiary);">{date_rec}</span>
-                </div>
-                <div style="font-size:13px; color:var(--text-secondary); margin-top:6px;">Email Subject: <em>"{subj}"</em></div>
-                <div style="font-size:12.5px; font-weight:700; color:var(--text-primary); margin-top:10px;">Which logged application does this status update belong to?</div>
-                <div style="margin-top:4px;">{opt_btns}</div>
-            </div>
-            """
-
-        pending_updates_banner_html = f"""
-        <div class="section-card" style="border:2px solid var(--papaya); background:rgba(255,128,0,0.04);">
-            <div class="section-title" style="color:var(--papaya);">
-                <span>⚠️ Action Required: Email Updates Received ({len(pending_updates)})</span>
-            </div>
-            <p style="font-size:13.5px; color:var(--text-secondary);">
-                Incoming status emails were received for companies with multiple roles (or unlogged roles). Select which role to update on Google Sheets:
-            </p>
-            {items_html}
-        </div>
-        """
+    from web.pending_view import render_pending_updates
+    pending_updates_banner_html = render_pending_updates(load_pending_email_updates())
 
     total = stats.get("total", 0)
     active = stats.get("active", 0)
@@ -108,7 +61,7 @@ def render_unified_dashboard_html(active_tab="flow"):
         ar_norm = normalize_role(a.get('role'))
         if ac_norm and (ac_norm, ar_norm) not in existing_keys:
             synthetic_job = {
-                "id": f"applied_{ac_norm}_{hash(ar_norm)}",
+                "id": a.get("object_id", f"applied_{ac_norm}_{ar_norm}"),
                 "company": clean_company_display_name(a['company']),
                 "title": a['role'],
                 "location": "UK / Remote",
@@ -131,7 +84,7 @@ def render_unified_dashboard_html(active_tab="flow"):
         if j_id in hidden_jobs or (comp_norm, title_norm) in hidden_jobs:
             continue
 
-        if any(kw.lower() in title_lower for kw in settings.get('exclude_keywords', []) if kw.strip()):
+        if j.get('source') != 'Manual' and any(kw.lower() in title_lower for kw in settings.get('exclude_keywords', []) if kw.strip()):
             continue
 
         is_applied = (comp_norm, title_norm) in applied_jobs
@@ -395,7 +348,7 @@ def render_unified_dashboard_html(active_tab="flow"):
             letter-spacing: -0.02em; display: flex; align-items: center; gap: 10px;
         }}
         .topbar-brand span {{ color: var(--papaya); font-weight: 900; }}
-        .topbar-right {{ display: flex; align-items: center; gap: 10px; }}
+        .topbar-right {{ display: flex; align-items: center; gap: 10px; flex-wrap:wrap; justify-content:flex-end; }}
 
         .status-pill {{
             display: inline-flex; align-items: center; gap: 8px;
@@ -610,7 +563,7 @@ def render_unified_dashboard_html(active_tab="flow"):
             z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 20px;
         }}
         .modal-card {{
-            background: #ffffff; border: 1px solid var(--border-card); border-radius: 16px; width: 100%; max-width: 480px;
+            background: #ffffff; border: 1px solid var(--border-card); border-radius: 16px; width: 100%; max-width: 480px; max-height:90vh; overflow-y:auto;
             padding: 26px; box-shadow: 0 20px 40px rgba(0,0,0,0.12);
         }}
 
@@ -897,6 +850,9 @@ def render_unified_dashboard_html(active_tab="flow"):
     <div class="topbar-right">
         <div class="status-pill" title="Engine Online"><span class="dot"></span><span class="status-label">Engine Online</span></div>
         <button onclick="openLogModal()" class="btn btn-filled" aria-label="Log application" title="Log application">+<span class="desktop-label"> Log App</span></button>
+        {sheet_button}
+        <button onclick="openManualJobModal()" class="btn btn-tinted">+ Add Job</button>
+        <button onclick="testNotification()" class="btn btn-ghost">Test ntfy</button>
         <button onclick="syncSheetAndReload()" class="btn btn-tinted" aria-label="Sync Google Sheet" title="Sync Google Sheet">↻<span class="desktop-label"> Sync Sheet</span></button>
         <a href="/api/rescan" class="btn btn-ghost" aria-label="Rescan jobs" title="Rescan jobs">⚡<span class="desktop-label"> Rescan</span></a>
     </div>
@@ -909,7 +865,7 @@ def render_unified_dashboard_html(active_tab="flow"):
         <div class="hero-stat-card card-papaya">
             <div class="stat-header">
                 <span class="stat-title">Applications Tracked</span>
-                <span class="stat-badge badge-papaya">100% SYNCED</span>
+                <span class="stat-badge badge-papaya">SHEET TRACKING</span>
             </div>
             <div class="stat-number">{total}</div>
             <div class="stat-footer">
@@ -945,7 +901,7 @@ def render_unified_dashboard_html(active_tab="flow"):
         <div class="hero-stat-card card-yellow">
             <div class="stat-header">
                 <span class="stat-title">Discovered Market</span>
-                <span class="stat-badge badge-yellow">7 SOURCES ACTIVE</span>
+                <span class="stat-badge badge-yellow">DISCOVERY SOURCES</span>
             </div>
             <div class="stat-number">{discovered_count} <span style="font-size:16px; font-weight:700; color:var(--yellow);">SCHEMES</span></div>
             <div class="stat-footer">
@@ -1101,6 +1057,7 @@ def render_unified_dashboard_html(active_tab="flow"):
 
     <!-- Panel: Diagnostics -->
     <div id="view-diagnostics" class="panel" style="{view_status}">
+        <div class="section-card"><div class="section-title">Notification delivery</div><p>{ntfy_status}</p><button class="btn btn-tinted" onclick="testNotification()">Send test notification</button></div>
         <div class="section-card">
             <div class="section-title">
                 <span><span class="status-pill"><span class="dot"></span> Live Log Stream</span> (docker logs -f applicationtrackr)</span>
@@ -1182,7 +1139,9 @@ def render_unified_dashboard_html(active_tab="flow"):
         <div class="form-group">
             <label class="form-label">Application Stage</label>
             <select id="modal-stage" class="form-input">
-                <option value="Applied">Applied</option>
+                <option value="Application Update">Application Update</option>
+                <option value="Interview">Interview</option>
+                <option value="Applied" selected>Applied</option>
                 <option value="Online Assessment">Online Assessment (OA)</option>
                 <option value="Interview 1">Interview 1</option>
                 <option value="Interview 2">Interview 2 / Final</option>
@@ -1197,7 +1156,73 @@ def render_unified_dashboard_html(active_tab="flow"):
     </div>
 </div>
 
+<div id="manual-job-modal" class="modal-backdrop" style="display:none;">
+<div class="modal-card"><h2>Add a job</h2><form id="manual-job-form" onsubmit="saveManualJob(event)">
+<label class="form-label">Company</label><input class="form-input" name="company" required>
+<label class="form-label">Role</label><input class="form-input" name="title" required>
+<label class="form-label">Job link (optional)</label><input class="form-input" name="link" type="url">
+<label class="form-label">Location</label><input class="form-input" name="location">
+<label class="form-label">Notes</label><textarea class="form-input" name="notes"></textarea>
+<label class="form-label">Additional information</label><div id="manual-job-fields"></div><button type="button" class="btn btn-ghost" onclick="addExtraField('manual-job-fields')">+ Add field</button>
+<button class="btn btn-filled" type="submit">Save job</button><button class="btn btn-ghost" type="button" onclick="document.getElementById('manual-job-modal').style.display='none'">Cancel</button>
+</form></div></div>
+<div id="job-details-modal" class="modal-backdrop" style="display:none;">
+<div class="modal-card"><h2 id="job-details-title">Job details</h2><form id="job-details-form" onsubmit="saveJobDetails(event)">
+<input type="hidden" name="id"><label class="form-label">Notes</label><textarea class="form-input" name="notes"></textarea>
+<label class="form-label">Additional information</label><div id="job-details-fields"></div><button type="button" class="btn btn-ghost" onclick="addExtraField('job-details-fields')">+ Add field</button>
+<div id="job-email-history" style="max-height:150px;overflow:auto"></div>
+<button class="btn btn-filled" type="submit">Save details</button><button class="btn btn-ghost" type="button" onclick="document.getElementById('job-details-modal').style.display='none'">Close</button>
+</form></div></div>
 <script>
+    function addExtraField(containerId, key='', value='') {{
+        const row=document.createElement('div'); row.style.cssText='display:flex;gap:6px;margin-bottom:8px';
+        const name=document.createElement('input');name.className='form-input';name.placeholder='Field name';name.value=key;
+        const content=document.createElement('input');content.className='form-input';content.placeholder='Value';content.value=typeof value==='object'?JSON.stringify(value):value;
+        const remove=document.createElement('button');remove.type='button';remove.className='btn btn-ghost';remove.textContent='×';remove.onclick=()=>row.remove();
+        row.append(name,content,remove);document.getElementById(containerId).append(row);
+    }}
+    function collectExtraFields(containerId) {{
+        const fields=Object.create(null);
+        for(const row of document.getElementById(containerId).children) {{
+            const inputs=row.querySelectorAll('input');const key=inputs[0].value.trim();
+            if(key) fields[key]=inputs[1].value;
+        }}
+        return JSON.stringify(fields);
+    }}
+    async function postForm(url, body) {{
+        const response = await fetch(url, {{method:'POST',body:new URLSearchParams(body)}});
+        const data = await response.json();
+        if (!response.ok || data.status === 'error') throw new Error(data.message || 'Request failed');
+        return data;
+    }}
+    async function testNotification() {{
+        try {{ const result=await postForm('/api/test-notification',{{}}); alert(result.message); }}
+        catch(error) {{ alert(error.message); }}
+    }}
+    function openManualJobModal() {{ document.getElementById('manual-job-modal').style.display='flex'; if(!document.getElementById('manual-job-fields').children.length) addExtraField('manual-job-fields'); }}
+    async function saveManualJob(event) {{
+        event.preventDefault();
+        try {{ const body=new FormData(event.target);body.set('custom_fields',collectExtraFields('manual-job-fields'));await postForm('/api/manual-job',body); location.reload(); }}
+        catch(error) {{ alert(error.message); }}
+    }}
+    async function openJobDetails(id) {{
+        try {{
+            const response=await fetch('/api/jobs'); const data=await response.json();
+            const job=data.jobs.find(j=>j.id===id); if(!job) throw new Error('Job not found');
+            const form=document.getElementById('job-details-form'); form.elements.id.value=id;
+            form.elements.notes.value=job.notes||'';
+            document.getElementById('job-details-fields').replaceChildren();
+            for(const [key,value] of Object.entries(job.custom_fields||{{}})) addExtraField('job-details-fields',key,value);
+            document.getElementById('job-details-title').textContent=job.company+' · '+job.title;
+            document.getElementById('job-email-history').textContent='Email history: '+(job.email_events||[]).map(e=>e.stage+' — '+e.subject+(e.sheet_synced?' (synced)':' (pending)')).join('\\n');
+            document.getElementById('job-details-modal').style.display='flex';
+        }} catch(error) {{alert(error.message);}}
+    }}
+    async function saveJobDetails(event) {{
+        event.preventDefault();
+        try {{ const body=new FormData(event.target);body.set('custom_fields',collectExtraFields('job-details-fields'));await postForm('/api/job-details',body); location.reload(); }}
+        catch(error) {{ alert(error.message); }}
+    }}
     var logInterval = null;
     var statusInterval = null;
     var kbInterval = null;
@@ -1224,12 +1249,15 @@ def render_unified_dashboard_html(active_tab="flow"):
         if (button) button.innerText = open ? 'Hide filters' : 'Filters';
     }}
 
+    var pendingLogId = null;
     function openLogModal() {{
+        pendingLogId = null;
         document.getElementById('log-modal').style.display = 'flex';
         document.getElementById('modal-company').focus();
     }}
 
     function openLogModalForPending(pendingId, comp, stage) {{
+        pendingLogId = pendingId;
         document.getElementById('log-modal').style.display = 'flex';
         document.getElementById('modal-company').value = comp;
         document.getElementById('modal-stage').value = stage || 'Applied';
@@ -1263,7 +1291,9 @@ def render_unified_dashboard_html(active_tab="flow"):
             alert('Please enter a company name.');
             return;
         }}
-        logJobWithStage(comp, title, stage);
+        if (!title) {{ alert("Please enter a role title."); return; }}
+        if (pendingLogId) {{ resolvePendingUpdate(pendingLogId, comp, title, stage); }}
+        else {{ logJobWithStage(comp, title, stage); }}
     }}
 
     function quickUpdateStage(comp, stage, role) {{
@@ -1273,10 +1303,11 @@ def render_unified_dashboard_html(active_tab="flow"):
     function resolvePendingUpdate(id, comp, role, stage) {{
         fetch('/api/resolve-pending-update?id=' + encodeURIComponent(id) + '&company=' + encodeURIComponent(comp) + '&role=' + encodeURIComponent(role) + '&stage=' + encodeURIComponent(stage))
             .then(r => r.json())
-            .then(() => {{
+            .then(data => {{
+                if (data.status === "error") {{ alert(data.message || "Save failed"); return; }}
                 reloadSankeyIframe();
                 location.reload();
-            }});
+            }}).catch(error => alert("Save failed: " + error.message));
     }}
 
     function dismissPendingUpdate(id) {{
@@ -1288,10 +1319,11 @@ def render_unified_dashboard_html(active_tab="flow"):
     function logJobWithStage(comp, title, stage) {{
         fetch('/api/mark-applied?company=' + encodeURIComponent(comp) + '&title=' + encodeURIComponent(title) + '&stage=' + encodeURIComponent(stage || 'Applied'))
             .then(r => r.json())
-            .then(() => {{
+            .then(data => {{
+                if (data.status === "error") {{ alert(data.message || "Save failed"); return; }}
                 reloadSankeyIframe();
                 location.reload();
-            }});
+            }}).catch(error => alert("Save failed: " + error.message));
     }}
 
     function fetchLiveLogs() {{
