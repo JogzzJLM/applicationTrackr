@@ -106,6 +106,20 @@ class ReliabilityTests(unittest.TestCase):
             self.assertEqual(sheets.resolve_smart_stage('Acme', 'Interview 2', 'Intern'), 'Interview 2')
             self.assertIsNone(sheets.resolve_smart_stage('Acme', 'Interview 1', 'Intern'))
 
+    def test_captcha_library_alone_is_not_a_challenge(self):
+        driver = Mock(page_source='<script src="recaptcha/api.js"></script>')
+        driver.find_elements.return_value = []
+        driver.find_element.return_value.text = 'Apply for Software Engineering Internship'
+        self.assertFalse(browser_agent._page_has_captcha(driver))
+        driver.find_element.return_value.text = 'Please verify you are human'
+        self.assertTrue(browser_agent._page_has_captcha(driver))
+
+    def test_jobs_in_different_recruitment_years_are_distinct(self):
+        repo = jobs.JobRepository()
+        rows = repo.sync([{'id':'2026','company':'Acme','title':'Software Intern 2026'},
+                          {'id':'2027','company':'Acme','title':'Software Intern 2027'}], [])
+        self.assertEqual(len(rows), 2)
+
     def test_dashboard_renders_sheet_link_and_manual_job_controls(self):
         from web.views import render_unified_dashboard_html
         with patch('web.views.fetch_google_sheet_csv', return_value='Company,Role,Stage 1\nAcme,Software Intern,Applied\n'), \

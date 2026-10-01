@@ -177,8 +177,20 @@ def _set_value(element, element_type: str, value: Any) -> bool:
 
 
 def _page_has_captcha(driver) -> bool:
-    source = (driver.page_source or "").lower()
-    return any(marker in source for marker in CAPTCHA_MARKERS)
+    # Many ATS pages load an invisible CAPTCHA library on every application.
+    # Its presence in page_source does not mean a challenge is being shown.
+    selectors = (
+        'iframe[src*="recaptcha"]:not([src*="size=invisible"]), '
+        'iframe[src*="hcaptcha"]:not([src*="size=invisible"]), '
+        '.g-recaptcha:not([data-size="invisible"]), '
+        '.h-captcha:not([data-size="invisible"])'
+    )
+    for element in driver.find_elements("css selector", selectors):
+        if element.is_displayed():
+            return True
+    body = driver.find_element("tag name", "body").text.lower()
+    return any(marker in body for marker in (
+        "verify you are human", "complete the captcha", "i am not a robot", "i'm not a robot"))
 
 
 def _button_text(element) -> str:

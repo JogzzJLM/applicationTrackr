@@ -49,7 +49,7 @@ class JobCardViewModel:
 
     @property
     def link(self) -> str:
-        return _text(self.raw.get("link"), "#")
+        return _text(self.raw.get("link"), "#") or "#"
 
     @property
     def date_found(self) -> str:
@@ -176,6 +176,11 @@ class JobCardViewModel:
                 'class="btn btn-ghost btn-danger-text card-tertiary-action">Closed?</button>'
             )
 
+        apply_action = (
+            f'<a href="{html.escape(self.link, quote=True)}" target="_blank" rel="noopener noreferrer" class="btn btn-filled card-primary-action">Apply ↗</a>'
+            if urllib.parse.urlparse(self.link).scheme in ('http', 'https')
+            else '<span class="btn btn-ghost card-primary-action">No listing link</span>'
+        )
         agent_action = ""
         if not self.is_reported_closed and self.link != "#":
             agent_action = (
@@ -220,7 +225,7 @@ data-title="{html.escape(self.title.lower(), quote=True)}">
         {source_html}
     </div>
     <div class="card-actions">
-        <a href="{html.escape(self.link, quote=True)}" target="_blank" rel="noopener noreferrer" class="btn btn-filled card-primary-action">Apply ↗</a>
+        {apply_action}
         {agent_action}
         {sheet_action}
         {report_action}

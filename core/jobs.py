@@ -8,6 +8,10 @@ from core.normalization import normalize_company, normalize_role, extract_ats_po
 from core.storage import DATA_DIR, load_json_safe, atomic_write_json, _FILE_LOCK
 
 JOBS_FILE = str(DATA_DIR / 'job_objects.json')
+def role_identity(title):
+    # Keep years: the same employer's 2026 and 2027 vacancies are different jobs.
+    return ' '.join(re.findall(r'[a-z0-9]+', (title or '').lower()))
+
 MANUAL_JOBS_FILE = str(DATA_DIR / 'manual_jobs.json')
 
 @dataclass
@@ -26,7 +30,7 @@ class Job:
     def from_listing(cls, row):
         company = row.get('company', '').strip()
         title = (row.get('title') or row.get('role') or '').strip()
-        identity = f'{normalize_company(company)}:{normalize_role(title)}'
+        identity = f'{normalize_company(company)}:{role_identity(title)}'
         job_id = row.get('id') or 'job_' + sha256(identity.encode()).hexdigest()[:20]
         return cls(job_id, company, title, row.get('link', ''), row.get('location', ''),
                    row.get('notes', ''), row.get('custom_fields', {}), row.get('stages', []))
@@ -39,7 +43,7 @@ class JobRepository:
                 job = Job.from_listing(row)
                 existing = next((j for j in saved.values() if
                     normalize_company(j['company']) == normalize_company(job.company) and
-                    normalize_role(j['title']) == normalize_role(job.title)), None)
+                    role_identity(j['title']) == role_identity(job.title)), None)
                 if existing:
                     if row.get('stages'):
                         existing['stages'] = row['stages']

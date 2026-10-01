@@ -9,7 +9,7 @@ from core.storage import (
 from core.kb import load_closed_keywords_kb
 from core.normalization import (
     normalize_company, normalize_role, extract_program_type,
-    clean_company_display_name, deduplicate_job_list
+    clean_company_display_name, deduplicate_job_list, fuzzy_roles_match
 )
 from core.scoring import calculate_skill_match_score
 from sheets import (
@@ -65,7 +65,7 @@ def render_unified_dashboard_html(active_tab="flow"):
                 "company": clean_company_display_name(a['company']),
                 "title": a['role'],
                 "location": "UK / Remote",
-                "link": "#",
+                "link": a.get("link") or "#",
                 "source": "Logged Application",
                 "date_found": "Active Application"
             }
@@ -90,7 +90,7 @@ def render_unified_dashboard_html(active_tab="flow"):
         is_applied = (comp_norm, title_norm) in applied_jobs
         if not is_applied:
             for (ac, ar) in applied_jobs:
-                if ac == comp_norm and ar and (ar in title_norm or title_norm in ar):
+                if ac == comp_norm and ar and fuzzy_roles_match(ar, title_norm, threshold=0.90):
                     is_applied = True
                     break
 
@@ -184,7 +184,7 @@ def render_unified_dashboard_html(active_tab="flow"):
         if not is_applied:
             for (ac, ar) in applied_jobs:
                 if ac == comp_norm:
-                    if not ar or (ar in title_norm or title_norm in ar or (len(set(ar.split()) & set(title_norm.split())) >= 2)):
+                    if ar and fuzzy_roles_match(ar, title_norm, threshold=0.90):
                         is_applied = True
                         break
 
