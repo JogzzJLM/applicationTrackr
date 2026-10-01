@@ -173,9 +173,10 @@ def _field_options(element) -> List[str]:
         if element.tag_name.lower() == "select":
             from selenium.webdriver.support.ui import Select
             return [o.text for o in Select(element).options if o.text.strip()]
-        if _choice_field(element):
+        element_id = element.get_attribute("id") or ""
+        if _choice_field(element) or str(element_id).startswith("question_") or element_id in {"country", "candidate-location", "candidate_location"}:
             from selenium.webdriver.common.keys import Keys
-            element.click()
+            element.send_keys(Keys.ARROW_DOWN)
             time.sleep(.25)
             options = [o.text for o in _visible_options(element)]
             element.send_keys(Keys.ESCAPE)
@@ -228,8 +229,10 @@ def _set_value(element, element_type: str, value: Any) -> bool:
             if truthy != element.is_selected():
                 element.click()
             return True
-        if _choice_field(element):
-            element.click()
+        choices = _field_options(element)
+        if choices or _choice_field(element):
+            from selenium.webdriver.common.keys import Keys
+            element.send_keys(Keys.ARROW_DOWN)
             time.sleep(.25)
             option = _matching_option(_visible_options(element), value)
             if option:
