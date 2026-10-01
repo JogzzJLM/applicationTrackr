@@ -94,6 +94,7 @@ def test_searchable_dropdown_selects_option_and_rejects_ambiguous_match():
         tag_name = 'input'
         def __init__(self, options): self.options = options
         def get_attribute(self, key): return 'combobox' if key == 'role' else None
+        def click(self): pass
         def clear(self): pass
         def send_keys(self, value): pass
         def find_elements(self, *args): return self.options
@@ -103,3 +104,12 @@ def test_searchable_dropdown_selects_option_and_rejects_ambiguous_match():
     first, second = Option('London UK'), Option('London Canada')
     assert not _set_value(Combo([first, second]), 'text', 'London')
     assert not first.clicked and not second.clicked
+
+
+def test_supplied_graduation_date_can_choose_month_and_year():
+    from autoapply.browser_agent import _matching_option
+    class Option:
+        def __init__(self, text): self.text = text
+    previous, expected = Option('June 2027'), Option('June 2028')
+    assert _matching_option([previous, expected], '23/06/2028') is expected
+    assert _matching_option([previous], '23/06/2028') is None

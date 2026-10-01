@@ -154,21 +154,54 @@ def _discover_fields(driver):
     return fields
 
 
+def _choice_field(element) -> bool:
+    if element.get_attribute("role") == "combobox" or element.get_attribute("aria-autocomplete") in {"list", "both"} or element.get_attribute("readonly"):
+        return True
+    try:
+        element.find_element("xpath", "ancestor::*[contains(@class,'select__') or contains(@class,'select-container')][1]")
+        return True
+    except Exception:
+        return False
+
+
+def _visible_options(element):
+    return [o for o in element.find_elements("xpath", "//*[@role='option' or contains(@class,'select__option') or contains(@id,'-option-')]") if o.is_displayed() and o.text.strip()]
+
+
 def _field_options(element) -> List[str]:
     try:
         if element.tag_name.lower() == "select":
             from selenium.webdriver.support.ui import Select
             return [o.text for o in Select(element).options if o.text.strip()]
-        if element.get_attribute("role") == "combobox":
+        if _choice_field(element):
             from selenium.webdriver.common.keys import Keys
             element.click()
             time.sleep(.25)
-            options = [o.text for o in element.find_elements("xpath", "//*[@role='option']") if o.is_displayed() and o.text.strip()]
+            options = [o.text for o in _visible_options(element)]
             element.send_keys(Keys.ESCAPE)
             return options
     except Exception:
         pass
     return []
+
+
+def _matching_option(options, value):
+    wanted = normalize_label(value)
+    exact = [o for o in options if normalize_label(o.text) == wanted]
+    matches = exact or [o for o in options if normalize_label(o.text).startswith(wanted + " ")]
+    if len(matches) == 1:
+        return matches[0]
+    # A supplied full graduation date can answer a month/year or year-only choice.
+    try:
+        from datetime import datetime
+        date = datetime.strptime(str(value), "%d/%m/%Y")
+        for candidate in (date.strftime("%B %Y"), date.strftime("%Y")):
+            matches = [o for o in options if normalize_label(o.text) == normalize_label(candidate)]
+            if len(matches) == 1:
+                return matches[0]
+    except ValueError:
+        pass
+    return None
 
 
 def _set_value(element, element_type: str, value: Any) -> bool:
@@ -178,39 +211,43 @@ def _set_value(element, element_type: str, value: Any) -> bool:
     try:
         if element_type == "file":
             path = os.path.expanduser(value)
-            if not os.path.exists(path):
+            if not os.path.isfile(path):
                 return False
             element.send_keys(path)
             return True
         if element.tag_name.lower() == "select":
             from selenium.webdriver.support.ui import Select
             select = Select(element)
-            wanted = normalize_label(value)
-            for option in select.options:
-                if normalize_label(option.text) == wanted or normalize_label(option.get_attribute("value")) == wanted:
-                    select.select_by_visible_text(option.text)
-                    return True
-            for option in select.options:
-                if wanted and wanted in normalize_label(option.text):
-                    select.select_by_visible_text(option.text)
-                    return True
+            option = _matching_option(select.options, value)
+            if option:
+                select.select_by_visible_text(option.text)
+                return True
             return False
         if element_type in {"checkbox", "radio"}:
             truthy = normalize_label(value) in {"yes", "true", "1", "y", "accept", "accepted"}
             if truthy != element.is_selected():
                 element.click()
             return True
+        if _choice_field(element):
+            element.click()
+            time.sleep(.25)
+            option = _matching_option(_visible_options(element), value)
+            if option:
+                option.click()
+                return True
+            if element.get_attribute("readonly"):
+                return False
+            element.clear()
+            element.send_keys(value)
+            from selenium.webdriver.support.ui import WebDriverWait
+            options = WebDriverWait(element, 3).until(lambda el: _visible_options(el))
+            option = _matching_option(options, value)
+            if not option:
+                return False
+            option.click()
+            return True
         element.clear()
         element.send_keys(value)
-        if element.get_attribute("role") == "combobox":
-            from selenium.webdriver.support.ui import WebDriverWait
-            options = WebDriverWait(element, 3).until(lambda el: [o for o in el.find_elements("xpath", "//*[@role='option']") if o.is_displayed()])
-            wanted = normalize_label(value)
-            exact = [o for o in options if normalize_label(o.text) == wanted]
-            matches = exact or [o for o in options if normalize_label(o.text).startswith(wanted + " ")]
-            if len(matches) != 1:
-                return False
-            matches[0].click()
         return True
     except Exception:
         return False
@@ -300,13 +337,13 @@ def run_application(url: str, profile: Dict[str, Any], auto_submit: bool = False
                 break
 
             discovered = _discover_fields(driver)
+            result.page_context = driver.find_element("tag name", "body").text
+            result.inspected_fields = []
+            for element, label, element_type, context in discovered:
+                result.inspected_fields.append({"label": label, "type": element_type, "context": context,
+                    "options": _field_options(element),
+                    "required": element.get_attribute("required") is not None or element.get_attribute("aria-required") == "true"})
             if inspect_only:
-                result.page_context = driver.find_element("tag name", "body").text
-                result.inspected_fields = []
-                for element, label, element_type, context in discovered:
-                    choices = _field_options(element)
-                    result.inspected_fields.append({"label": label, "type": element_type, "context": context,
-                        "options": choices, "required": element.get_attribute("required") is not None or element.get_attribute("aria-required") == "true"})
                 result.status = "form_inspected" if discovered else "no_form_found"
                 # Read the application page only; never fill, upload or submit in inspection mode.
                 break

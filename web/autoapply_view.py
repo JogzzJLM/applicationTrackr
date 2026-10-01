@@ -56,7 +56,8 @@ document.getElementById('document-form').addEventListener('submit',async e=>{{e.
 let questionRun='', questionFields=[];
 async function showQuestions(runId){{
  const r=await fetch('/api/autoapply/questions?id='+encodeURIComponent(runId));const plan=await r.json();
- if(!r.ok || ['queued','running'].includes(plan.status))return;
+ if(!r.ok)return;
+ if(['queued','running'].includes(plan.status)){{setTimeout(()=>showQuestions(runId),1500);return;}}
  questionRun=runId;questionFields=plan.questions||[];
  document.getElementById('listing-context').textContent=plan.context||'Open the original listing to read its details.';
  const link=document.getElementById('listing-link');link.href=plan.url;link.hidden=!plan.url;link.textContent='Open '+(plan.company||'original')+' listing';

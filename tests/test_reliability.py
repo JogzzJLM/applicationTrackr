@@ -149,7 +149,9 @@ class ReliabilityTests(unittest.TestCase):
 
     def test_inspection_does_not_fill_fields(self):
         driver = Mock(current_url='https://example.com')
-        element = Mock()
+        element = Mock(tag_name='input')
+        element.get_attribute.return_value = None
+        element.find_element.side_effect = Exception('No dropdown ancestor')
         with patch.object(browser_agent, '_make_driver', return_value=driver), \
              patch.object(browser_agent, '_page_has_captcha', return_value=False), \
              patch.object(browser_agent, '_discover_fields', return_value=[(element,'Email','email','')]), \
