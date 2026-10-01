@@ -158,6 +158,7 @@ def _execute_run(run_id: str, initial: Dict[str, Any], job: Optional[Dict[str, A
         _save_run(run_id, {**initial, "status": "needs_profile", "message": "Applicant profile is too incomplete to run safely.", "missing": missing})
         return
     _save_run(run_id, {**initial, "status": "running", "url": target_url})
+    profile["_application_company"] = (job or {}).get("company", "")
     result = run_application(target_url, profile, auto_submit=auto_submit, screenshot_dir=str(Path(AUTOAPPLY_DIR) / "screenshots"))
     _save_run(run_id, {**initial, **result.to_dict(), "created_at": initial["created_at"], "finished_at": time.time(), "job_id": initial.get("job_id", "")})
 
@@ -243,3 +244,33 @@ def start_autopilot_batch(limit: Optional[int] = None, auto_submit: bool = False
 
     threading.Thread(target=worker, daemon=True, name=f"autoapply-{batch_id}").start()
     return batch_id
+
+
+def guided_questions(run_id: str) -> Dict[str, Any]:
+    from autoapply.learning import predict_answer, predict_mapping
+    from autoapply.profile import flatten_profile
+    from autoapply.browser_agent import previous_employer_answer
+    run = get_run(run_id)
+    if not run:
+        raise ValueError("Application run not found.")
+    profile = ensure_profile()
+    flat = flatten_profile(profile)
+    job = _find_job(run.get("job_id", "")) or {}
+    fields = run.get("inspected_fields") or run.get("unresolved", []) + run.get("review_required", [])
+    questions, seen = [], set()
+    for item in fields:
+        label = item.get("label", "")
+        kind = item.get("type", item.get("element_type", "text"))
+        if not label or (label, kind) in seen:
+            continue
+        seen.add((label, kind))
+        answer, confidence, _ = predict_answer(label, domain=run.get("url", ""))
+        key, mapping_confidence, _ = predict_mapping(label)
+        if key and mapping_confidence < .95:
+            key = None
+        previous = previous_employer_answer(label, job.get("company", ""), profile)
+        value = answer if confidence == 1 else previous if previous is not None else flat.get(key, "") if key else ""
+        questions.append({**item, "type": kind, "profile_key": key or "", "answer": value or ""})
+    return {"status": run.get("status"), "run_id": run_id, "url": run.get("url", ""),
+            "job_id": run.get("job_id", ""), "company": job.get("company", ""), "title": job.get("title", ""),
+            "context": run.get("page_context", ""), "questions": questions}

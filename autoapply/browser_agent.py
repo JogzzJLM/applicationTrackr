@@ -50,7 +50,8 @@ class ApplicationRunResult:
     review_required: List[FieldResult] = field(default_factory=list)
     blockers: List[str] = field(default_factory=list)
     screenshot_path: str = ""
-    inspected_fields: List[Dict[str, str]] = field(default_factory=list)
+    inspected_fields: List[Dict[str, Any]] = field(default_factory=list)
+    page_context: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -59,6 +60,17 @@ class ApplicationRunResult:
 def _is_review_label(label: str) -> bool:
     label_n = normalize_label(label)
     return any(marker in label_n for marker in REVIEW_PATTERNS)
+
+
+def previous_employer_answer(label: str, company: str, profile: Dict[str, Any]) -> Optional[str]:
+    label_n, company_n = normalize_label(label), normalize_label(company)
+    previous = str(profile.get("employment", {}).get("previous_employers", "")).strip()
+    if not previous or not company_n or company_n not in label_n:
+        return None
+    if not any(phrase in label_n for phrase in ("have you ever worked for", "previously worked for", "previously employed by")):
+        return None
+    employers = [normalize_label(x) for x in previous.split(",") if x.strip()]
+    return "Yes" if company_n in employers else "No"
 
 
 def _make_driver():
@@ -102,6 +114,8 @@ def _element_label(driver, element) -> str:
         value = element.get_attribute(attr)
         if value:
             pieces.append(value)
+    if element.get_attribute("type") == "file":
+        return normalize_label(" ".join(pieces))
     return normalize_label(next((p for p in pieces if str(p).strip()), ""))
 
 
@@ -140,6 +154,23 @@ def _discover_fields(driver):
     return fields
 
 
+def _field_options(element) -> List[str]:
+    try:
+        if element.tag_name.lower() == "select":
+            from selenium.webdriver.support.ui import Select
+            return [o.text for o in Select(element).options if o.text.strip()]
+        if element.get_attribute("role") == "combobox":
+            from selenium.webdriver.common.keys import Keys
+            element.click()
+            time.sleep(.25)
+            options = [o.text for o in element.find_elements("xpath", "//*[@role='option']") if o.is_displayed() and o.text.strip()]
+            element.send_keys(Keys.ESCAPE)
+            return options
+    except Exception:
+        pass
+    return []
+
+
 def _set_value(element, element_type: str, value: Any) -> bool:
     value = "" if value is None else str(value)
     if not value:
@@ -171,6 +202,15 @@ def _set_value(element, element_type: str, value: Any) -> bool:
             return True
         element.clear()
         element.send_keys(value)
+        if element.get_attribute("role") == "combobox":
+            from selenium.webdriver.support.ui import WebDriverWait
+            options = WebDriverWait(element, 3).until(lambda el: [o for o in el.find_elements("xpath", "//*[@role='option']") if o.is_displayed()])
+            wanted = normalize_label(value)
+            exact = [o for o in options if normalize_label(o.text) == wanted]
+            matches = exact or [o for o in options if normalize_label(o.text).startswith(wanted + " ")]
+            if len(matches) != 1:
+                return False
+            matches[0].click()
         return True
     except Exception:
         return False
@@ -261,12 +301,10 @@ def run_application(url: str, profile: Dict[str, Any], auto_submit: bool = False
 
             discovered = _discover_fields(driver)
             if inspect_only:
+                result.page_context = driver.find_element("tag name", "body").text
                 result.inspected_fields = []
                 for element, label, element_type, context in discovered:
-                    choices = []
-                    if element.tag_name.lower() == "select":
-                        from selenium.webdriver.support.ui import Select
-                        choices = [o.text for o in Select(element).options if o.text.strip()]
+                    choices = _field_options(element)
                     result.inspected_fields.append({"label": label, "type": element_type, "context": context,
                         "options": choices, "required": element.get_attribute("required") is not None or element.get_attribute("aria-required") == "true"})
                 result.status = "form_inspected" if discovered else "no_form_found"
@@ -281,11 +319,18 @@ def run_application(url: str, profile: Dict[str, Any], auto_submit: bool = False
                 profile_key, confidence, mapping_note = predict_mapping(label, context=context, domain=current_domain)
                 explicit_value = flat_profile.get(profile_key) if profile_key and confidence >= 0.95 else None
                 learned_answer, answer_conf, answer_note = predict_answer(label, domain=url)
-                value = explicit_value if str(explicit_value or "").strip() else learned_answer
+                value = learned_answer if answer_conf == 1.0 else explicit_value if str(explicit_value or "").strip() else learned_answer
+                previous = previous_employer_answer(label, profile.get("_application_company", ""), profile)
+                if previous is not None and answer_conf != 1.0:
+                    value = previous
+
                 item = FieldResult(
                     label, element_type, profile_key or "", confidence=max(confidence, answer_conf),
                     note=mapping_note if explicit_value else answer_note, context=context, domain=current_domain,
                 )
+                required = element.get_attribute("required") is not None or element.get_attribute("aria-required") == "true"
+                if not value and not required and element_type != "file":
+                    continue
                 if _is_review_label(label):
                     if value and _set_value(element, element_type, value):
                         item.action = "filled-explicit-review"
@@ -305,6 +350,8 @@ def run_application(url: str, profile: Dict[str, Any], auto_submit: bool = False
                     item.note = (item.note + "; could not set value").strip("; ")
                     page_unresolved.append(item)
 
+            if page_unresolved or page_review:
+                result.page_context = driver.find_element("tag name", "body").text
             result.unresolved.extend(page_unresolved)
             result.review_required.extend(page_review)
             if page_unresolved or page_review:

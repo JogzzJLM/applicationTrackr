@@ -62,3 +62,44 @@ def test_document_upload_and_profile_merge_over_http(tmp_path, monkeypatch):
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_previous_employer_rule_uses_confirmed_history():
+    from autoapply.browser_agent import previous_employer_answer
+    saved = {'employment': {'previous_employers': 'Tesco'}}
+    assert previous_employer_answer('Have you ever worked for Figma before?', 'Figma', saved) == 'No'
+    assert previous_employer_answer('Have you ever worked for Tesco before?', 'Tesco', saved) == 'Yes'
+    assert previous_employer_answer('Have you worked for a proprietary trading firm?', 'Figma', saved) is None
+    assert previous_employer_answer('Have you ever worked for Figma before?', 'Figma', {}) is None
+
+
+def test_guided_questions_include_listing_and_saved_answers(monkeypatch):
+    from autoapply import service
+    monkeypatch.setattr(service, 'get_run', lambda rid: {'status': 'form_inspected', 'url': 'https://example.com/figma', 'job_id': '1', 'page_context': 'Full role description', 'inspected_fields': [{'label': 'first name', 'type': 'text'}, {'label': 'have you ever worked for figma before?', 'type': 'text'}]})
+    monkeypatch.setattr(service, '_find_job', lambda jid: {'company': 'Figma', 'title': 'Intern'})
+    monkeypatch.setattr(service, 'ensure_profile', lambda: {'personal': {'first_name': 'Jane'}, 'employment': {'previous_employers': 'Tesco'}})
+    plan = service.guided_questions('run')
+    assert plan['context'] == 'Full role description'
+    assert plan['questions'][0]['answer'] == 'Jane'
+    assert plan['questions'][1]['answer'] == 'No'
+
+
+def test_searchable_dropdown_selects_option_and_rejects_ambiguous_match():
+    from autoapply.browser_agent import _set_value
+    class Option:
+        def __init__(self, text): self.text, self.clicked = text, False
+        def is_displayed(self): return True
+        def click(self): self.clicked = True
+    class Combo:
+        tag_name = 'input'
+        def __init__(self, options): self.options = options
+        def get_attribute(self, key): return 'combobox' if key == 'role' else None
+        def clear(self): pass
+        def send_keys(self, value): pass
+        def find_elements(self, *args): return self.options
+    yes, no = Option('Yes'), Option('No')
+    assert _set_value(Combo([yes, no]), 'text', 'No')
+    assert no.clicked and not yes.clicked
+    first, second = Option('London UK'), Option('London Canada')
+    assert not _set_value(Combo([first, second]), 'text', 'London')
+    assert not first.clicked and not second.clicked

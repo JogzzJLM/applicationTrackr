@@ -18,6 +18,7 @@ PROFILE_TEMPLATE: Dict[str, Any] = {
     "links": {"linkedin": "", "github": "", "portfolio": ""},
     "eligibility": {"right_to_work_uk": "", "requires_sponsorship": ""},
     "documents": {"resume_path": "/data/autoapply/resume.pdf", "cover_letter_path": ""},
+    "employment": {"previous_employers": ""},
     "answers": {},
 }
 

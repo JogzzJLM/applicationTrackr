@@ -19,6 +19,7 @@ from autoapply.profile import ensure_profile, update_profile, save_document
 from autoapply.service import (
     autopilot_candidates,
     get_batch,
+    guided_questions,
     get_run,
     start_application_run,
     start_autopilot_batch,
@@ -48,13 +49,15 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
     def _json(self, payload, status=200, private=False):
+        encoded = json.dumps(payload, indent=2).encode("utf-8")
         self.send_response(status)
+        self.send_header("Content-Length", str(len(encoded)))
         self.send_header("Content-Type", "application/json")
         self.send_header("Cache-Control", "no-store")
         if not private:
             self.send_cors_headers()
         self.end_headers()
-        self.safe_write(json.dumps(payload, indent=2).encode("utf-8"))
+        self.safe_write(encoded)
 
     def _html(self, payload):
         self.send_response(200)
@@ -154,6 +157,11 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             from config import clear_scraper_logs
             clear_scraper_logs()
             return self._json({"status": "ok"})
+        if path == "/api/autoapply/questions":
+            try:
+                return self._json(guided_questions(qs.get("id", [""])[0]), private=True)
+            except ValueError as exc:
+                return self._json({"status": "error", "message": str(exc)}, 404)
         if path == "/api/autoapply/profile":
             return self._json(ensure_profile(), private=True)
         if path == "/api/autoapply/status":
