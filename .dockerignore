@@ -11,3 +11,5 @@ __pycache__
 *.patch
 tests
 sankey_diagram.html
+
+browser-helper/build/

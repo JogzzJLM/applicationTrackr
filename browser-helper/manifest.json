@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "ApplicationTrackr \u2014 Fill Job Forms",
+  "version": "1.0.0",
+  "description": "Opens the job you choose in a tab, fills saved details and leaves submission to you.",
+  "permissions": [
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "http://192.168.0.136:5000/*",
+    "https://*.greenhouse.io/*",
+    "https://jobs.lever.co/*",
+    "https://jobs.ashbyhq.com/*",
+    "https://careers.smartrecruiters.com/*"
+  ],
+  "background": {
+    "scripts": [
+      "background.js"
+    ]
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://192.168.0.136:5000/*"
+      ],
+      "js": [
+        "tracker-bridge.js"
+      ]
+    }
+  ],
+  "web_accessible_resources": [],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "browser-helper@applicationtrackr.local"
+    }
+  }
+}

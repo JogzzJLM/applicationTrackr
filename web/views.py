@@ -1174,6 +1174,18 @@ def render_unified_dashboard_html(active_tab="flow"):
 <button class="btn btn-filled" type="submit">Save details</button><button class="btn btn-ghost" type="button" onclick="document.getElementById('job-details-modal').style.display='none'">Close</button>
 </form></div></div>
 <script>
+    function openFilledApplication(jobId, url) {{
+        if (document.documentElement.dataset.applicationtrackrBrowserHelper === 'ready') {{
+            window.postMessage({{type:'applicationtrackr:open-job',jobId}}, location.origin);
+        }} else {{
+            window.open(url, '_blank', 'noopener,noreferrer');
+            alert('Application opened. The ApplicationTrackr browser helper must be enabled to fill saved details automatically.');
+        }}
+    }}
+    window.addEventListener('message', event => {{
+        if(event.source!==window || event.origin!==location.origin || event.data?.type!=='applicationtrackr:job-opened')return;
+        if(event.data.error || event.data.notice)alert(event.data.error || event.data.notice);
+    }});
     function addExtraField(containerId, key='', value='') {{
         const row=document.createElement('div'); row.style.cssText='display:flex;gap:6px;margin-bottom:8px';
         const name=document.createElement('input');name.className='form-input';name.placeholder='Field name';name.value=key;

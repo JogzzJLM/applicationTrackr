@@ -8,3 +8,5 @@ __pycache__/
 sankey_diagram.html
 
 data/
+
+browser-helper/build/

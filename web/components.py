@@ -184,8 +184,8 @@ class JobCardViewModel:
         agent_action = ""
         if not self.is_reported_closed and self.link != "#":
             agent_action = (
-                f'<a href="/autoapply?job_id={urllib.parse.quote(self.job_id)}" '
-                'class="btn btn-ghost card-secondary-action">Apply Agent</a>'
+                f'<button onclick="openFilledApplication({_js_literal(self.job_id)}, {_js_literal(self.link)})" '
+                'class="btn btn-ghost card-secondary-action">Open &amp; fill ↗</button>'
             )
 
         reason_html = ""

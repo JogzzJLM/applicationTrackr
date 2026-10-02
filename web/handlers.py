@@ -157,6 +157,12 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             from config import clear_scraper_logs
             clear_scraper_logs()
             return self._json({"status": "ok"})
+        if path == "/api/autoapply/browser-bundle":
+            from autoapply.browser_handoff import browser_bundle
+            try:
+                return self._json(browser_bundle(qs.get("job_id", [""])[0]), private=True)
+            except ValueError as exc:
+                return self._json({"status": "error", "message": str(exc)}, 400)
         if path == "/api/autoapply/questions":
             try:
                 return self._json(guided_questions(qs.get("id", [""])[0]), private=True)
