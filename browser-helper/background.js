@@ -38,8 +38,9 @@ async function fillTab(tabId, url) {
     if (!response.ok) throw new Error('Saved details unavailable.');
     const bundle = await response.json();
     if (!sameApplication(bundle.job.url, url)) throw new Error('Application destination changed.');
-    await api.scripting.executeScript({target:{tabId}, files:['fill-form.js']});
-    await api.scripting.executeScript({target:{tabId}, func: data => globalThis.applicationTrackrFill(data), args:[bundle]});
+    const formData={...bundle,profile:Object.fromEntries(Object.entries(bundle.profile).filter(([key])=>!key.startsWith('eligibility.')))};
+    await api.scripting.executeScript({target:{tabId}, world:'MAIN', files:['fill-form.js']});
+    await api.scripting.executeScript({target:{tabId}, world:'MAIN', func: data => globalThis.applicationTrackrFill(data), args:[formData]});
     await api.storage.local.remove(key);
   } catch (error) {
     console.warn('ApplicationTrackr: form was left for manual completion.');

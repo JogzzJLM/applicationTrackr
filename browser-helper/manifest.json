@@ -1,14 +1,14 @@
 {
   "manifest_version": 3,
   "name": "ApplicationTrackr \u2014 Fill Job Forms",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Opens the job you choose in a tab, fills saved details and leaves submission to you.",
   "permissions": [
     "scripting",
     "storage"
   ],
   "host_permissions": [
-    "http://192.168.0.136:5000/*",
+    "http://192.168.0.136/*",
     "https://*.greenhouse.io/*",
     "https://jobs.lever.co/*",
     "https://jobs.ashbyhq.com/*",
@@ -22,7 +22,7 @@
   "content_scripts": [
     {
       "matches": [
-        "http://192.168.0.136:5000/*"
+        "http://192.168.0.136/*"
       ],
       "js": [
         "tracker-bridge.js"

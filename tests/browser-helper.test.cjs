@@ -38,3 +38,15 @@ test('redirects retain application identity before private data is injected',()=
 test('other websites cannot request a profile or open an application',async()=>{
  await assert.rejects(context.openJob('123',{tab:{id:1},url:'https://example.com/'}),/Open jobs from ApplicationTrackr/);
 });
+test('controlled dropdowns use real available choices even while the menu is closed',async()=>{
+ const select={props:{isSearchable:false},state:{selectValue:[]},buildFocusableOptions:()=>[{label:'Yes',value:'yes'},{label:'No',value:'no'}],getFocusableOptions:()=>[],getOptionLabel:o=>o.label,getOptionValue:o=>o.value,selectOption(o){this.state.selectValue=[o];}};
+ const input={__reactFiber$test:{stateNode:select,return:null}};
+ assert.equal(await require('../browser-helper/fill-form.js').setCombo(input,'Yes'),true);
+ assert.equal(select.state.selectValue[0].value,'yes');
+});
+test('tracker bridge ignores other services on the same IP address',()=>{
+ const code=fs.readFileSync(require.resolve('../browser-helper/tracker-bridge.js'),'utf8');
+ const other={location:{origin:'http://192.168.0.136:9000'},document:{documentElement:{dataset:{}}}};
+ vm.runInNewContext(code,other);
+ assert.deepEqual(other.document.documentElement.dataset,{});
+});

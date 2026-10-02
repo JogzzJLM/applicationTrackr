@@ -1,4 +1,6 @@
 (() => {
+  // Safari match patterns do not support ports; restrict the bridge explicitly.
+  if (location.origin !== 'http://192.168.0.136:5000') return;
   const api = globalThis.browser || globalThis.chrome;
   document.documentElement.dataset.applicationtrackrBrowserHelper = 'ready';
   window.addEventListener('message', async event => {

@@ -57,18 +57,60 @@
     field.dispatchEvent(new Event('input',{bubbles:true}));
     field.dispatchEvent(new Event('change',{bubbles:true}));
   }
+  const reactProps = element => {
+    const key = Object.keys(element).find(key=>key.startsWith('__reactProps$'));
+    return key ? element[key] : null;
+  };
+  const reactEvent = field => ({target:field,currentTarget:field,nativeEvent:{isComposing:false},preventDefault(){},stopPropagation(){}});
   const options = () => [...document.querySelectorAll('[role="option"],[class*="select__option"],[id*="-option-"]')].filter(visible);
   async function setCombo(field, value) {
+    // React Select exposes its real choices through the mounted component.
+    // Using its selection method preserves controlled form state in Safari.
+    const fiberKey=Object.keys(field).find(key=>key.startsWith('__reactFiber$'));
+    for (let fiber=fiberKey && field[fiberKey]; fiber; fiber=fiber.return) {
+      const select=fiber.stateNode;
+      if (!select || typeof select.selectOption!=='function' || typeof select.buildFocusableOptions!=='function') continue;
+      let choices=select.buildFocusableOptions();
+      if (!choices.length && select.props.isSearchable) {
+        select.onInputChange(String(value).split(',')[0],{action:'input-change',prevInputValue:''});
+        for(let i=0;i<20 && !choices.length;i++){await sleep(200);choices=select.buildFocusableOptions();}
+      }
+      const match=matchOption(choices.map(option=>({textContent:String(select.getOptionLabel(option)),option})),value);
+      if (!match) {select.onInputChange('',{action:'menu-close',prevInputValue:select.props.inputValue});select.onMenuClose();return false;}
+      select.selectOption(match.option);
+      for (let i=0;i<15;i++) {
+        if (select.state.selectValue.some(option=>select.getOptionValue(option)===select.getOptionValue(match.option))) return true;
+        // Async locations can remount the control while resolving the place.
+        const current=field.id ? document.getElementById(field.id) : field;
+        const selected=current?.closest('[class*="control"]')?.querySelector('[class*="single-value"]');
+        if (selected && normalize(selected.textContent)===normalize(value)) return true;
+        await sleep(100);
+      }
+      return false;
+    }
     const original = field.value;
     field.focus();
-    field.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',code:'ArrowDown',bubbles:true}));
+    const control = field.closest('[class*="control"]') || field;
+    control.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,button:0}));
+    field.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',code:'ArrowDown',keyCode:40,which:40,bubbles:true}));
+    for (let parent=field; parent && parent!==document.body; parent=parent.parentElement) {
+      const props=reactProps(parent);
+      if (props?.onKeyDown) { props.onKeyDown({...reactEvent(field),key:'ArrowDown',code:'ArrowDown'}); break; }
+    }
     await sleep(200);
     let selected = matchOption(options(),value);
     if (!selected && !field.readOnly) {
-      setText(field,value);
+      // Location services search by the city; match the precise saved place below.
+      setText(field, String(value).includes(',') ? String(value).split(',')[0] : value);
+      reactProps(field)?.onChange?.(reactEvent(field));
       for (let i=0;i<15 && !selected;i++) { await sleep(200); selected=matchOption(options(),value); }
     }
-    if (selected) selected.click();
+    if (selected) {
+      selected.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,button:0}));
+      selected.click();
+      reactProps(selected)?.onClick?.(reactEvent(selected));
+      await sleep(200);
+    }
     else if (!field.readOnly) setText(field, original);
     field.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',code:'Escape',bubbles:true}));
     return Boolean(selected);
@@ -140,5 +182,5 @@
     // No submit, Apply or Next button is invoked by this helper.
     return {filled:count};
   };
-  if (typeof module !== 'undefined') module.exports={normalize, answerFor, matchOption};
+  if (typeof module !== 'undefined') module.exports={normalize, answerFor, matchOption, setCombo};
 })();
