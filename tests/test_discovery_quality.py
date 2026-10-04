@@ -55,6 +55,7 @@ def test_uk_work_permission_does_not_assume_british_citizenship(citizenship, eli
     ('Required graduation between 2027 and 2029.', True),
     ('Expected graduation in 2027.', False),
     ('At a minimum, have experience in the following areas: A post-graduate degree in Machine Learning.', False),
+    ('Be in the final or penultimate year of a Masters or PhD in Computer Science, with a PhD preferred.', False),
     ('A current undergraduate, masters or PhD student in a quantitative subject.', True),
 ])
 def test_requirements_use_users_2028_graduation_without_rejecting_ranges(description, eligible):

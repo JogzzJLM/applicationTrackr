@@ -41,10 +41,14 @@ class JobRepository:
             saved = load_json_safe(JOBS_FILE, {})
             for row in list(listings) + list(applications):
                 job = Job.from_listing(row)
-                existing = next((j for j in saved.values() if
+                existing = saved.get(job.id) or next((j for j in saved.values() if
                     normalize_company(j['company']) == normalize_company(job.company) and
                     role_identity(j['title']) == role_identity(job.title)), None)
                 if existing:
+                    if existing['id'] == job.id:
+                        existing.update(company=job.company, title=job.title)
+                        if job.location:
+                            existing['location'] = job.location
                     if row.get('stages'):
                         existing['stages'] = row['stages']
                     if job.link:

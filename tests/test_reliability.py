@@ -60,6 +60,19 @@ class ReliabilityTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             jobs.add_manual_job('Acme', 'Software Intern', link='javascript:alert(1)')
 
+    def test_corrected_listing_identity_preserves_user_history(self):
+        repo = jobs.JobRepository()
+        job = repo.sync([{'id':'one','company':'IMC','title':'Software Intern'}], [])[0]
+        jobs.save_job_details(job.id, 'Remember this contact', {'contact':'Recruiter'})
+        repo.record_email(job, 'message1', 'Interview', 'Invitation', synced=True)
+        updated = repo.sync([{'id':'one','company':'PIMCO','title':'Software Engineering Internship'}], [])[0]
+        self.assertEqual(updated.company, 'PIMCO')
+        self.assertEqual(updated.title, 'Software Engineering Internship')
+        self.assertEqual(updated.notes, 'Remember this contact')
+        self.assertEqual(updated.custom_fields['contact'], 'Recruiter')
+        self.assertEqual(updated.stages, ['Interview'])
+        self.assertEqual(len(updated.email_events), 1)
+
     def test_failed_sheet_write_is_queued_and_attached(self):
         with patch('scrapers_engine.audit.load_discovered_jobs', return_value=[{'id':'one','company':'Acme','title':'Software Intern'}]), \
              patch.object(listener, '_get_sheet_apps_with_retry', return_value=[]), \
