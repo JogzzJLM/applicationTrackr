@@ -105,6 +105,7 @@ async function openApplicationDetails(jobId, url) {
     if (!dialog) {
         dialog = document.createElement('dialog'); dialog.id = 'application-assist'; dialog.className = 'assist-dialog';
         dialog.setAttribute('aria-labelledby', 'assist-title');
+        dialog.addEventListener('close', () => { document.body.style.overflow = ''; window.scrollTo(0, dialog.returnScroll || 0); });
         document.body.append(dialog);
     }
     dialog.replaceChildren();
@@ -122,6 +123,8 @@ async function openApplicationDetails(jobId, url) {
     const edit = document.createElement('a'); edit.className = 'btn btn-ghost'; edit.textContent = 'Edit saved details'; edit.href = '/profile';
     footer.append(application, edit);
     const fields = document.createElement('div'); fields.textContent = 'Loading saved answers…';
+    dialog.returnScroll = window.scrollY;
+    document.body.style.overflow = 'hidden';
     dialog.append(intro, footer, fields); dialog.showModal();
     try {
         const response = await fetch('/api/autoapply/browser-bundle?include_documents=false&job_id=' + encodeURIComponent(jobId), {cache: 'no-store'});
@@ -165,7 +168,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let returnFocus;
         new MutationObserver(() => {
             if (modal.style.display !== 'none') { returnFocus = document.activeElement; document.body.style.overflow = 'hidden'; modal.querySelector('input, button, textarea')?.focus(); }
-            else { document.body.style.overflow = ''; returnFocus?.focus(); }
+            else { document.body.style.overflow = ''; (returnFocus?.getClientRects().length ? returnFocus : document.querySelector('.header-menu summary'))?.focus(); }
         }).observe(modal, {attributes: true, attributeFilter: ['style']});
         modal.addEventListener('click', event => { if (event.target === modal) modal.style.display = 'none'; });
         modal.addEventListener('keydown', event => {

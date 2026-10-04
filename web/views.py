@@ -1453,6 +1453,7 @@ def render_unified_dashboard_html(active_tab="flow"):
         if (tabPaths[tabId] && window.location.pathname !== tabPaths[tabId]) {{
             history.replaceState(null, '', tabPaths[tabId]);
         }}
+        window.scrollTo(0, 0);
 
         if (tabId === 'diagnostics') {{
             startLivePolling();
