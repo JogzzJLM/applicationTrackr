@@ -18,13 +18,22 @@ The initial live app indexed 39 discovered roles. The supplied page displayed 47
 - Added paginated Higherin technical internship/placement feeds and GRB internship/placement feeds. Validated and added employer feeds for Databricks, Figma, Stripe, Anduril and Epic Games. SmartRecruiters now paginates and reads qualification details.
 - Specific live job evidence is required. Workday details, JobPosting data, and matching job headings/application controls supply actual descriptions and locations. Blocked/ambiguous pages remain outside the apply feed, with reasons visible in the coverage report. Checks use a cache/backoff and do not permanently ban a job because of a temporary failure.
 - Corrected Gradcracker opportunity/employer extraction and cross-source identity matching, including employer-hosted Greenhouse `gh_jid` links.
+- Removed unsafe substring employer aliases (PIMCO was becoming IMC), normalised UK country spellings for cross-source duplicates, and preserved user notes, stages and email history when a listing's name is corrected.
+- Roles explicitly requiring British citizenship stay in review until citizenship is confirmed in Filter Settings. Postgraduate-only study requirements are rejected, including the G-Research research role found in the live spot-check.
 - Each source fails independently; overlapping scans are prevented. Source diagnostics report unavailable employer feeds instead of always saying active.
 - Job cards show actual deadlines (or “Deadline not published”), verification time and expandable job/eligibility context. The page defaults to unapplied roles; discovery totals count verified adverts separately from application history.
 - ntfy has persistent delivery retries and duplicate protection. New verified, unapplied roles include company, title, location, deadline and links. Morning/evening summaries run at 08:00/18:00 Europe/London with upcoming deadlines and source failures. Weekly application progress remains available.
+- Briefings wait for the first completed discovery scan. Greenhouse skips unrelated full-time adverts before parsing their descriptions, reducing unnecessary work on the R430.
 
 ## Validation
 
-A fresh isolated public-source scan produced **49 unique verified roles across 31 employers**, after collapsing one employer-hosted/direct-feed duplicate. Higherin contributed 17 primary-source cards and GRB one; other cards came from Trackr and employer feeds. This is a trial result, not a claim about the deployed server's count: websites can respond differently to the Mac and R430.
+An earlier isolated public-source trial produced **49 unique verified roles across 31 employers**, before the final live eligibility and identity corrections. The Mac and R430 received different responses from some websites.
+
+The deployed R430's first pass held 60 verified adverts across 35 employers and published an alert containing 57 unapplied roles. The final stricter feed contains **49 verified listings across 33 employers**: duplicate adverts were merged, eight roles with unconfirmed British-citizenship requirements were held for review, and one postgraduate-only research role was excluded. This is a point-in-time count on 4 October 2026, not a guaranteed future total.
+
+Live source reads fetched 675 Trackr entries, 141 Higherin entries across 11 pages, and 27 GRB entries across two pages. Employer APIs and specific application pages add independent evidence. Successful later scans took roughly 50–72 seconds; the initial migration scan took 392 seconds. Cache warming contributes to that difference, so it cannot all be attributed to the parsing optimisation.
+
+Validation passed **85 Python tests and nine Safari helper tests**. The app's health endpoint, discovery report and ntfy topic all responded successfully; ntfy had no queued failed sends. The detailed deadline-and-link alert was retrieved from the topic itself. Phone popup delivery has not been confirmed by the user.
 
 The regression suite covers sparse-score exclusions, misleading locations, postgraduate/graduation requirements, expired/blocked pages, hub URLs, cross-source identity, source payloads, notification retry and scheduler catch-up. Existing Safari helper tests are retained. Deployment results should be checked through `/api/status`, `/api/health` and `/discovery-report`.
 
@@ -36,4 +45,4 @@ The regression suite covers sparse-score exclusions, misleading locations, postg
 - [GRB internships](https://www.grb.uk.com/internships/) provide another independent student source.
 - [Bright Network software internships](https://www.brightnetwork.co.uk/internships/software-development/) have useful coverage, but direct requests from this Mac received HTTP 403. No bypass or falsely healthy integration was added. Targetjobs was researched; its search pages require a separate service adapter and it is not represented as an active source.
 
-Live verification establishes that an advert exists and passes the known filters. It cannot establish unknown grades, citizenship/clearance, timetable constraints or every employer-specific qualification. Requirements are shown for review, and listings with failed verification are excluded rather than claimed suitable. No applications were submitted during this audit.
+Live verification establishes that an advert exists and passes the known filters. It cannot establish unknown grades, every clearance requirement, timetable constraints or every employer-specific qualification. Explicit British-citizenship requirements are held for review while citizenship is unconfirmed. Requirements are shown for review, and listings with failed verification are excluded rather than claimed suitable. Some configured employer board names return 404 and are shown as partial coverage; that is not reported as complete employer coverage. No applications were submitted during this audit.
