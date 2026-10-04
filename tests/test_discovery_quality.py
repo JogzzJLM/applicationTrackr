@@ -5,7 +5,7 @@ import pytest
 
 from core.relevance import evaluate_job
 from core.storage import DEFAULT_SETTINGS
-from core.normalization import same_listing, normalize_url
+from core.normalization import same_listing, normalize_url, clean_company_display_name
 from scrapers_engine.trackr_scraper import trackr_metadata
 from scrapers_engine import verifier, uk_boards, ats_scrapers
 import notifications
@@ -41,6 +41,13 @@ def test_trackr_preserves_division_deadline_and_location_exception():
     assert evaluate_job('Engineering - Internship', 'HSBC', 'UK', meta, DEFAULT_SETTINGS).eligible
     meta['location_notes'] = 'Based in Amsterdam, open to UK citizens'
     assert not evaluate_job('Software Engineering Internship', 'IMC', 'UK', meta, DEFAULT_SETTINGS).eligible
+
+
+@pytest.mark.parametrize('citizenship,eligible',[(None,False),(False,False),(True,True)])
+def test_uk_work_permission_does_not_assume_british_citizenship(citizenship, eligible):
+    metadata={'description':'Security clearance: British Citizen or a Dual UK national with British citizenship.'}
+    decision=evaluate_job('Software Engineer Placement','MBDA','UK',metadata,{**DEFAULT_SETTINGS,'british_citizen':citizenship})
+    assert decision.eligible == eligible
 
 
 @pytest.mark.parametrize('description,eligible', [
@@ -108,6 +115,17 @@ def test_distinct_requisitions_years_locations_and_query_ids_stay_distinct():
     assert normalize_url('https://example.com/apply?jobId=1&utm_source=email') != normalize_url('https://example.com/apply?jobId=2')
     assert same_listing({'company':'Databricks','title':'Software Intern','link':'https://www.databricks.com/careers/intern?gh_jid=8847738002'},
                         {'company':'Databricks','title':'Software Intern','link':'https://job-boards.greenhouse.io/databricks/jobs/8847738002'})
+
+
+def test_country_spelling_does_not_duplicate_same_programme_or_corrupt_employer():
+    assert clean_company_display_name('PIMCO') == 'PIMCO'
+    assert clean_company_display_name('IMC') == 'IMC'
+    base={'company':'G-Research','title':'Software Engineering Internship','location':'London, UK',
+          'link':'https://gresearch.wd103.myworkdayjobs.com/G-Research/job/Intern_R3746'}
+    assert same_listing(base,{**base,'title':'Software Engineering Internship 2027','location':'London, United Kingdom',
+                              'link':'https://higherin.com/jobs/44952/g-research/software-engineering-internship-2027'})
+    assert not same_listing(base,{**base,'location':'Bristol, United Kingdom',
+                                  'link':'https://higherin.com/jobs/44953/g-research/software-engineering-internship-2027'})
 
 
 def test_higherin_public_payload_and_grb_card_structure():

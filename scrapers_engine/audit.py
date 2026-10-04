@@ -61,6 +61,9 @@ def purge_irrelevant_jobs():
             job["program_type"] = decision.program_type
             kept.append(job)
         else:
+            reason = '; '.join(decision.rejection_reasons)
+            record_review(job.get('company'), job.get('title'), job.get('link'), job.get('source'), reason,
+                          'needs_check' if 'not confirmed' in reason else 'filtered')
             for reason in decision.rejection_reasons:
                 reason_counts[reason] = reason_counts.get(reason, 0) + 1
     removed = len(discovered) - len(kept)

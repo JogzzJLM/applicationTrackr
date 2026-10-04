@@ -87,9 +87,11 @@ def notify_discoveries(jobs):
     from core.normalization import normalize_url
     from sheets import get_applied_jobs_set
     from core.normalization import normalize_company, normalize_role, fuzzy_roles_match
+    from scrapers_engine.quality import is_actionable_listing
     applied, _ = get_applied_jobs_set()
     notified = set(load_json_safe(NOTIFIED_FILE, []))
     candidates = [j for j in jobs if j.get('verification', {}).get('state') == 'verified'
+                  and is_actionable_listing(j)
                   and normalize_url(j.get('link', '')) not in notified
                   and not any(normalize_company(j.get('company')) == c and fuzzy_roles_match(j.get('title'), r, threshold=.90) for c, r in applied)]
     if not candidates: return 0

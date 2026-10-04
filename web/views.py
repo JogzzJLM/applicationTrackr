@@ -44,7 +44,7 @@ def render_unified_dashboard_html(active_tab="flow"):
     applied_jobs, applied_companies = get_applied_jobs_set(csv_text=csv_text)
     settings = load_settings()
     hidden_jobs = load_hidden_jobs()
-    verified_count = sum(j.get('verification', {}).get('state') == 'verified' for j in all_jobs)
+    verified_count = sum(j.get('verification', {}).get('state') == 'verified' and is_actionable_listing(j, settings) for j in all_jobs)
     review_count = sum(v.get('state') in {'unknown', 'needs_check'} for v in load_json_safe(REVIEW_FILE, {}).values())
     from config import NTFY_BASE_URL, NTFY_TOPIC
     ntfy_topic_url = escape(f'{NTFY_BASE_URL}/{NTFY_TOPIC}', quote=True) if NTFY_TOPIC else ''
@@ -1040,6 +1040,14 @@ def render_unified_dashboard_html(active_tab="flow"):
                 <div class="form-group">
                     <label class="form-label">Exclude locations</label>
                     <input type="text" name="exclude_locations" class="form-input" value="{ex_loc}">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">British citizenship (for restricted roles)</label>
+                    <select name="british_citizen" class="form-input">
+                        <option value="unknown" {'selected' if settings.get('british_citizen') is None else ''}>Not confirmed — keep restricted roles for review</option>
+                        <option value="true" {'selected' if settings.get('british_citizen') is True else ''}>British citizen, including dual nationality</option>
+                        <option value="false" {'selected' if settings.get('british_citizen') is False else ''}>Not a British citizen</option>
+                    </select>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Greenhouse companies</label>

@@ -58,7 +58,7 @@ def posting_fields(post):
         if isinstance(country, dict): country = country.get('name', '')
         if country: countries.append(str(country))
     company = post.get('hiringOrganization') or {}
-    return {'title': post.get('title', ''), 'company': company.get('name', ''),
+    return {'title': plain(post.get('title', '')), 'company': plain(company.get('name', '')),
             'location': ', '.join(dict.fromkeys(cities + countries)),
             'description': plain(post.get('description')), 'country': ', '.join(dict.fromkeys(countries)),
             'closing_date': post.get('validThrough', ''), 'published_at': post.get('datePosted', ''),

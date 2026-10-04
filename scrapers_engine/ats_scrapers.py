@@ -83,6 +83,7 @@ def add_discovered_job(discovered_list, job_id, company, title, location, link, 
         if verification.get(key): metadata[key] = verification[key]
     if verification.get('location'): location = verification['location']
     if verification.get('title'): title = verification['title']
+    if verification.get('company'): company = verification['company']
     relevance = evaluate_job(title, company, location, metadata=metadata)
     closing = deadline_date(metadata.get('closing_date'))
     if metadata.get('closing_date') and not closing:
@@ -91,7 +92,8 @@ def add_discovered_job(discovered_list, job_id, company, title, location, link, 
         record_review(company, title, link, source, 'Application deadline passed', 'closed')
         return False
     if not relevance.eligible:
-        record_review(company, title, link, source, '; '.join(relevance.rejection_reasons), 'filtered')
+        reason = '; '.join(relevance.rejection_reasons)
+        record_review(company, title, link, source, reason, 'needs_check' if 'not confirmed' in reason else 'filtered')
         return False
     clear_review(link)
 
@@ -120,6 +122,7 @@ def add_discovered_job(discovered_list, job_id, company, title, location, link, 
                 if any(ats in link.lower() for ats in ("greenhouse", "lever", "ashby", "smartrecruiters")):
                     item["link"], item["source_url"] = link, source_url
                 item.update(payload)
+                item.update(company=company, title=title)
                 if metadata:
                     item["metadata"] = {**item.get('metadata', {}), **metadata}
                 item['location'] = location
@@ -171,7 +174,8 @@ def _record_job(discovered_list, seen_jobs, local_new, relevant_counter, *, job_
     decision = relevance_decision(title, location, company, metadata)
     if not decision.eligible:
         if decision.program_type in {'internship', 'placement'}:
-            record_review(company, title, job_url, source, '; '.join(decision.rejection_reasons), 'filtered')
+            reason = '; '.join(decision.rejection_reasons)
+            record_review(company, title, job_url, source, reason, 'needs_check' if 'not confirmed' in reason else 'filtered')
         return False
     added = add_discovered_job(discovered_list, job_id, company, title, location, job_url, source, board_url, metadata=metadata, relevance=decision)
     if added and job_id not in seen_jobs:

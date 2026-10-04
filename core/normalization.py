@@ -57,7 +57,8 @@ COMPANY_DISPLAY_NAMES = {
     "databricks": "Databricks", "figma": "Figma", "stripe": "Stripe", "andurilindustries": "Anduril",
     "epicgames": "Epic Games", "hsbc": "HSBC", "bny": "BNY", "bnymellon": "BNY Mellon",
     "tpp": "TPP", "thephoenixpartnership": "TPP", "bae": "BAE Systems", "baesystems": "BAE Systems",
-    "gresearch": "G-Research"
+    "gresearch": "G-Research", "pimco": "PIMCO", "mbda": "MBDA", "pwc": "PwC",
+    "tiktok": "TikTok", "dvtrading": "DV Trading", "mavensecuritiesholding": "Maven Securities"
 }
 
 def clean_company_display_name(name):
@@ -70,9 +71,9 @@ def clean_company_display_name(name):
     if norm in COMPANY_DISPLAY_NAMES:
         return COMPANY_DISPLAY_NAMES[norm]
 
-    for key, display_val in COMPANY_DISPLAY_NAMES.items():
-        if key == norm or key in norm:
-            return display_val
+    canonical = normalize_company(cleaned)
+    if canonical in COMPANY_DISPLAY_NAMES:
+        return COMPANY_DISPLAY_NAMES[canonical]
 
     for suffix in ["internshipprogram", "careers", "jobs", "program"]:
         if cleaned.lower().endswith(suffix) and len(cleaned) > len(suffix) + 2:
@@ -177,7 +178,11 @@ def same_listing(first, second):
     years_b = set(re.findall(r'\b20\d{2}\b', second.get('title', '')))
     if years_a and years_b and years_a != years_b: return False
     if extract_program_type(first.get('title')) != extract_program_type(second.get('title')): return False
-    la, lb = str(first.get('location', '')).lower(), str(second.get('location', '')).lower()
+    def location_key(value):
+        value = str(value or '').lower()
+        value = re.sub(r'\b(?:united kingdom|england|uk|gbr|gb)\b', '', value)
+        return re.sub(r'[^a-z0-9]+', ' ', value).strip()
+    la, lb = location_key(first.get('location')), location_key(second.get('location'))
     if la and lb and la not in {'uk', 'unknown'} and lb not in {'uk', 'unknown'} and la != lb:
         if not (la in lb or lb in la): return False
     # Different specific employer posts are distinct. Cross-board equivalents

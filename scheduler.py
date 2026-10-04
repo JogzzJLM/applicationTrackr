@@ -15,10 +15,11 @@ def actionable_jobs():
     from scrapers_engine.audit import load_discovered_jobs
     from core.normalization import normalize_company, fuzzy_roles_match
     from sheets import get_applied_jobs_set
+    from scrapers_engine.quality import is_actionable_listing
     applied, _ = get_applied_jobs_set()
     today = datetime.now(ZoneInfo(APP_TIMEZONE)).date()
     return [j for j in load_discovered_jobs() if j.get('verification', {}).get('state') == 'verified'
-            and (not deadline_date(j.get('deadline')) or deadline_date(j['deadline']) >= today)
+            and is_actionable_listing(j, today=today)
             and not any(normalize_company(j['company']) == c and fuzzy_roles_match(j['title'], r, threshold=.90) for c, r in applied)]
 
 

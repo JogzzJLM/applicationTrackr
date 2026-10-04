@@ -51,6 +51,7 @@ DIRECT_BOARD_ADDITIONS = ['databricks', 'figma', 'stripe', 'andurilindustries', 
 DEFAULT_SETTINGS = {
     "settings_schema_version": SETTINGS_SCHEMA_VERSION,
     "grad_years_allowed": ["2028"],
+    "british_citizen": None,
     "target_programmes": ["internship", "placement"],
     "target_role_categories": ["software", "ai_ml", "quant", "cyber"],
     "strict_location_filter": True,

@@ -149,7 +149,7 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             from config import SCRAPER_STATUS
             return self._json(SCRAPER_STATUS)
         if path == "/api/discovery-report":
-            from scrapers_engine.quality import REVIEW_FILE
+            from scrapers_engine.quality import REVIEW_FILE, is_actionable_listing
             from core.storage import load_json_safe
             from config import SCRAPER_STATUS
             return self._json({"coverage": SCRAPER_STATUS.get('trackr_coverage', {}),
@@ -157,7 +157,7 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
                                "needs_check": list(load_json_safe(REVIEW_FILE, {}).values()),
                                "notifications": SCRAPER_STATUS.get('notification_queue', {}),
                                "verified_listings": [{k: j.get(k) for k in ('company', 'title', 'link', 'location', 'deadline', 'sources', 'verification')}
-                                                     for j in load_discovered_jobs() if j.get('verification', {}).get('state') == 'verified']})
+                                                     for j in load_discovered_jobs() if j.get('verification', {}).get('state') == 'verified' and is_actionable_listing(j)]})
         if path == "/discovery-report":
             from web.discovery_view import render_discovery_report
             return self._html(render_discovery_report())
@@ -341,6 +341,8 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             for key in ("my_skills","exclude_keywords","exclude_locations","greenhouse_companies","lever_companies","ashby_companies","smartrecruiters_companies"):
                 settings[key] = csv(key)
             settings["auto_hide_applied_company_jobs"] = "auto_hide_applied_company_jobs" in form
+            if 'british_citizen' in form:
+                settings['british_citizen'] = {'true': True, 'false': False}.get(form['british_citizen'][0])
             save_settings(settings)
             removed = purge_irrelevant_jobs()
             add_scraper_log(f"⚙️ Saved filter settings; relevance audit removed {removed} listings")

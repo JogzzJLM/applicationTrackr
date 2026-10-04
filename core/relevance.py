@@ -267,6 +267,9 @@ def evaluate_job(
         rejection.append("PhD/doctorate appears to be required")
     if re.search(r'(?:minimum|require|required|must)[^.\n]{0,160}(?:post[- ]graduate degree|master.s degree|master.s or phd)', description):
         rejection.append("postgraduate qualification appears to be required")
+    citizenship_required = re.search(r'(?:must|required|requirement|security clearance|open only|only applicants)[^.\n]{0,160}\b(?:british citizen|british citizenship|uk citizen|uk national)', description)
+    if citizenship_required and settings.get('british_citizen') is not True:
+        rejection.append('British citizenship required; ' + ('profile says not eligible' if settings.get('british_citizen') is False else 'citizenship not confirmed'))
 
     for custom in settings.get("exclude_keywords", []):
         if custom and contains_phrase(title_n, custom):
