@@ -18,7 +18,7 @@ from sheets import (
 )
 from scrapers_engine.audit import load_discovered_jobs
 from web.components import render_application_card, render_job_card
-from scrapers_engine.quality import REVIEW_FILE
+from scrapers_engine.quality import REVIEW_FILE, is_actionable_listing
 
 def render_unified_dashboard_html(active_tab="flow"):
     csv_text = fetch_google_sheet_csv()
@@ -102,6 +102,9 @@ def render_unified_dashboard_html(active_tab="flow"):
                     break
 
         if auto_hide_company and not is_applied and comp_norm in applied_companies:
+            continue
+
+        if not is_applied and not is_actionable_listing(j, settings):
             continue
 
         visible_jobs.append(j)
@@ -222,8 +225,10 @@ def render_unified_dashboard_html(active_tab="flow"):
             else:
                 not_applied_count += 1
 
-                deadline_raw = str(j.get('deadline') or j.get('closeDate') or '').lower()
-                if deadline_raw and not any(kw in deadline_raw for kw in ['rolling', 'asap', 'none']):
+                from scrapers_engine.verifier import deadline_date
+                from datetime import date
+                closing = deadline_date(j.get('deadline') or j.get('closeDate'))
+                if closing and 0 <= (closing - date.today()).days <= 7:
                     if action_items_count < 6:
                         action_items_count += 1
                         comp_js = comp_name.replace("'", "\\'").replace('"', '&quot;')

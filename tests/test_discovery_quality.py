@@ -10,11 +10,22 @@ from scrapers_engine.trackr_scraper import trackr_metadata
 from scrapers_engine import verifier, uk_boards, ats_scrapers
 import notifications
 import scheduler
+from scrapers_engine.quality import is_actionable_listing
 
 
 def test_real_software_role_is_not_excluded_by_sparse_keyword_score():
     decision = evaluate_job('Software Engineering Intern', 'Example', 'London', settings=DEFAULT_SETTINGS)
     assert decision.eligible and decision.score == 71
+
+
+def test_apply_feed_never_exposes_legacy_unverified_expired_or_unsuitable_cards():
+    job={'company':'Example','title':'Software Engineering Intern','location':'UK',
+         'verification':{'state':'verified'}}
+    assert is_actionable_listing(job, DEFAULT_SETTINGS)
+    assert not is_actionable_listing({**job,'verification':{}}, DEFAULT_SETTINGS)
+    assert not is_actionable_listing({**job,'deadline':(datetime.now()-timedelta(days=1)).date().isoformat()}, DEFAULT_SETTINGS)
+    assert not is_actionable_listing({**job,'title':'Electro-Optic Systems Engineer Placement'}, DEFAULT_SETTINGS)
+    assert is_actionable_listing({'source':'Manual'}, DEFAULT_SETTINGS)
 
 
 @pytest.mark.parametrize('title', ['Electro-Optic Seekers & Systems Engineer Undergraduate Placement 2027',
