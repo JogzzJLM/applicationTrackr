@@ -1,113 +1,157 @@
+"""Evidence-based checks: blocked/network responses are unknown, never closed/open."""
+import html
+import json
 import re
+import threading
+import time
+from datetime import date, datetime, timezone
+from urllib.parse import urlparse
+
 import requests
-from core.kb import load_closed_keywords_kb
-from core.storage import load_closed_urls_cache, mark_url_as_closed
+from bs4 import BeautifulSoup
+from core.storage import DATA_DIR, atomic_write_json, load_json_safe
+
+CACHE_FILE = str(DATA_DIR / 'listing_checks.json')
+_LOCK = threading.RLock()
+HEADERS = {'User-Agent': 'Mozilla/5.0', 'Accept': 'text/html,application/json'}
+
+
+def plain(value):
+    return BeautifulSoup(html.unescape(str(value or '')), 'html.parser').get_text(' ', strip=True)
+
+
+def deadline_date(value):
+    value = re.sub(r'(\d)(?:st|nd|rd|th)\b', r'\1', str(value or ''))
+    for fmt in ('%Y-%m-%d', '%d %B %Y', '%d %b %Y', '%d/%m/%Y'):
+        try:
+            result = datetime.strptime(value[:10] if fmt == '%Y-%m-%d' else value, fmt).date()
+            # Some boards use 2036-01-01 as a rolling-deadline sentinel.
+            return result if result.year <= date.today().year + 2 else None
+        except ValueError:
+            pass
+    return None
+
+
+def job_postings(markup):
+    def walk(value):
+        if isinstance(value, list):
+            for item in value: yield from walk(item)
+        elif isinstance(value, dict):
+            if value.get('@type') == 'JobPosting': yield value
+            for key in ('@graph', 'itemListElement', 'item', 'mainEntity'):
+                if key in value: yield from walk(value[key])
+    soup = BeautifulSoup(markup, 'html.parser')
+    for script in soup.find_all('script', type='application/ld+json'):
+        try: yield from walk(json.loads(script.get_text()))
+        except (ValueError, TypeError): continue
+
+
+def posting_fields(post):
+    locations = post.get('jobLocation') or []
+    if isinstance(locations, dict): locations = [locations]
+    cities, countries = [], []
+    for loc in locations:
+        address = loc.get('address') or {}
+        if isinstance(address, str): cities.append(address); continue
+        cities.extend(str(address[k]) for k in ('addressLocality', 'addressRegion') if address.get(k))
+        country = address.get('addressCountry', '')
+        if isinstance(country, dict): country = country.get('name', '')
+        if country: countries.append(str(country))
+    company = post.get('hiringOrganization') or {}
+    return {'title': post.get('title', ''), 'company': company.get('name', ''),
+            'location': ', '.join(dict.fromkeys(cities + countries)),
+            'description': plain(post.get('description')), 'country': ', '.join(dict.fromkeys(countries)),
+            'closing_date': post.get('validThrough', ''), 'published_at': post.get('datePosted', ''),
+            'employment_type': ', '.join(post.get('employmentType', [])) if isinstance(post.get('employmentType'), list) else post.get('employmentType', '')}
+
+
+def _result(state, reason, **fields):
+    return {'state': state, 'reason': reason, 'checked_at': datetime.now(timezone.utc).isoformat(), **fields}
+
+
+def _workday(url):
+    parsed = urlparse(url)
+    if not parsed.hostname or not parsed.hostname.endswith('.myworkdayjobs.com'): return None
+    # The public Workday detail endpoint supplies the description missing from SPA HTML.
+    parts = parsed.path.strip('/').split('/')
+    if 'job' not in parts: return None
+    idx = parts.index('job')
+    if idx < 1: return None
+    tenant = parsed.hostname.split('.')[0]
+    site = parts[idx - 1]
+    r = requests.get(f'https://{parsed.hostname}/wday/cxs/{tenant}/{site}/' + '/'.join(parts[idx:]), headers=HEADERS, timeout=10)
+    if r.status_code != 200: return None
+    info = r.json().get('jobPostingInfo') or {}
+    if not info.get('title') or not info.get('jobDescription'): return None
+    return _result('verified', 'Employer Workday job detail', title=info['title'], description=plain(info['jobDescription']),
+                   location=info.get('location', ''), country=info.get('country', {}).get('descriptor', '') if isinstance(info.get('country'), dict) else '',
+                   published_at=info.get('startDate', ''), final_url=url)
+
+
+def _check(url, expected_title=''):
+    parsed = urlparse(str(url))
+    if parsed.scheme not in {'http', 'https'} or not parsed.netloc:
+        return _result('closed', 'Missing or invalid listing URL')
+    if re.fullmatch(r'/hub/\d+/[^/]+/?', parsed.path) or parsed.path.rstrip('/') in {'', '/jobs', '/careers', '/search-jobs'}:
+        return _result('unknown', 'Employer/search portal rather than a specific job')
+    try:
+        wd = _workday(url)
+        if wd: return wd
+        r = requests.get(url, headers=HEADERS, timeout=10, allow_redirects=True)
+        if r.status_code in (404, 410): return _result('closed', f'HTTP {r.status_code}')
+        if not 200 <= r.status_code < 300: return _result('unknown', f'HTTP {r.status_code}; cannot verify')
+        soup = BeautifulSoup(r.text, 'html.parser')
+        for script in soup.find_all(['script', 'style', 'nav', 'footer']): script.decompose()
+        text = soup.get_text(' ', strip=True).lower()
+        if any(p in text for p in ('verify you are human', 'checking your browser', 'access denied', 'enable javascript and cookies')):
+            return _result('unknown', 'Access challenge; cannot verify')
+        # Whole-page proximity previously mistook unrelated footer/description text
+        # for closure. These explicit phrases must refer to the current posting.
+        closed = re.search(r'(?:this|the)\s+(?:job|position|vacancy|posting|role)\s+(?:is\s+no\s+longer\s+available|has\s+(?:been\s+)?(?:filled|closed|expired|removed))|(?:applications for this (?:role|job)|this (?:job|position))\s+(?:are|is)\s+closed|job not found', text)
+        if closed: return _result('closed', 'Explicit posting closure')
+        posts = list(job_postings(r.text))
+        if len(posts) == 1:
+            fields = posting_fields(posts[0])
+            closing = deadline_date(fields.get('closing_date'))
+            if closing and closing < date.today(): return _result('closed', 'Application deadline passed', **fields)
+            if fields['title'] and fields['description']:
+                return _result('verified', 'Specific JobPosting with job description', final_url=r.url, **fields)
+        headings = ' '.join(h.get_text(' ', strip=True) for h in soup.find_all(['h1', 'h2'])).lower()
+        title_tokens = [w for w in re.findall(r'[a-z]+', expected_title.lower()) if len(w) > 3 and w not in {'summer', 'programme', 'program', 'internship'}]
+        matches = sum(w in headings for w in title_tokens)
+        apply_controls = [x for x in soup.find_all(['a', 'button', 'input']) if re.search(r'\bapply\b', x.get_text(' ', strip=True) + ' ' + str(x.get('value', '')), re.I)]
+        form = soup.find('form')
+        specific = len(urlparse(r.url).path.strip('/').split('/')) >= 2
+        if specific and matches >= min(2, max(1, len(title_tokens))) and (apply_controls or form) and len(text) > 300:
+            location_node = soup.select_one('.job__location, #header .location, .posting-categories .location, .job-location')
+            description_node = soup.select_one('.job__description, #content, .posting-page .section-wrapper')
+            title_node = soup.find('h1')
+            return _result('verified', 'Matching job heading and application control', final_url=r.url,
+                           location=location_node.get_text(' ', strip=True) if location_node else '',
+                           title=title_node.get_text(' ', strip=True) if title_node else expected_title,
+                           description=(description_node or soup).get_text(' ', strip=True)[:14000])
+        return _result('unknown', 'No specific live job/application evidence')
+    except (requests.RequestException, ValueError, TypeError, AttributeError):
+        return _result('unknown', 'Network or response error; will retry')
+
+
+def verify_listing(url, expected_title='', force=False):
+    with _LOCK:
+        cached = load_json_safe(CACHE_FILE, {}).get(url)
+    if cached and not force:
+        age = time.time() - cached.get('saved_at', 0)
+        ttl = 6 * 3600 if cached.get('state') == 'verified' else 30 * 60
+        if age < ttl: return dict(cached)
+    result = _check(url, expected_title)
+    result['saved_at'] = time.time()
+    with _LOCK:
+        checks = load_json_safe(CACHE_FILE, {})
+        checks[url] = result
+        checks = dict(sorted(checks.items(), key=lambda x: x[1].get('saved_at', 0), reverse=True)[:2000])
+        atomic_write_json(CACHE_FILE, checks)
+    return result
+
 
 def verify_live_page_applyable(url):
-    """
-    Multi-Layered Live Page Verification Engine:
-    1. Persistent Closed Cache Lookup (0ms instant return if previously closed)
-    2. HTTP Status & ATS Redirect Egress Check
-    3. Punctuation-Insensitive Knowledge Base Phrase Match
-    4. High-Confidence Structural Proximity & Semantic Heuristic Rules
-    5. Dynamic SPA & Meta Title Verification (Workday, Ashby, HiBob, Phenom, Eightfold)
-    """
-    if not url or not isinstance(url, str) or not url.startswith("http"):
-        return False
-
-    closed_urls = load_closed_urls_cache()
-    if url in closed_urls:
-        return False
-
-    kb_phrases = load_closed_keywords_kb()
-
-    try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-        }
-        resp = requests.get(url, headers=headers, timeout=4, allow_redirects=True)
-        if resp.status_code in (404, 410):
-            mark_url_as_closed(url)
-            return False
-        if resp.status_code in (401, 403, 429) or resp.status_code >= 500:
-            # Access denied/rate-limited/server errors do not prove the role is closed.
-            return True
-
-        # Layer 1: ATS Redirect & Expired Egress Check
-        if "linkedin.com" in url or "linkedin.com" in resp.url:
-            if "expired_jd_redirect" in resp.url or "trk=expired" in resp.url or ("/jobs/view/" in url and "/jobs/view/" not in resp.url):
-                print(f"  [Live Closure Check] 🛑 LinkedIn Expired Redirect Match: {url} -> {resp.url}")
-                mark_url_as_closed(url)
-                return False
-
-        if resp.url and resp.url != url:
-            orig_path = url.split('?')[0].rstrip('/')
-            final_path = resp.url.split('?')[0].rstrip('/')
-            if len(orig_path.split('/')) > len(final_path.split('/')) and len(final_path.split('/')) <= 4:
-                print(f"  [Live Closure Check] 🛑 Redirected from specific post to generic portal: {url} -> {resp.url}")
-                mark_url_as_closed(url)
-                return False
-
-        # Clean HTML & normalize text by replacing punctuation with spaces
-        text_raw = re.sub(r'<[^>]+>', ' ', resp.text).lower()
-        text_clean = ' '.join(re.sub(r'[^a-z0-9\s]', ' ', text_raw).split())
-
-        # Layer 2: Punctuation-Insensitive KB Phrase Match
-        for phrase in kb_phrases:
-            phrase_clean = ' '.join(re.sub(r'[^a-z0-9\s]', ' ', phrase.lower()).split())
-            if phrase_clean and phrase_clean in text_clean:
-                print(f"  [Live Closure Check] 🛑 Page indicates role is closed ('{phrase_clean}'): {url}")
-                mark_url_as_closed(url)
-                return False
-
-        # Layer 3: High-Confidence Structural Proximity & Semantic Rules
-        closure_states = {'closed', 'filled', 'expired', 'paused', 'unavailable', 'inactive', 'removed'}
-        job_nouns = {'application', 'applications', 'programme', 'program', 'role', 'position', 'vacancy', 'scheme', 'opportunity', 'posting', 'job', 'page'}
-
-        words = text_clean.split()
-        for idx, w in enumerate(words):
-            if w in closure_states:
-                window = set(words[max(0, idx-5):min(len(words), idx+6)])
-                if window & job_nouns:
-                    print(f"  [Live Closure Check] 🛑 Structural Proximity Match ('{w}' near {window & job_nouns}): {url}")
-                    mark_url_as_closed(url)
-                    return False
-
-        if 'no longer' in text_clean and any(k in text_clean for k in ['accepting', 'available', 'taking', 'open']):
-            print(f"  [Live Closure Check] 🛑 Semantic Rule Match ('no longer accepting/available'): {url}")
-            mark_url_as_closed(url)
-            return False
-
-        if any(k in text_clean for k in ["doesn t exist", "does not exist", "page you are looking for", "cannot be found"]):
-            print(f"  [Live Closure Check] 🛑 Missing Page Rule Match ('doesn't exist / cannot be found'): {url}")
-            mark_url_as_closed(url)
-            return False
-
-        # Layer 4: Dynamic SPA & Meta Title Verification (Workday, Ashby, HiBob, Phenom, Eightfold)
-        title_match = re.search(r'<title>([^<]+)</title>', resp.text, re.IGNORECASE)
-        page_title = title_match.group(1).strip().lower() if title_match else ''
-
-        og_match = re.search(r'<meta\s+[^>]*property=[\"\']og:title[\"\']\s+content=[\"\']([^\"\']+)[\"\']', resp.text, re.IGNORECASE)
-        og_title = og_match.group(1).strip().lower() if og_match else ''
-
-        if any(ats in url for ats in ["myworkdayjobs.com", "eightfold.ai", "phenom.com"]):
-            if not og_title:
-                if not page_title:
-                    print(f"  [Live Closure Check] 🛑 Dynamic SPA Metadata Check Failed (Empty og:title & title): {url}")
-                    mark_url_as_closed(url)
-                    return False
-
-        is_specific_post = any(c in url for c in ['-', '_']) and (re.search(r'/[0-9a-f\-]{8,}', url, re.I) or re.search(r'/\d{5,}', url) or 'job' in url.lower())
-        generic_titles = {'jobs', 'careers', 'job openings', 'career opportunities', 'welcome', 'search jobs', 'job search', 'workday', 'ashby'}
-
-        if is_specific_post and page_title in generic_titles and not og_title:
-            print(f"  [Live Closure Check] 🛑 Generic Meta Title Fallback Check Failed (title: '{page_title}'): {url}")
-            mark_url_as_closed(url)
-            return False
-
-        return True
-
-    except Exception:
-        # If timeout or connection issue, permit to avoid false negatives
-        return True
+    # Compatibility for the explicit closure audit: unknown isn't evidence of closure.
+    return verify_listing(url)['state'] != 'closed'

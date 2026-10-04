@@ -47,6 +47,23 @@ def _extract_gradcracker_jobs(html):
     """
     soup = BeautifulSoup(html, "html.parser")
 
+    # A hub URL is an employer homepage. Only numbered opportunity URLs can
+    # produce a listing; starting from broad CSS classes selected titles as firms.
+    opportunities = soup.find_all('a', href=re.compile(r'/hub/\d+/[^/]+/(?:work-placement-internship|graduate-job|work-placement|internship)/\d+', re.I))
+    containers, seen = [], set()
+    for link in opportunities:
+        node = link
+        for _ in range(6):
+            if not node.parent: break
+            node = node.parent
+            if node.find('a', href=re.compile(r'^/hub/\d+/[^/]+/?$')):
+                break
+        key = link.get('href')
+        if key not in seen:
+            seen.add(key); containers.append(node)
+    if containers:
+        return containers
+
     job_containers = soup.find_all(
         "div",
         class_=re.compile(r"tw-bg-white|job-card|tw-border", re.I),
@@ -227,32 +244,9 @@ def scrape_gradcracker_website(
 
         for container in job_containers:
             try:
-                comp_elem = (
-                    container.find(
-                        "a",
-                        class_=re.compile(r"company|employer|tw-font-bold", re.I),
-                    )
-                    or container.find(["h3", "h4", "strong"])
-                )
-
-                title_elem = (
-                    container.find(
-                        "a",
-                        class_=re.compile(r"job-title|title|tw-text-", re.I),
-                    )
-                    or container.find(["h2", "h3"])
-                )
-
-                link_elem = (
-                    container.find(
-                        "a",
-                        href=re.compile(
-                            r"/hub/|/graduate-job/|/work-placement/|/internship/",
-                            re.I,
-                        ),
-                    )
-                    or container.find("a", href=True)
-                )
+                comp_elem = container.find('a', href=re.compile(r'^/hub/\d+/[^/]+/?$'))
+                link_elem = container.find('a', href=re.compile(r'/hub/\d+/[^/]+/(?:work-placement-internship|graduate-job|work-placement|internship)/\d+', re.I))
+                title_elem = link_elem
 
                 if not title_elem or not link_elem:
                     continue
@@ -260,7 +254,7 @@ def scrape_gradcracker_website(
                 company = (
                     comp_elem.get_text(" ", strip=True)
                     if comp_elem
-                    else "Gradcracker Employer"
+                    else link_elem.get('href', '').split('/')[3].replace('-', ' ')
                 )
                 title = title_elem.get_text(" ", strip=True)
                 link = link_elem.get("href", "").strip()

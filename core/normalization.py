@@ -1,4 +1,5 @@
 import re
+from urllib.parse import urlsplit, parse_qsl, urlencode
 
 COMPANY_ALIASES = {
     "mwinternshipprogram": "marshallwace",
@@ -23,7 +24,9 @@ COMPANY_ALIASES = {
     "samsara": "samsara",
     "cohere": "cohere",
     "notion": "notion",
-    "ramp": "ramp"
+    "ramp": "ramp",
+    "imctrading": "imc", "bnymellon": "bny", "bankofnewyorkmellon": "bny",
+    "thephoenixpartnership": "tpp", "mizuhobanking": "mizuho"
 }
 
 COMPANY_DISPLAY_NAMES = {
@@ -50,7 +53,11 @@ COMPANY_DISPLAY_NAMES = {
     "beamng": "BeamNG",
     "wayve": "Wayve",
     "verkada": "Verkada",
-    "quora": "Quora"
+    "quora": "Quora", "imc": "IMC", "imctrading": "IMC", "scaleai": "Scale AI",
+    "databricks": "Databricks", "figma": "Figma", "stripe": "Stripe", "andurilindustries": "Anduril",
+    "epicgames": "Epic Games", "hsbc": "HSBC", "bny": "BNY", "bnymellon": "BNY Mellon",
+    "tpp": "TPP", "thephoenixpartnership": "TPP", "bae": "BAE Systems", "baesystems": "BAE Systems",
+    "gresearch": "G-Research"
 }
 
 def clean_company_display_name(name):
@@ -153,14 +160,40 @@ def normalize_url(url):
     """Strips query strings, tracking parameters, hashes, and trailing slashes for exact URL matching."""
     if not url or not isinstance(url, str):
         return ""
-    cleaned = re.sub(r'^https?://(www\.)?', '', url.strip().lower())
-    cleaned = cleaned.split('?')[0].split('#')[0].rstrip('/')
-    return cleaned
+    parsed = urlsplit(url.strip())
+    host = re.sub(r'^www\.', '', parsed.netloc.lower())
+    query = [(k.lower(), v.lower()) for k, v in parse_qsl(parsed.query) if k.lower() in {'gh_jid', 'jobid', 'job', 'jid', 'reqid', 'requisitionid', 'vacancyid'}]
+    suffix = '?' + urlencode(sorted(query)) if query else ''
+    return host + parsed.path.lower().rstrip('/') + suffix
+
+
+def same_listing(first, second):
+    a, b = first.get('link', ''), second.get('link', '')
+    if a and b and normalize_url(a) == normalize_url(b): return True
+    a_id, b_id = extract_ats_post_id(a), extract_ats_post_id(b)
+    if a_id and b_id: return a_id == b_id
+    if normalize_company(first.get('company')) != normalize_company(second.get('company')): return False
+    years_a = set(re.findall(r'\b20\d{2}\b', first.get('title', '')))
+    years_b = set(re.findall(r'\b20\d{2}\b', second.get('title', '')))
+    if years_a and years_b and years_a != years_b: return False
+    if extract_program_type(first.get('title')) != extract_program_type(second.get('title')): return False
+    la, lb = str(first.get('location', '')).lower(), str(second.get('location', '')).lower()
+    if la and lb and la not in {'uk', 'unknown'} and lb not in {'uk', 'unknown'} and la != lb:
+        if not (la in lb or lb in la): return False
+    # Different specific employer posts are distinct. Cross-board equivalents
+    # may merge only on a close title and compatible programme/location.
+    aggregators = ('the-trackr', 'gradcracker', 'grb.uk.com', 'higherin.com', 'brightnetwork')
+    if a and b and not any(x in a or x in b for x in aggregators): return False
+    return fuzzy_roles_match(first.get('title'), second.get('title'), threshold=0.90)
 
 def extract_ats_post_id(url):
     """Extracts unique ATS job post IDs (e.g. Greenhouse job ID, Lever job UUID, Ashby UUID)."""
     if not url or not isinstance(url, str):
         return None
+    # Employer-hosted Greenhouse adverts expose their native ID in gh_jid.
+    for key, value in parse_qsl(urlsplit(url).query):
+        if key.lower() == 'gh_jid' and value.isdigit():
+            return f'gh_{value}'
     gh_match = re.search(r'greenhouse\.io/[^/]+/jobs/(\d+)', url, re.IGNORECASE)
     if gh_match:
         return f"gh_{gh_match.group(1)}"
@@ -209,15 +242,12 @@ def deduplicate_job_list(job_list):
             e_ats_id = extract_ats_post_id(e_link)
 
             is_match = False
-            if ats_id and e_ats_id and ats_id == e_ats_id:
-                is_match = True
-            elif norm_u and e_norm_u and norm_u == e_norm_u:
-                is_match = True
-            elif norm_c and e_norm_c == norm_c and (norm_t == e_norm_t or fuzzy_roles_match(title, e_title)):
-                is_match = True
+            is_match = same_listing(item, existing)
 
             if is_match:
                 matched = True
+                existing['metadata'] = {**item.get('metadata', {}), **existing.get('metadata', {})}
+                if not existing.get('deadline') and item.get('deadline'): existing['deadline'] = item['deadline']
                 if "sources" not in existing:
                     existing["sources"] = [existing.get("source", "Discovered API")]
                 src = item.get("source", "Discovered API")

@@ -5,7 +5,7 @@ import os
 import re
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import requests
 
@@ -26,14 +26,12 @@ TRACKR_API_URL = "https://api.the-trackr.com/programmes"
 TRACKR_SOURCE_URL = "https://app.the-trackr.com/uk-tech"
 
 # Current + immediately previous recruitment season.
-TRACKR_SEASONS = ["2027", "2026"]
+TRACKR_SEASONS = [str(datetime.now().year + 1), str(datetime.now().year)]
 
 TRACKR_TYPES = [
     "summer-internships",
-    "graduate-schemes",
     "off-cycle-internships",
     "placements",
-    "spring-insight",
 ]
 
 # Trackr changes much more slowly than our direct ATS sources.
@@ -185,7 +183,6 @@ def is_trackr_item_active_and_recent(item):
         return False
 
     now = datetime.now()
-    six_months_ago = now - timedelta(days=180)
 
     close_date_str = (
         item.get("closingDate")
@@ -198,7 +195,7 @@ def is_trackr_item_active_and_recent(item):
     if close_date_str:
         close_date = parse_trackr_date(close_date_str)
 
-        if close_date and close_date < now:
+        if close_date and close_date.date() < now.date():
             return False
 
     open_date_str = (
@@ -215,7 +212,12 @@ def is_trackr_item_active_and_recent(item):
     if open_date_str:
         open_date = parse_trackr_date(open_date_str)
 
-        if open_date and open_date < six_months_ago:
+        if open_date and open_date.date() > now.date():
+            return False
+
+    # A summer that has already finished isn't a current recruitment season.
+    if item.get("type") == "summer-internships" and str(item.get("season", "")).isdigit():
+        if int(item["season"]) < now.year or (int(item["season"]) == now.year and now.month >= 10):
             return False
 
     return True
@@ -290,6 +292,19 @@ def _extract_trackr_fields(item):
         location = "UK"
 
     return company, title, link, location
+
+
+def trackr_metadata(item):
+    return {
+        "source_region": item.get("region", ""),
+        "programme_type": item.get("type", ""),
+        "division": ", ".join(item.get("divisions") or []),
+        "eligibility": item.get("eligibility") or "",
+        "location_notes": item.get("notes") or "",
+        "closing_date": item.get("closingDate") or "",
+        "opening_date": item.get("openingDate") or "",
+        "season": item.get("season") or "",
+    }
 
 
 def _fetch_trackr_query(season, programme_type, log_func=None):
@@ -555,114 +570,47 @@ def _get_trackr_items(force_rescan=False, log_func=None):
 
     return [], False
 
-def scrape_trackr_website(
-    seen_jobs,
-    discovered_list,
-    force_rescan=False,
-    log_func=None,
-    scraper_status=None,
-):
-    """ApplicationTrackr entry point for The Trackr."""
 
-    if log_func:
-        log_func(
-            "  ├── 🟢 [The Trackr API] "
-            "Loading UK Tech schemes..."
-        )
-
-    source_name = "The Trackr API"
-    new_jobs = []
-    relevant_found = 0
-
-    items, refreshed = _get_trackr_items(
-        force_rescan=force_rescan,
-        log_func=log_func,
-    )
-
-    total_items_fetched = len(items)
-
+def scrape_trackr_website(seen_jobs, discovered_list, force_rescan=False, log_func=None, scraper_status=None):
+    from collections import Counter
+    from core.relevance import evaluate_job
+    from core.normalization import normalize_url
+    from scrapers_engine.quality import record_review
+    from config import update_scraper_status
+    items, refreshed = _get_trackr_items(force_rescan=force_rescan, log_func=log_func)
+    source_name = 'The Trackr API'
+    new_jobs, rejected = [], Counter()
+    candidates = []
     for item in items:
-        if not isinstance(item, dict):
+        if not isinstance(item, dict): continue
+        company, title, link, location = _extract_trackr_fields(item)
+        if not company or not title or not link: rejected['missing application link/details'] += 1; continue
+        if not is_trackr_item_active_and_recent(item): rejected['closed, future opening or past summer'] += 1; continue
+        metadata = trackr_metadata(item)
+        decision = evaluate_job(title, company, location, metadata)
+        if not decision.eligible:
+            rejected.update(decision.rejection_reasons)
+            record_review(company, title, link, source_name, '; '.join(decision.rejection_reasons), 'filtered')
             continue
-
-        try:
-            company, title, link, location = _extract_trackr_fields(item)
-
-            if not company or not title or not link:
-                continue
-
-            if not is_trackr_item_active_and_recent(item):
-                continue
-
-            if not is_relevant_role(title, location, company):
-                continue
-
-            # Keep discovering ATS companies from Trackr links.
-            try:
-                extract_and_register_ats_company(link)
-            except Exception as exc:
-                if log_func:
-                    log_func(
-                        f"  │   ⚠️ Trackr ATS discovery error for "
-                        f"{company}: {type(exc).__name__}: {exc}"
-                    )
-
-            stable_key = f"{company}|{title}|{link}".encode("utf-8")
-
-            job_id = (
-                "trackr_"
-                + hashlib.sha256(stable_key).hexdigest()[:20]
-            )
-
-            is_new = add_discovered_job(
-                discovered_list,
-                job_id,
-                company,
-                title,
-                location,
-                link,
-                source_name,
-                TRACKR_SOURCE_URL,
-            )
-
+        candidates.append((item, company, title, link, location, metadata))
+    def ingest(row):
+        item, company, title, link, location, metadata = row
+        extract_and_register_ats_company(link)
+        job_id = 'trackr_' + str(item.get('id') or hashlib.sha256(link.encode()).hexdigest()[:20])
+        added = add_discovered_job(discovered_list, job_id, company, title, location, link, source_name, TRACKR_SOURCE_URL, metadata=metadata)
+        if added:
             with _JOB_LOCK:
-                relevant_found += 1
-
-                if is_new and job_id not in seen_jobs:
-                    seen_jobs.add(job_id)
-
-                    new_jobs.append(
-                        (
-                            f"{company} - {title}",
-                            location or "UK",
-                            link,
-                        )
-                    )
-
-        except Exception as exc:
-            if log_func:
-                log_func(
-                    f"  │   ⚠️ Trackr programme parsing error: "
-                    f"{type(exc).__name__}: {exc}"
-                )
-
-    if total_items_fetched:
-        if refreshed:
-            status_str = f"🟢 Active • {relevant_found} active schemes indexed"
-        else:
-            status_str = f"🟡 Cached • {relevant_found} active schemes indexed"
-    else:
-        status_str = "🟠 API unavailable/empty • cooldown active"
-
-    update_source_status(source_name, status_str)
-
-    if log_func:
-        cache_label = "fresh API data" if refreshed else "cached/API data"
-
-        log_func(
-            f"  │   ↳ Trackr Summary: "
-            f"{total_items_fetched} programmes from {cache_label} "
-            f"({relevant_found} active recent schemes matching Maths & CS)"
-        )
-
+                if job_id not in seen_jobs:
+                    seen_jobs.add(job_id); new_jobs.append((company + ' - ' + title, location, link))
+        return added
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
+        list(pool.map(ingest, candidates))
+    with _JOB_LOCK:
+        verified = sum('The Trackr API' in j.get('sources', []) and j.get('verification', {}).get('state') == 'verified' for j in discovered_list)
+    report = {'fetched': len(items), 'relevant_candidates': len(candidates), 'verified': verified,
+              'rejected': dict(rejected), 'cached': not refreshed,
+              'cache_age_hours': round((time.time() - _TRACKR_LAST_REFRESH) / 3600, 1) if _TRACKR_LAST_REFRESH else None}
+    update_scraper_status('trackr_coverage', report)
+    update_source_status(source_name, f"{'🟢' if refreshed else '🟡'} {len(items)} fetched • {len(candidates)} relevant candidates • {verified} verified")
+    if log_func: log_func(f"Trackr: {len(items)} programmes, {len(candidates)} relevant candidates, {verified} verified listings")
     return new_jobs

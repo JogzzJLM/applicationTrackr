@@ -12,12 +12,12 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 TECH_ROLE_PHRASES = {
     "software": (
-        "software engineer", "software engineering", "software developer", "technology developer",
+        "software engineer", "software engineering", "software developer", "software dev", "technology developer",
         "backend engineer", "backend developer", "frontend engineer", "frontend developer",
         "full stack engineer", "fullstack engineer", "full-stack engineer", "platform engineer",
         "systems engineer", "systems developer", "site reliability engineer", "sre",
         "cloud engineer", "devops engineer", "infrastructure engineer", "data engineer",
-        "application engineer", "technology engineering", "technology intern",
+        "application engineer", "technology engineering", "technology intern", "technology internship", "it developer", "it intern",
     ),
     "ai_ml": (
         "machine learning engineer", "machine learning research", "ml engineer", "ai engineer",
@@ -26,8 +26,7 @@ TECH_ROLE_PHRASES = {
     ),
     "quant": (
         "quant developer", "quantitative developer", "quantitative engineer", "quant research",
-        "quantitative research", "quant trader", "quantitative trader", "algorithmic trader",
-        "algorithmic trading", "trading technology",
+        "quantitative research", "trading technology",
     ),
     "cyber": (
         "security engineer", "cyber security", "cybersecurity", "information security",
@@ -46,6 +45,8 @@ NON_TARGET_TITLE_PHRASES = (
     "civil engineer", "civil engineering", "chemical engineer", "chemical engineering",
     "manufacturing engineer", "manufacturing engineering", "electrical engineering intern",
     "electrical engineer intern", "hardware engineering intern", "hardware engineer intern",
+    "electro-optic", "electro optic", "optical engineer", "electronics engineer",
+    "quant trader", "quantitative trader", "trading intern", "register your interest",
 )
 
 SENIOR_TITLE_PHRASES = (
@@ -76,6 +77,9 @@ UK_LOCATION_PHRASES = (
     "united kingdom", "uk", "england", "scotland", "wales", "northern ireland",
     "london", "birmingham", "manchester", "cambridge", "oxford", "edinburgh",
     "bristol", "leeds", "glasgow", "reading", "aylesbury", "west midlands",
+    "bromley", "chester", "sheffield", "burgess hill", "frimley", "stevenage", "telford",
+    "belfast", "nottingham", "southampton", "guildford", "lancashire", "gloucester",
+    "cheltenham", "bath", "swindon", "slough", "york", "welwyn", "derby", "rochester", "filton",
 )
 
 TECHNICAL_EVIDENCE = (
@@ -132,6 +136,11 @@ def _first(text: str, phrases: Iterable[str]) -> str:
 
 
 def _program(title: str, metadata: Dict[str, Any]) -> Tuple[str, str]:
+    source_type = metadata.get("programme_type")
+    if source_type in {"summer-internships", "off-cycle-internships", "spring-insight"}:
+        return "internship", "source identifies an internship programme"
+    if source_type == "placements":
+        return "placement", "source identifies a placement programme"
     employment = _norm(metadata.get("employment_type") or metadata.get("commitment"))
     if contains_any(employment, ("intern", "internship")):
         return "internship", "ATS employment type says Intern"
@@ -156,6 +165,14 @@ def _category(title: str, metadata: Dict[str, Any]) -> Tuple[str, int, str]:
                     best = (category, points, f"technical title: {phrase}")
     if best[0] != "unknown":
         return best
+
+    # A source's broad category tags often cover unrelated streams. Only the
+    # programme's own division can corroborate a generic technical title.
+    division = _norm(metadata.get("division"))
+    if contains_any(title_n, ("engineering", "technology", "tech", "cyber", "it", "data", "quantitative")):
+        for category, phrases in TECH_ROLE_PHRASES.items():
+            if contains_any(division, phrases) or (category == "cyber" and contains_phrase(division, "cyber security")):
+                return category, 36, "technical programme division: " + division
 
     tech_hits = [p for p in TECHNICAL_EVIDENCE if contains_phrase(supporting, p)]
     technical_department = contains_any(
@@ -202,16 +219,15 @@ def _year_rejection(description: str, settings: Dict[str, Any]) -> Optional[str]
     desc = _norm(description)
     if not allowed or not desc:
         return None
-    for year in re.findall(r"\b20\d{2}\b", desc):
-        if year in allowed:
+    for sentence in re.split(r"[\n.;]", desc):
+        if not re.search(r"class of|graduat(?:e|ing|ion)|completion time frame", sentence):
             continue
-        patterns = (
-            rf"class\s+of\s+{year}",
-            rf"graduat(?:e|ing|ion)[^\.\n]{{0,30}}{year}",
-            rf"expected[^\.\n]{{0,30}}{year}",
-        )
-        if any(re.search(p, desc, re.I) for p in patterns):
-            return f"graduation requirement appears to target {year}"
+        years = set(re.findall(r"\b20\d{2}\b", sentence))
+        interval = re.search(r'(20\d{2})\s*(?:and|to|through|[-–])\s*(?:[a-z]+\s+)?(20\d{2})', sentence)
+        if interval and any(int(interval[1]) <= int(y) <= int(interval[2]) for y in allowed):
+            continue
+        if years and not years.intersection(allowed):
+            return "graduation requirement targets " + ", ".join(sorted(years))
     return None
 
 
@@ -245,6 +261,8 @@ def evaluate_job(
         rejection.append(f"advanced-degree role: {degree}")
     if description and re.search(r"(?:require|required|must|minimum)[^\.\n]{0,45}\b(?:ph\.?d|doctorate|doctoral)\b", description, re.I):
         rejection.append("PhD/doctorate appears to be required")
+    if re.search(r'(?:minimum|require|required|must)[^.\n]{0,160}(?:post[- ]graduate degree|master.s degree|master.s or phd)', description):
+        rejection.append("postgraduate qualification appears to be required")
 
     for custom in settings.get("exclude_keywords", []):
         if custom and contains_phrase(title_n, custom):
@@ -275,11 +293,11 @@ def evaluate_job(
     else:
         reasons.append(location_reason)
 
-    year_problem = _year_rejection(description, settings)
+    year_problem = _year_rejection(description + " " + _norm(metadata.get("eligibility")), settings)
     if year_problem:
         rejection.append(year_problem)
 
-    location_text = " ".join((_norm(location), _norm(metadata.get("country"))))
+    location_text = " ".join((_norm(location), _norm(metadata.get("country")), _norm(metadata.get("location_notes")), title_n))
     for excluded in settings.get("exclude_locations", []):
         if excluded and contains_phrase(location_text, excluded):
             rejection.append(f"excluded location: {excluded}")
@@ -306,9 +324,7 @@ def evaluate_job(
         reasons.append("graduation year aligns")
 
     score = max(0, min(int(round(score)), 100))
-    minimum = int(settings.get("relevance_min_score", 65))
-    if score < minimum:
-        return RelevanceDecision(False, score, "filtered", category, program_type, reasons, [f"fit score {score} below threshold {minimum}"], matched_skills)
-
+    # Scores rank evidence/skill overlap. Missing optional metadata must never
+    # exclude a role that already passed every eligibility gate.
     tier = "strong" if score >= 85 else ("good" if score >= 75 else "borderline")
     return RelevanceDecision(True, score, tier, category, program_type, reasons, [], matched_skills)

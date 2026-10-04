@@ -46,10 +46,11 @@ PENDING_EMAILS_FILE = _state_file("pending_email_updates.json")
 # persisted schema v5 while still carrying permissive pre-v5 values. It also adds
 # city/country exclusions seen in the noisy ATS feeds so mixed-location postings
 # such as "London / New York" cannot slip through just because London is present.
-SETTINGS_SCHEMA_VERSION = 6
+SETTINGS_SCHEMA_VERSION = 7
+DIRECT_BOARD_ADDITIONS = ['databricks', 'figma', 'stripe', 'andurilindustries', 'epicgames']
 DEFAULT_SETTINGS = {
     "settings_schema_version": SETTINGS_SCHEMA_VERSION,
-    "grad_years_allowed": ["2027", "2028", "2029"],
+    "grad_years_allowed": ["2028"],
     "target_programmes": ["internship", "placement"],
     "target_role_categories": ["software", "ai_ml", "quant", "cyber"],
     "strict_location_filter": True,
@@ -66,7 +67,7 @@ DEFAULT_SETTINGS = {
     ],
     "exclude_locations": [
         "united states", "usa", "canada", "australia", "singapore", "hong kong",
-        "japan", "france", "poland", "germany", "netherlands", "switzerland", "denmark",
+        "ireland", "dublin", "japan", "france", "poland", "germany", "netherlands", "switzerland", "denmark",
         "chicago", "new york", "san francisco", "seattle", "amsterdam", "paris", "zug", "aarhus",
     ],
     "my_skills": ["python", "java", "javascript", "sql", "git", "linux", "docker", "data structures", "algorithms"],
@@ -75,7 +76,7 @@ DEFAULT_SETTINGS = {
     "location_keywords": ["london", "birmingham", "oxford", "aylesbury", "west midlands", "uk", "united kingdom", "england", "scotland", "wales", "cambridge", "manchester", "edinburgh", "bristol", "leeds", "glasgow", "reading", "uk remote", "remote uk"],
     "special_intl_companies": ["beamng", "janestreet", "optiver", "citadel", "hudsonrivertrading", "hrt", "twosigma", "imc", "flowtraders", "wayve", "samsara", "quadrature", "millennium"],
     "auto_hide_applied_company_jobs": False,
-    "greenhouse_companies": ["deliveroo", "cloudflare", "snyk", "monzo", "starlingbank", "janestreet", "optiver", "canonical", "citadel", "hudsonrivertrading", "palantir", "millennium", "quadrature", "samsara", "imc", "bloomberg", "two-sigma", "jump-trading", "barclays"],
+    "greenhouse_companies": ["deliveroo", "cloudflare", "snyk", "monzo", "starlingbank", "janestreet", "optiver", "canonical", "citadel", "hudsonrivertrading", "palantir", "millennium", "quadrature", "samsara", "imc", "bloomberg", "two-sigma", "jump-trading", "barclays", *DIRECT_BOARD_ADDITIONS],
     "lever_companies": ["spotify", "revolut", "checkout", "beamng", "wayve", "palantir", "five-ai"],
     "ashby_companies": ["mistral", "synthesia", "multiverse", "ramp", "huggingface", "cohere", "notion", "scaleai"],
     "smartrecruiters_companies": ["squarepointcapital", "visa", "ubisoft", "zalando", "bosch"],
@@ -211,6 +212,11 @@ def _merge_settings(loaded):
             merged["relevance_min_score"] = max(72, int(merged.get("relevance_min_score", 72)))
         except (TypeError, ValueError):
             merged["relevance_min_score"] = 72
+
+    if saved_schema < 7 and loaded.get("grad_years_allowed") in (None, ["2027", "2028", "2029"]):
+        merged["grad_years_allowed"] = ["2028"]
+    if saved_schema < 7:
+        merged['greenhouse_companies'] = list(dict.fromkeys(list(merged.get('greenhouse_companies', [])) + DIRECT_BOARD_ADDITIONS))
 
     return merged
 

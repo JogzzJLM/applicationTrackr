@@ -18,6 +18,7 @@ from sheets import (
 )
 from scrapers_engine.audit import load_discovered_jobs
 from web.components import render_application_card, render_job_card
+from scrapers_engine.quality import REVIEW_FILE
 
 def render_unified_dashboard_html(active_tab="flow"):
     csv_text = fetch_google_sheet_csv()
@@ -43,6 +44,12 @@ def render_unified_dashboard_html(active_tab="flow"):
     applied_jobs, applied_companies = get_applied_jobs_set(csv_text=csv_text)
     settings = load_settings()
     hidden_jobs = load_hidden_jobs()
+    verified_count = sum(j.get('verification', {}).get('state') == 'verified' for j in all_jobs)
+    review_count = sum(v.get('state') in {'unknown', 'needs_check'} for v in load_json_safe(REVIEW_FILE, {}).values())
+    from config import NTFY_BASE_URL, NTFY_TOPIC
+    ntfy_topic_url = escape(f'{NTFY_BASE_URL}/{NTFY_TOPIC}', quote=True) if NTFY_TOPIC else ''
+    receipt = SCRAPER_STATUS.get('ntfy', {})
+    ntfy_status = escape(('Last accepted by ntfy: ' + receipt.get('last_sent', 'No receipt yet')) if receipt.get('ok') else receipt.get('error', 'No receipt yet'))
 
     from web.pending_view import render_pending_updates
     pending_updates_banner_html = render_pending_updates(load_pending_email_updates())
@@ -163,7 +170,7 @@ def render_unified_dashboard_html(active_tab="flow"):
             closed_jobs_list.append(c_job_copy)
 
     open_count = len([j for j in visible_jobs if j.get('id') not in closed_ids and j.get('link') not in closed_links])
-    discovered_count = open_count
+    discovered_count = sum(j.get("verification", {}).get("state") == "verified" for j in visible_jobs if j.get("id") not in closed_ids and j.get("link") not in closed_links)
 
     cards_html = ""
     closed_cards_html = ""
@@ -968,6 +975,7 @@ def render_unified_dashboard_html(active_tab="flow"):
 
     <!-- Panel: Discovered Schemes -->
     <div id="view-jobs" class="panel" style="{view_jobs}">
+        <p style="color:var(--text-tertiary);">{verified_count} verified listings · {review_count} candidates awaiting checks. New roles must pass location, programme and live-page checks. <a href="/discovery-report" target="_blank" rel="noopener">Coverage report ↗</a></p>
         <div class="toolbar">
             <div class="search-wrap">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" /></svg>
@@ -996,8 +1004,8 @@ def render_unified_dashboard_html(active_tab="flow"):
 
             <div class="filter-group-label" style="margin-top:6px;">Domain Focus & Status</div>
             <div class="filter-chips">
-                <button class="chip active" data-dom-chip="all" onclick="filterDomain('all', this)">All Focuses ({discovered_count})</button>
-                <button class="chip" data-dom-chip="not_applied" onclick="filterDomain('not_applied', this)">Not Applied ({not_applied_count})</button>
+                <button class="chip" data-dom-chip="all" onclick="filterDomain('all', this)">All Focuses ({discovered_count})</button>
+                <button class="chip active" data-dom-chip="not_applied" onclick="filterDomain('not_applied', this)">Not Applied ({not_applied_count})</button>
                 <button class="chip" data-dom-chip="applied" onclick="filterDomain('applied', this)">Applied ({applied_count})</button>
                 <button class="chip" data-dom-chip="quant" onclick="filterDomain('quant', this)">Quant ({quant_count})</button>
                 <button class="chip" data-dom-chip="software" onclick="filterDomain('software', this)">Software ({sw_count})</button>
@@ -1057,7 +1065,7 @@ def render_unified_dashboard_html(active_tab="flow"):
 
     <!-- Panel: Diagnostics -->
     <div id="view-diagnostics" class="panel" style="{view_status}">
-        <div class="section-card"><div class="section-title">Notification delivery</div><p>{ntfy_status}</p><button class="btn btn-tinted" onclick="testNotification()">Send test notification</button></div>
+        <div class="section-card"><div class="section-title">Notification delivery</div><p>{ntfy_status}</p><p>New verified jobs are sent after discovery. Job and deadline summaries arrive at 08:00 and 18:00 UK time. Failed sends are queued for retry.</p><a href="{ntfy_topic_url}" target="_blank" rel="noopener" class="btn btn-ghost">Open ntfy topic ↗</a><button class="btn btn-tinted" onclick="testNotification()">Send test notification</button></div>
         <div class="section-card">
             <div class="section-title">
                 <span><span class="status-pill"><span class="dot"></span> Live Log Stream</span> (docker logs -f applicationtrackr)</span>
@@ -1433,7 +1441,7 @@ def render_unified_dashboard_html(active_tab="flow"):
     }}
 
     var currentProgramPill = 'all';
-    var currentDomainPill = 'all';
+    var currentDomainPill = 'not_applied';
 
     function filterProgram(prog, btn) {{
         currentProgramPill = prog;

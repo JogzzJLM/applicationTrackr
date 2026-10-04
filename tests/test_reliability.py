@@ -18,6 +18,7 @@ class ReliabilityTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         for module, name, filename in ((jobs, 'JOBS_FILE', 'jobs.json'), (jobs, 'MANUAL_JOBS_FILE', 'manual.json'),
+                                      (notifications, 'OUTBOX_FILE', 'outbox.json'),
                                       (storage, 'PENDING_EMAILS_FILE', 'pending.json'), (listener, 'SEEN_EMAILS_FILE', 'seen.json')):
             patcher = patch.object(module, name, str(Path(self.temp.name) / filename))
             patcher.start()
@@ -89,7 +90,8 @@ class ReliabilityTests(unittest.TestCase):
         with patch.object(notifications, 'NTFY_TOPIC', 'test-topic'), patch.object(notifications, 'update_scraper_status') as status, \
              patch.object(notifications.requests, 'post', return_value=Mock(status_code=403)):
             self.assertFalse(notifications.send_notification('Test', 'body'))
-            self.assertIn('403', status.call_args.args[1]['error'])
+            ntfy_updates = [call.args[1] for call in status.call_args_list if call.args[0] == 'ntfy']
+            self.assertIn('403', ntfy_updates[-1]['error'])
 
     def test_ntfy_requires_message_receipt(self):
         with patch.object(notifications, 'NTFY_TOPIC', 'test-topic'), patch.object(notifications, 'update_scraper_status'), \

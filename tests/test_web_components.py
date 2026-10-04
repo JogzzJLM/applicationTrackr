@@ -32,7 +32,7 @@ def test_job_view_model_normalizes_and_renders_one_job_object():
     markup = model.render()
     assert 'class="card job-card"' in markup
     assert "Software Engineering Intern" in markup
-    assert "88% STRONG FIT" in markup
+    assert "STRONG FIT · 88/100" in markup
     assert "Open &amp; fill" in markup
     assert "openFilledApplication" in markup
 

@@ -1,5 +1,7 @@
 import concurrent.futures
 import time
+import threading
+from datetime import datetime, timezone, date
 
 import requests
 
@@ -11,11 +13,15 @@ from core.storage import (
     load_json_safe, load_reported_closed_jobs, load_settings, mark_url_as_closed,
     save_reported_closed_jobs,
 )
-from notifications import send_notification
+from notifications import send_notification, notify_discoveries
 from scrapers_engine.ats_scrapers import _JOB_LOCK, scrape_ashby_jobs, scrape_greenhouse_jobs, scrape_lever_jobs, scrape_smartrecruiters_jobs
 from scrapers_engine.gradcracker_scraper import scrape_gradcracker_website
 from scrapers_engine.trackr_scraper import scrape_trackr_website
-from scrapers_engine.verifier import verify_live_page_applyable
+from scrapers_engine.verifier import verify_live_page_applyable, verify_listing, deadline_date
+from scrapers_engine.uk_boards import scrape_uk_boards
+from scrapers_engine.quality import record_review
+
+_RUN_LOCK = threading.Lock()
 
 
 def load_seen_jobs():
@@ -68,44 +74,42 @@ def purge_irrelevant_jobs():
 
 
 def purge_expired_jobs():
-    print("""
-┌────────────────────────────────────────────────────────────────────────┐
-│ 🧹 JOB LINK HEALTH CHECK & DEAD LISTING PURGE                         │
-└────────────────────────────────────────────────────────────────────────┘""")
     discovered = load_discovered_jobs()
-    closed_urls = load_closed_urls_cache()
-    initial_count = len(discovered)
-    valid_jobs = []
-
     def check_job(job):
-        if job.get("source") == "Manual":
-            return job
-        link = job.get("link", "")
-        if not link or not link.startswith("http"):
+        if job.get('source') == 'Manual': return job
+        link = job.get('link', '')
+        closing = deadline_date(job.get('deadline') or job.get('metadata', {}).get('closing_date'))
+        if closing and closing < date.today():
+            record_review(job.get('company'), job.get('title'), link, job.get('source'), 'Application deadline passed', 'closed')
             return None
-        if link in closed_urls:
-            add_scraper_log(f"  ├── 🛑 Known Closed URL: {job.get('company')} - {job.get('title')}")
+        verification = job.get('verification', {})
+        try: age = (datetime.now(timezone.utc) - datetime.fromisoformat(verification.get('checked_at', ''))).total_seconds()
+        except (ValueError, TypeError): age = float('inf')
+        if verification.get('state') == 'verified' and age < 6 * 3600: return job
+        result = verify_listing(link, job.get('title', ''))
+        if result['state'] != 'verified':
+            record_review(job.get('company'), job.get('title'), link, job.get('source'), result['reason'], result['state'])
             return None
-        try:
-            headers = {"User-Agent": "Mozilla/5.0"}
-            resp = requests.head(link, timeout=4, allow_redirects=True, headers=headers)
-            if resp.status_code in (403, 405) or resp.status_code >= 500:
-                resp = requests.get(link, timeout=6, allow_redirects=True, headers=headers, stream=True)
-            if resp.status_code in (404, 410):
-                mark_url_as_closed(link)
-                add_scraper_log(f"  ├── 🛑 Dead link ({resp.status_code}): {job.get('company')} - {job.get('title')}")
-                return None
-        except Exception:
-            pass
+        metadata = dict(job.get('metadata') or {})
+        for key in ('description', 'country', 'closing_date', 'employment_type'):
+            if result.get(key): metadata[key] = result[key]
+        if metadata.get('closing_date') and not deadline_date(metadata['closing_date']):
+            metadata.pop('closing_date', None)
+            job.pop('deadline', None)
+        title, location = result.get('title') or job.get('title', ''), result.get('location') or job.get('location', '')
+        decision = evaluate_job(title, job.get('company', ''), location, metadata)
+        if not decision.eligible:
+            record_review(job.get('company'), title, link, job.get('source'), '; '.join(decision.rejection_reasons), 'filtered')
+            return None
+        job.update(title=title, location=location, metadata=metadata, verification={k: result[k] for k in ('state', 'reason', 'checked_at')},
+                   match_score=decision.score, match_tier=decision.tier, match_reasons=decision.reasons[:5])
+        if deadline_date(metadata.get('closing_date')): job['deadline'] = deadline_date(metadata['closing_date']).isoformat()
         return job
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
-        for result in pool.map(check_job, discovered):
-            if result:
-                valid_jobs.append(result)
-    removed = initial_count - len(valid_jobs)
-    save_discovered_jobs(valid_jobs)
-    add_scraper_log(f"  └── 🧹 Purge Complete: Checked {initial_count} schemes, removed {removed} dead/closed listings.")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
+        kept = [job for job in pool.map(check_job, discovered) if job]
+    save_discovered_jobs(kept)
+    removed = len(discovered) - len(kept)
+    add_scraper_log(f'Quality check: {len(kept)} retained; {removed} closed or unverified candidates moved out of the apply feed.')
     return removed
 
 
@@ -141,39 +145,42 @@ def recheck_existing_open_jobs_for_closure():
 
 
 def run_all_scrapers():
-    start = time.time()
-    print("""
-┌────────────────────────────────────────────────────────────────────────┐
-│ 🔍 UK SCHEME PARALLEL MULTI-THREADED SCRAPER ENGINE                    │
-└────────────────────────────────────────────────────────────────────────┘""")
-    seen_jobs = load_seen_jobs()
-    discovered = load_discovered_jobs()
-    new_jobs = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
-        futures = [
-            pool.submit(scrape_greenhouse_jobs, seen_jobs, discovered, SCRAPER_STATUS),
-            pool.submit(scrape_lever_jobs, seen_jobs, discovered, SCRAPER_STATUS),
-            pool.submit(scrape_ashby_jobs, seen_jobs, discovered, SCRAPER_STATUS),
-            pool.submit(scrape_smartrecruiters_jobs, seen_jobs, discovered, SCRAPER_STATUS),
-            pool.submit(scrape_trackr_website, seen_jobs, discovered, False, add_scraper_log, SCRAPER_STATUS),
-            pool.submit(scrape_gradcracker_website, seen_jobs, discovered, False, add_scraper_log, SCRAPER_STATUS),
-        ]
-        for future in futures:
-            new_jobs.extend(future.result())
+    if not _RUN_LOCK.acquire(blocking=False):
+        add_scraper_log('Discovery scan already running; avoiding an overlapping rescan.')
+        return
+    try:
+        _run_scrapers()
+    finally:
+        _RUN_LOCK.release()
 
-    save_seen_jobs(seen_jobs)
+
+def _run_scrapers():
+    start = time.time()
+    seen_jobs, discovered, new_jobs = load_seen_jobs(), load_discovered_jobs(), []
+    sources = {
+        'Greenhouse API': scrape_greenhouse_jobs, 'Lever API': scrape_lever_jobs,
+        'Ashby API': scrape_ashby_jobs, 'SmartRecruiters API': scrape_smartrecruiters_jobs,
+        'The Trackr API': scrape_trackr_website, 'Gradcracker API': scrape_gradcracker_website,
+        'UK student boards': scrape_uk_boards,
+    }
+    failures = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=7) as pool:
+        futures = {pool.submit(fn, seen_jobs, discovered, scraper_status=SCRAPER_STATUS): name for name, fn in sources.items()}
+        for future in concurrent.futures.as_completed(futures):
+            try: new_jobs.extend(future.result())
+            except Exception as exc:
+                name = futures[future]; failures[name] = type(exc).__name__
+                from config import update_source_status
+                update_source_status(name, f'🟠 Source failed ({type(exc).__name__}); other sources continue')
     save_discovered_jobs(discovered)
     irrelevant_removed = purge_irrelevant_jobs()
-    purge_expired_jobs()
+    quality_removed = purge_expired_jobs()
     final_jobs = load_discovered_jobs()
-
-    SCRAPER_STATUS["last_run"] = time.strftime("%Y-%m-%d %H:%M:%S")
-    SCRAPER_STATUS["total_seen_jobs"] = len(seen_jobs)
-    SCRAPER_STATUS["total_discovered_jobs"] = len(final_jobs)
-    SCRAPER_STATUS["last_new_jobs_found"] = len(new_jobs)
-    SCRAPER_STATUS["last_irrelevant_pruned"] = irrelevant_removed
+    save_seen_jobs(seen_jobs)
+    SCRAPER_STATUS.update(last_run=time.strftime('%Y-%m-%d %H:%M:%S'), total_seen_jobs=len(seen_jobs),
+        total_discovered_jobs=len(final_jobs), last_new_jobs_found=len(new_jobs),
+        last_irrelevant_pruned=irrelevant_removed, last_quality_pruned=quality_removed, source_failures=failures,
+        cycle_seconds=round(time.time() - start, 1))
     save_scraper_status(SCRAPER_STATUS)
-    add_scraper_log(f"  └── 📊 Scraper run complete in {round(time.time()-start,2)}s: {len(final_jobs)} eligible active schemes indexed.")
-
-    if new_jobs:
-        send_notification(title=f"🚀 {len(new_jobs)} New Relevant UK Schemes Discovered!", message="\n".join(f"• {j[0]} ({j[1]})" for j in new_jobs[:5]), link=f"{APP_BASE_URL}/discovered", tags="bell,rocket", priority=4, sound="fanfare")
+    notified = notify_discoveries(final_jobs)
+    add_scraper_log(f'Discovery complete: {len(final_jobs)} listings, {notified} newly alerted; {len(failures)} source failures; {round(time.time()-start, 1)}s.')

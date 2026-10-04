@@ -99,7 +99,8 @@ class JobCardViewModel:
             self.raw.get("deadline")
             or self.raw.get("closeDate")
             or self.raw.get("closing_date")
-            or "Rolling / ASAP"
+            or self.metadata.get('closing_date')
+            or "Deadline not published"
         )
 
     @property
@@ -202,6 +203,16 @@ class JobCardViewModel:
             f'rel="noopener" class="link-muted">{html.escape(self.display_url)}</a>'
             f' · <span>{html.escape(self.source_text)}</span></div>'
         )
+        verification = self.raw.get('verification') or {}
+        checked = _text(verification.get('checked_at'))[:16].replace('T', ' ')
+        if checked:
+            source_html += f'<div class="card-source">Verified {html.escape(checked)} UTC · {html.escape(_text(verification.get("reason")))}</div>'
+        context = _text(self.metadata.get('description'))
+        eligibility = _text(self.metadata.get('eligibility'))
+        notes = _text(self.metadata.get('location_notes'))
+        if context or eligibility or notes:
+            source_html += '<details class="card-reasons"><summary>Listing &amp; eligibility</summary>'
+            source_html += '<p>' + html.escape(' '.join([eligibility, notes, context])) + '</p></details>'
 
         return f'''<article class="card job-card"
 data-search="{html.escape((self.company + " " + self.title + " " + self.location + " " + self.status_tag + " " + self.category + " " + self.program + " " + self.source_text).lower(), quote=True)}"
@@ -215,7 +226,7 @@ data-company="{html.escape(self.company.lower(), quote=True)}"
 data-title="{html.escape(self.title.lower(), quote=True)}">
     <div class="card-top">
         <div class="card-status">{status_dot}<span>{status_label}</span>{self.program_badge}</div>
-        <div class="card-match">{self.score}% {html.escape(self.tier_label)}</div>
+        <div class="card-match">{html.escape(self.tier_label)} · {self.score}/100</div>
     </div>
     <div class="card-company">{html.escape(self.company)}</div>
     <div class="card-role">{html.escape(self.title)}</div>

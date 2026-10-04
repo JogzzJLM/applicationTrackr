@@ -138,6 +138,7 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             from config import NTFY_TOPIC, GOOGLE_SHEET_CSV_URL, GOOGLE_SHEET_WEBHOOK_URL, SCRAPER_STATUS
             return self._json({"status": "ok", "integrations": {
                 "ntfy_configured": bool(NTFY_TOPIC), "ntfy": SCRAPER_STATUS.get("ntfy", {}),
+                "notification_queue": SCRAPER_STATUS.get("notification_queue", {}),
                 "sheet_read_configured": bool(GOOGLE_SHEET_CSV_URL),
                 "sheet_write_configured": bool(GOOGLE_SHEET_WEBHOOK_URL)}})
         if path == "/api/jobs":
@@ -147,6 +148,19 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
         if path == "/api/status":
             from config import SCRAPER_STATUS
             return self._json(SCRAPER_STATUS)
+        if path == "/api/discovery-report":
+            from scrapers_engine.quality import REVIEW_FILE
+            from core.storage import load_json_safe
+            from config import SCRAPER_STATUS
+            return self._json({"coverage": SCRAPER_STATUS.get('trackr_coverage', {}),
+                               "additional_sources": SCRAPER_STATUS.get('uk_board_coverage', {}),
+                               "needs_check": list(load_json_safe(REVIEW_FILE, {}).values()),
+                               "notifications": SCRAPER_STATUS.get('notification_queue', {}),
+                               "verified_listings": [{k: j.get(k) for k in ('company', 'title', 'link', 'location', 'deadline', 'sources', 'verification')}
+                                                     for j in load_discovered_jobs() if j.get('verification', {}).get('state') == 'verified']})
+        if path == "/discovery-report":
+            from web.discovery_view import render_discovery_report
+            return self._html(render_discovery_report())
         if path == "/api/kb-status":
             phrases = load_closed_keywords_kb()
             return self._json({"count": len(phrases), "phrases": phrases})
