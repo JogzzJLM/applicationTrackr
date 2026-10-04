@@ -7,7 +7,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from core.normalization import extract_ats_post_id, fuzzy_roles_match, normalize_company, normalize_role, normalize_url, same_listing
-from core.relevance import evaluate_job
+from core.relevance import evaluate_job, detect_programme_type
 from core.storage import load_closed_urls_cache, load_reported_closed_jobs, load_settings, mark_url_as_closed, save_settings
 from scrapers_engine.verifier import verify_listing, deadline_date
 from scrapers_engine.quality import record_review, clear_review
@@ -181,7 +181,9 @@ def _record_job(discovered_list, seen_jobs, local_new, relevant_counter, *, job_
 
 
 def scrape_greenhouse_jobs(seen_jobs, discovered_list, scraper_status=None):
-    companies = list(set(c.split("?")[0].split("#")[0].strip() for c in load_settings().get("greenhouse_companies", []) if c.strip()))
+    settings = load_settings()
+    companies = list(set(c.split("?")[0].split("#")[0].strip() for c in settings.get("greenhouse_companies", []) if c.strip()))
+    target_programmes = set(settings.get('target_programmes', ['internship', 'placement']))
     print(f"  ├── 🟢 [Greenhouse API] Scanning {len(companies)} target companies concurrently...")
     online = relevant = 0
     failures = {}
@@ -202,6 +204,10 @@ def scrape_greenhouse_jobs(seen_jobs, discovered_list, scraper_status=None):
             local_relevant = 0
             for job in jobs:
                 title = job.get("title", "")
+                # Programme detection never depends on the description. Avoid
+                # parsing thousands of full-time adverts that cannot qualify.
+                if detect_programme_type(title) not in target_programmes:
+                    continue
                 location = (job.get("location") or {}).get("name", "")
                 metadata = {
                     "listing_status": "published",

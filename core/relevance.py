@@ -153,6 +153,10 @@ def _program(title: str, metadata: Dict[str, Any]) -> Tuple[str, str]:
     return "unknown", "no early-career programme marker"
 
 
+def detect_programme_type(title, metadata=None):
+    return _program(_norm(title), dict(metadata or {}))[0]
+
+
 def _category(title: str, metadata: Dict[str, Any]) -> Tuple[str, int, str]:
     title_n = _norm(title)
     supporting = " ".join(_norm(metadata.get(k)) for k in ("department", "team", "description") if metadata.get(k))
