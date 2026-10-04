@@ -47,6 +47,7 @@ GOOGLE_SHEET_CSV_URL = os.getenv("GOOGLE_SHEET_CSV_URL", "")
 HEALTHCHECKS_PING_URL = os.getenv("HEALTHCHECKS_PING_URL", "")
 
 SCRAPER_STATUS = load_scraper_status()
+DISCOVERY_SCAN_READY = threading.Event()
 
 _LOG_LOCK = threading.Lock()
 SCRAPER_LOGS = []

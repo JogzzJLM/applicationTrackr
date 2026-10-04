@@ -182,5 +182,7 @@ def _run_scrapers():
         last_irrelevant_pruned=irrelevant_removed, last_quality_pruned=quality_removed, source_failures=failures,
         cycle_seconds=round(time.time() - start, 1))
     save_scraper_status(SCRAPER_STATUS)
+    from config import DISCOVERY_SCAN_READY
+    DISCOVERY_SCAN_READY.set()
     notified = notify_discoveries(final_jobs)
     add_scraper_log(f'Discovery complete: {len(final_jobs)} listings, {notified} newly alerted; {len(failures)} source failures; {round(time.time()-start, 1)}s.')

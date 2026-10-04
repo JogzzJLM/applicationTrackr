@@ -2,7 +2,7 @@
 import time
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-from config import APP_BASE_URL, APP_TIMEZONE, SCRAPER_STATUS
+from config import APP_BASE_URL, APP_TIMEZONE, SCRAPER_STATUS, DISCOVERY_SCAN_READY
 from notifications import send_notification, job_alert_line, flush_notification_outbox
 from core.storage import DATA_DIR, load_json_safe, atomic_write_json
 from scrapers_engine.verifier import deadline_date
@@ -34,7 +34,7 @@ def trigger_daily_briefing(period='morning', now=None):
     lines = [f'{len(jobs)} verified, unapplied jobs | {len(recent)} found in the last 24h | {len(soon)} close within 7 days.']
     lines.extend(job_alert_line(j) for j in list(unique.values())[:5])
     sources = SCRAPER_STATUS.get('source_status', {})
-    issues = [name for name, state in sources.items() if any(word in state.lower() for word in ('unavailable', 'blocked', 'error', '0/'))]
+    issues = [name for name, state in sources.items() if state.startswith('🟠') or any(word in state.lower() for word in ('unavailable', 'blocked', 'error', 'failed'))]
     if issues: lines.append('Sources needing attention: ' + ', '.join(issues))
     lines.append('Last discovery scan: ' + str(SCRAPER_STATUS.get('last_run', 'Not yet completed')))
     return send_notification('Morning jobs briefing' if period == 'morning' else 'Evening jobs & deadlines', '\n\n'.join(lines),
@@ -57,7 +57,7 @@ def scheduled_tick(now=None):
     # Catch up the most recent slot if a restart missed the exact minute.
     period = 'evening' if now.hour >= 18 else ('morning' if now.hour >= 8 else None)
     key = f'{now.date()}:{period}'
-    if period and key not in state and SCRAPER_STATUS.get('last_run') != 'Never':
+    if period and key not in state and DISCOVERY_SCAN_READY.is_set():
         trigger_daily_briefing(period, now)
         # Delivery is now owned by the persistent outbox, including failures.
         state[key] = True

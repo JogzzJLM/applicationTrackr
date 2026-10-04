@@ -124,7 +124,18 @@ def test_scheduler_catches_up_missed_minute_without_repeating(tmp_path, monkeypa
     monkeypatch.setattr(scheduler,'SCHEDULE_FILE',str(tmp_path/'schedule.json'))
     monkeypatch.setattr(scheduler,'flush_notification_outbox',Mock())
     monkeypatch.setattr(scheduler,'SCRAPER_STATUS',{'last_run':'2026-10-04 07:00:00'})
+    monkeypatch.setattr(scheduler,'DISCOVERY_SCAN_READY',Mock(is_set=Mock(return_value=True)))
     briefing=Mock();monkeypatch.setattr(scheduler,'trigger_daily_briefing',briefing)
     now=datetime(2026,10,5,8,37,tzinfo=timezone.utc)
     scheduler.scheduled_tick(now);scheduler.scheduled_tick(now)
     assert briefing.call_count==1 and briefing.call_args.args[0]=='morning'
+
+
+def test_scheduler_waits_for_first_completed_scan(tmp_path, monkeypatch):
+    monkeypatch.setattr(scheduler,'SCHEDULE_FILE',str(tmp_path/'schedule.json'))
+    monkeypatch.setattr(scheduler,'flush_notification_outbox',Mock())
+    monkeypatch.setattr(scheduler,'DISCOVERY_SCAN_READY',Mock(is_set=Mock(return_value=False)))
+    briefing=Mock();monkeypatch.setattr(scheduler,'trigger_daily_briefing',briefing)
+    scheduler.scheduled_tick(datetime(2026,10,5,8,37,tzinfo=timezone.utc))
+    briefing.assert_not_called()
+    assert not json.loads((tmp_path/'schedule.json').read_text())
