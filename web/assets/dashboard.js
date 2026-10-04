@@ -30,11 +30,6 @@ function resetJobFilters() {
     filterProgram('all', document.querySelector('[data-prog-chip="all"]'));
     filterDomain('all', document.querySelector('[data-dom-chip="all"]'));
 }
-function toggleJobDensity() {
-    const compact = document.getElementById('jobs-container').classList.toggle('compact');
-    document.getElementById('density-toggle').setAttribute('aria-pressed', String(compact));
-    try { localStorage.setItem('applicationtrackr.compact', String(compact)); } catch (_) {}
-}
 function showNotice(message) {
     let toast = document.getElementById('app-notice');
     if (!toast) {
@@ -147,10 +142,6 @@ async function openApplicationDetails(jobId, url) {
     } catch (error) { if (requestId === assistRequest) fields.textContent = error.message; }
 }
 document.addEventListener('DOMContentLoaded', () => {
-    let compact = matchMedia('(max-width: 1100px)').matches;
-    try { const saved = localStorage.getItem('applicationtrackr.compact'); if (saved !== null) compact = saved === 'true'; } catch (_) {}
-    document.getElementById('jobs-container').classList.toggle('compact', compact);
-    document.getElementById('density-toggle').setAttribute('aria-pressed', String(compact));
     updateFillActions();
     new MutationObserver(updateFillActions).observe(document.documentElement, {attributes: true, attributeFilter: ['data-applicationtrackr-browser-helper']});
     document.querySelector('.header-menu').addEventListener('click', event => { if (event.target.closest('button, a')) event.currentTarget.open = false; });

@@ -1009,7 +1009,6 @@ def render_unified_dashboard_html(active_tab="flow"):
                 <option value="not_applied">Not applied</option><option value="applied">Applied</option><option value="all">All statuses</option>
             </select>
             <button class="btn btn-ghost filter-toggle" aria-expanded="false" aria-controls="mobile-filters" onclick="toggleMobileFilters(this)">Categories</button>
-            <button id="density-toggle" class="btn btn-ghost" aria-pressed="false" onclick="toggleJobDensity()">Compact view</button>
         </div>
 
         <div id="mobile-filters" class="filter-chips-wrap mobile-filter-panel">
