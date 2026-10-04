@@ -46,3 +46,11 @@ The regression suite covers sparse-score exclusions, misleading locations, postg
 - [Bright Network software internships](https://www.brightnetwork.co.uk/internships/software-development/) have useful coverage, but direct requests from this Mac received HTTP 403. No bypass or falsely healthy integration was added. Targetjobs was researched; its search pages require a separate service adapter and it is not represented as an active source.
 
 Live verification establishes that an advert exists and passes the known filters. It cannot establish unknown grades, every clearance requirement, timetable constraints or every employer-specific qualification. Explicit British-citizenship requirements are held for review while citizenship is unconfirmed. Requirements are shown for review, and listings with failed verification are excluded rather than claimed suitable. Some configured employer board names return 404 and are shown as partial coverage; that is not reported as complete employer coverage. No applications were submitted during this audit.
+
+## Individual new-listing alerts
+
+Each newly verified, suitable, unapplied listing now receives its own ntfy notification after the completed scan saves the final feed. The message names the employer and role, gives location and deadline, includes suitability evidence and the tracker link, and opens the specific application page when tapped. Normal notification priority avoids marking every new advert urgent.
+
+The first startup after this change baselines the already saved verified listings, preventing a backlog of alerts. Persistent listing IDs, native ATS IDs and normalised URLs suppress repeat alerts across scans, restarts and alternate sources. Failed sends remain in the durable outbox; a restart does not silence a job saved after baseline but not yet notified. Morning and evening briefings remain enabled.
+
+Eight added regressions cover one alert per listing, backlog suppression, source aliases, distinct requisitions, eligibility/applied exclusions, later verification, saved-before-notified restarts, failed-send retries and delivery while older failures are backing off. The release passes 93 Python tests and nine Safari helper tests. Alerts mean the advert passed the current checks and was saved; they do not claim absolute certainty about every employer-specific qualification.

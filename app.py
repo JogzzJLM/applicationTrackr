@@ -5,7 +5,7 @@ install_quiet_logging()
 import time
 import threading
 
-from notifications import send_notification, send_heartbeat_ping
+from notifications import send_notification, send_heartbeat_ping, initialize_discovery_alerts
 from sheets import generate_sankey_from_google_sheets
 from email_listener import check_email_inbox
 from scrapers import run_all_scrapers
@@ -27,6 +27,8 @@ def email_listener_loop():
 
 
 if __name__ == "__main__":
+    from scrapers_engine.audit import load_discovered_jobs
+    initialize_discovery_alerts(load_discovered_jobs())
     generate_sankey_from_google_sheets()
 
     web_thread = threading.Thread(target=start_web_server, daemon=True)

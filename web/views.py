@@ -1078,7 +1078,7 @@ def render_unified_dashboard_html(active_tab="flow"):
 
     <!-- Panel: Diagnostics -->
     <div id="view-diagnostics" class="panel" style="{view_status}">
-        <div class="section-card"><div class="section-title">Notification delivery</div><p>{ntfy_status}</p><p>New verified jobs are sent after discovery. Job and deadline summaries arrive at 08:00 and 18:00 UK time. Failed sends are queued for retry.</p><a href="{ntfy_topic_url}" target="_blank" rel="noopener" class="btn btn-ghost">Open ntfy topic ↗</a><button class="btn btn-tinted" onclick="testNotification()">Send test notification</button></div>
+        <div class="section-card"><div class="section-title">Notification delivery</div><p>{ntfy_status}</p><p>Each new suitable job sends its own alert once it is verified and saved. Tap the alert to open its application page. Existing listings and duplicate sources do not send repeat alerts. Job and deadline summaries arrive at 08:00 and 18:00 UK time. Failed sends are queued for retry.</p><a href="{ntfy_topic_url}" target="_blank" rel="noopener" class="btn btn-ghost">Open ntfy topic ↗</a><button class="btn btn-tinted" onclick="testNotification()">Send test notification</button></div>
         <div class="section-card">
             <div class="section-title">
                 <span><span class="status-pill"><span class="dot"></span> Live Log Stream</span> (docker logs -f applicationtrackr)</span>

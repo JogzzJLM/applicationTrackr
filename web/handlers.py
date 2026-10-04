@@ -139,6 +139,7 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             return self._json({"status": "ok", "integrations": {
                 "ntfy_configured": bool(NTFY_TOPIC), "ntfy": SCRAPER_STATUS.get("ntfy", {}),
                 "notification_queue": SCRAPER_STATUS.get("notification_queue", {}),
+                "discovery_alerts": SCRAPER_STATUS.get("discovery_alerts", {}),
                 "sheet_read_configured": bool(GOOGLE_SHEET_CSV_URL),
                 "sheet_write_configured": bool(GOOGLE_SHEET_WEBHOOK_URL)}})
         if path == "/api/jobs":
@@ -316,8 +317,19 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
                 return self._json({"status": "error", "message": str(exc)}, 400)
         if path == "/api/test-notification":
             from notifications import send_notification
-            ok = send_notification('ApplicationTrackr notification test',
-                'Notifications are working. Open your dashboard to track applications.', link=f'{APP_BASE_URL}/')
+            if form.get('sample', [''])[0] == 'listing':
+                from scheduler import actionable_jobs
+                from notifications import listing_alert_payload
+                jobs = sorted(actionable_jobs(), key=lambda job: job.get('deadline') or '9999')
+                if not jobs:
+                    return self._json({'status': 'error', 'message': 'No verified unapplied listing available for a preview.'}, 409)
+                sample = listing_alert_payload(jobs[0])
+                sample['title'] = 'TEST ' + sample['title']
+                sample['message'] = 'Alert preview using an existing saved listing; this is not a newly found job.\n\n' + sample['message']
+                ok = send_notification(**sample)
+            else:
+                ok = send_notification('ApplicationTrackr notification test',
+                    'Notifications are working. Open your dashboard to track applications.', link=f'{APP_BASE_URL}/')
             return self._json({"status": "ok" if ok else "error", "message": "Accepted by ntfy; check your subscribed device." if ok else "Notification failed. Check Diagnostics for details."}, 200 if ok else 502)
         if path == "/api/manual-job":
             try:

@@ -39,6 +39,8 @@ from core.storage import DATA_DIR, atomic_write_json, load_json_safe
 OUTBOX_FILE = str(DATA_DIR / "notification_outbox.json")
 NOTIFIED_FILE = str(DATA_DIR / "notified_listings.json")
 _OUTBOX_LOCK = threading.RLock()
+_DISCOVERY_ALERT_LOCK = threading.RLock()
+_ALERT_BASELINE_MARKER = 'per-listing-alerts:v1:initialized'
 
 
 def _outbox():
@@ -63,8 +65,8 @@ def send_notification(title, message, link=None, tags="briefcase", priority=3, s
 def flush_notification_outbox():
     with _OUTBOX_LOCK:
         state = _outbox()
-        for key, item in list(state["pending"].items())[:10]:
-            if item.get("next_retry", 0) > time.time(): continue
+        due = [(key, item) for key, item in state['pending'].items() if item.get('next_retry', 0) <= time.time()][:10]
+        for key, item in due:
             args = {k: item[k] for k in ("title", "message", "link", "tags", "priority", "sound")}
             if _publish_notification(**args):
                 state["delivered"][key] = time.time()
@@ -83,33 +85,75 @@ def job_alert_line(job):
     return f"{job['company']} — {job['title']}\n{job.get('location', 'Unknown')} | Closes: {deadline}\n{job['link']}"
 
 
+def listing_alert_payload(job):
+    message = job_alert_line(job) + '\n\nVerified and saved to ApplicationTrackr.'
+    reasons = job.get('match_reasons', [])[:2]
+    if reasons: message += '\nSuitability checks: ' + '; '.join(reasons)
+    message += f'\nTracker: {APP_BASE_URL}/jobs'
+    return {'title': f"New job: {job['company']} - {job['title']}"[:180], 'message': message,
+            'link': job['link'], 'tags': 'briefcase,bell', 'priority': 3}
+
+
+def _listing_alert_keys(job):
+    from core.normalization import normalize_url, extract_ats_post_id
+    keys = {'url:' + normalize_url(job['link'])}
+    if job.get('id'): keys.add('id:' + str(job['id']))
+    ats = extract_ats_post_id(job['link'])
+    if ats: keys.add('ats:' + ats)
+    return keys
+
+
+def initialize_discovery_alerts(existing_jobs):
+    """Baseline the saved backlog once, before a new scan can add listings."""
+    from scrapers_engine.quality import is_actionable_listing
+    with _DISCOVERY_ALERT_LOCK:
+        notified = set(load_json_safe(NOTIFIED_FILE, []))
+        baselined = 0
+        if _ALERT_BASELINE_MARKER not in notified:
+            for job in existing_jobs:
+                if job.get('verification', {}).get('state') == 'verified' and is_actionable_listing(job):
+                    notified.update(_listing_alert_keys(job))
+                    baselined += 1
+            notified.add(_ALERT_BASELINE_MARKER)
+            atomic_write_json(NOTIFIED_FILE, sorted(notified))
+        update_scraper_status('discovery_alerts', {'mode': 'per_listing', 'baseline_ready': True,
+                                                 'existing_listings_baselined_this_start': baselined})
+
+
 def notify_discoveries(jobs):
-    from core.normalization import normalize_url
+    # Alerts run only after the scan has saved, deduplicated and checked its feed.
+    with _DISCOVERY_ALERT_LOCK:
+        return _notify_discoveries(jobs)
+
+
+def _notify_discoveries(jobs):
     from sheets import get_applied_jobs_set
-    from core.normalization import normalize_company, normalize_role, fuzzy_roles_match
+    from core.normalization import normalize_company, normalize_url, fuzzy_roles_match
     from scrapers_engine.quality import is_actionable_listing
     applied, _ = get_applied_jobs_set()
     notified = set(load_json_safe(NOTIFIED_FILE, []))
     candidates = [j for j in jobs if j.get('verification', {}).get('state') == 'verified'
                   and is_actionable_listing(j)
-                  and normalize_url(j.get('link', '')) not in notified
                   and not any(normalize_company(j.get('company')) == c and fuzzy_roles_match(j.get('title'), r, threshold=.90) for c, r in applied)]
-    if not candidates: return 0
     candidates.sort(key=lambda j: (j.get('deadline') or '9999', -j.get('match_score', 0)))
-    keys = sorted(normalize_url(j['link']) for j in candidates)
-    chosen, byte_count = [], 0
-    for job in candidates[:8]:
-        line = job_alert_line(job)
-        if byte_count + len(line.encode('utf-8')) > 3400: break
-        chosen.append(line); byte_count += len(line.encode('utf-8')) + 2
-    message = '\n\n'.join(chosen)
-    if len(candidates) > len(chosen): message += f"\n\n+ {len(candidates) - len(chosen)} more verified roles on your page."
-    send_notification(f"{len(candidates)} verified jobs ready to apply", message, link=f"{APP_BASE_URL}/jobs",
-                      tags="briefcase,bell", priority=4, event_id="jobs:" + hashlib.sha256('|'.join(keys).encode()).hexdigest())
-    # The durable outbox now owns delivery/retries even when ntfy is unavailable.
-    notified.update(keys)
+    queued = 0
+    for job in candidates:
+        keys = _listing_alert_keys(job)
+        if keys.intersection(notified) or normalize_url(job['link']) in notified:
+            # Upgrade legacy URL receipts and remember newly discovered aliases.
+            notified.update(keys)
+            continue
+        identity = next((k for k in sorted(keys) if k.startswith('id:')), 'url:' + normalize_url(job['link']))
+        send_notification(**listing_alert_payload(job),
+                          event_id='listing:' + hashlib.sha256(identity.encode()).hexdigest())
+        # The durable outbox owns retries; don't enqueue the same listing again.
+        notified.update(keys)
+        atomic_write_json(NOTIFIED_FILE, sorted(notified))
+        queued += 1
     atomic_write_json(NOTIFIED_FILE, sorted(notified))
-    return len(candidates)
+    update_scraper_status('discovery_alerts', {'mode': 'per_listing', 'baseline_ready': _ALERT_BASELINE_MARKER in notified,
+                                             'last_scan_queued': queued})
+    return queued
 
 
 def send_heartbeat_ping():
