@@ -144,3 +144,12 @@ def test_restart_does_not_leave_runs_stuck_or_allow_uncertain_submit_retry(monke
     service.recover_interrupted_runs()
     assert saved['draft']['status'] == 'interrupted'
     assert saved['submit']['status'] == 'submission_unconfirmed'
+
+
+def test_profile_editor_preserves_legacy_date_and_custom_eligibility_answer(monkeypatch):
+    from bs4 import BeautifulSoup
+    from web import profile_view
+    monkeypatch.setattr(profile_view, 'ensure_profile', lambda: {'education': {'graduation_date': '23/06/2028'}, 'eligibility': {'right_to_work_uk': 'Confirmed by employer'}})
+    page = BeautifulSoup(profile_view.render_profile_html(), 'html.parser')
+    assert page.find('input', {'name': 'education.graduation_date'})['value'] == '2028-06-23'
+    assert page.find('select', {'name': 'eligibility.right_to_work_uk'}).find('option', selected=True)['value'] == 'Confirmed by employer'

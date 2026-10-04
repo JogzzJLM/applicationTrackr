@@ -9,7 +9,17 @@ from autoapply.profile import AUTOAPPLY_DIR, ensure_profile, flatten_profile
 from autoapply.service import _find_job
 
 
-def browser_bundle(job_id):
+def owned_document(kind):
+    """Only named profile documents inside the private upload directory are downloadable."""
+    if kind not in {'resume_path', 'cover_letter_path'}:
+        return None
+    path = Path(str(ensure_profile().get('documents', {}).get(kind, '')))
+    if not path.is_file() or not path.resolve().is_relative_to(AUTOAPPLY_DIR.resolve()):
+        return None
+    return path if path.stat().st_size <= 10 * 1024 * 1024 else None
+
+
+def browser_bundle(job_id, include_documents=True):
     job = _find_job(job_id)
     if not job:
         raise ValueError('Job not found.')
@@ -24,14 +34,14 @@ def browser_bundle(job_id):
                if not item.get('domain') or normalize_label(item['domain']) == normalize_label(url)}
     documents = []
     for key in ('resume_path', 'cover_letter_path'):
-        path = Path(str(profile.get('documents', {}).get(key, '')))
-        if not path.is_file() or not path.resolve().is_relative_to(AUTOAPPLY_DIR.resolve()):
+        path = owned_document(key)
+        if path is None:
             continue
-        if path.stat().st_size > 10 * 1024 * 1024:
-            continue
-        documents.append({'key': 'documents.' + key, 'name': path.name,
-                          'mime': mimetypes.guess_type(path.name)[0] or 'application/octet-stream',
-                          'base64': base64.b64encode(path.read_bytes()).decode('ascii')})
+        document = {'key': 'documents.' + key, 'name': path.name,
+                    'mime': mimetypes.guess_type(path.name)[0] or 'application/octet-stream'}
+        if include_documents:
+            document['base64'] = base64.b64encode(path.read_bytes()).decode('ascii')
+        documents.append(document)
     return {'job': {'id': job_id, 'company': job.get('company', ''), 'title': job.get('title', ''), 'url': url},
             'profile': {key: value for key, value in flat.items() if not key.startswith(('documents.', 'answers.'))},
             'aliases': BUILTIN_ALIASES, 'answers': answers, 'documents': documents}

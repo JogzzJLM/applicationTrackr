@@ -178,7 +178,7 @@ class JobCardViewModel:
             )
 
         apply_action = (
-            f'<a href="{html.escape(self.link, quote=True)}" target="_blank" rel="noopener noreferrer" class="btn btn-filled card-primary-action">Apply ↗</a>'
+            f'<a href="{html.escape(self.link, quote=True)}" target="_blank" rel="noopener noreferrer" class="btn btn-filled card-primary-action">Open listing ↗</a>'
             if urllib.parse.urlparse(self.link).scheme in ('http', 'https')
             else '<span class="btn btn-ghost card-primary-action">No listing link</span>'
         )
@@ -186,7 +186,7 @@ class JobCardViewModel:
         if not self.is_reported_closed and self.link != "#":
             agent_action = (
                 f'<button onclick="openFilledApplication({_js_literal(self.job_id)}, {_js_literal(self.link)})" '
-                'class="btn btn-ghost card-secondary-action">Open &amp; fill ↗</button>'
+                'class="btn btn-ghost card-secondary-action browser-fill-action">Saved details</button>'
             )
 
         reason_html = ""
@@ -231,17 +231,18 @@ data-title="{html.escape(self.title.lower(), quote=True)}">
     <div class="card-company">{html.escape(self.company)}</div>
     <div class="card-role">{html.escape(self.title)}</div>
     <div class="card-meta">{html.escape(self.location)} · {html.escape(self.deadline)}</div>
-    <div class="card-detail">
-        {reason_html}
-        {source_html}
-    </div>
     <div class="card-actions">
         {apply_action}
         {agent_action}
-        {sheet_action}
-        {report_action}
-        <button class="btn btn-ghost card-secondary-action" onclick="openJobDetails({_js_literal(self.raw.get("object_id") or self.job_id)})">Details / Notes</button>
     </div>
+    <details class="card-more">
+        <summary>Listing details &amp; actions</summary>
+        <div class="card-detail">{reason_html}{source_html}</div>
+        <div class="card-extra-actions">
+            {sheet_action}{report_action}
+            <button class="btn btn-ghost" onclick="openJobDetails({_js_literal(self.raw.get("object_id") or self.job_id)})">Notes &amp; custom fields</button>
+        </div>
+    </details>
 </article>'''
 
 

@@ -15,13 +15,13 @@ def render_autoapply_html(job_id=""):
     target_url = (job or {}).get("link", "")
     reasons = (job or {}).get("match_reasons", [])
     rows = "".join(
-        f"<tr><td><code>{html.escape(r.get('id',''))}</code></td><td>{html.escape(str(r.get('status','')))}</td><td>{html.escape(str(r.get('url',''))[:80])}</td></tr>"
+        f"<tr><td data-label='Run'><code>{html.escape(r.get('id',''))}</code></td><td data-label='Status'>{html.escape(str(r.get('status','')))}</td><td data-label='URL'>{html.escape(str(r.get('url',''))[:80])}</td></tr>"
         for r in info.get("recent_runs", [])
     ) or '<tr><td colspan="3">No runs yet.</td></tr>'
 
     candidates = autopilot_candidates(10)
     candidate_rows = "".join(
-        f"<tr><td>{html.escape(str(c.get('company','')))}</td><td>{html.escape(str(c.get('title','')))}</td><td><strong>{int(c.get('score',0))}%</strong></td><td>{html.escape(str(c.get('location','')))}</td></tr>"
+        f"<tr><td data-label='Company'>{html.escape(str(c.get('company','')))}</td><td data-label='Role'>{html.escape(str(c.get('title','')))}</td><td data-label='Fit'><strong>{int(c.get('score',0))}%</strong></td><td data-label='Location'>{html.escape(str(c.get('location','')))}</td></tr>"
         for c in candidates
     ) or '<tr><td colspan="4">No unattempted strong-fit jobs currently qualify.</td></tr>'
 
@@ -34,7 +34,7 @@ def render_autoapply_html(job_id=""):
     return f'''<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#ffffff"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="ApplicationTrackr"><link rel="manifest" href="/manifest.webmanifest"><title>ApplicationTrackr Apply Agent</title>
 <style>
 body{{font-family:Inter,system-ui,sans-serif;background:#f5f7fa;color:#111827;margin:0}}.wrap{{max-width:1100px;margin:auto;padding:28px}}.card{{background:white;border:1px solid #e5e7eb;border-radius:14px;padding:22px;margin-bottom:18px}}h1,h2,h3{{margin-top:0}}code{{background:#f3f4f6;padding:2px 5px;border-radius:5px}}input,select,textarea{{width:100%;padding:10px;border:1px solid #d1d5db;border-radius:8px;margin:6px 0 12px;box-sizing:border-box}}button,a.btn{{display:inline-block;background:#ff8000;color:white;border:0;border-radius:8px;padding:10px 15px;font-weight:700;text-decoration:none;cursor:pointer}}.badge{{display:inline-block;padding:4px 8px;border-radius:6px;background:#fff3e8;color:#d96c00;font-weight:700;margin:2px}}table{{width:100%;border-collapse:collapse}}td,th{{padding:8px;border-bottom:1px solid #eee;text-align:left;font-size:13px}}.muted{{color:#6b7280}}.grid{{display:grid;grid-template-columns:1fr 1fr;gap:18px}}@media(max-width:800px){{.grid{{grid-template-columns:1fr}}}}pre{{white-space:pre-wrap;background:#111827;color:#d1fae5;padding:14px;border-radius:9px;min-height:70px;overflow:auto}}.danger{{background:#991b1b}}.ok{{background:#065f46}}
-</style></head><body><div class="wrap">
+</style><link rel="stylesheet" href="/assets/pages.css"></head><body><div class="wrap">
 <a href="/jobs" class="btn" style="background:#374151">← Jobs</a><h1 style="margin-top:18px">🤖 Application Agent</h1>
 <div class="card"><h2>{html.escape(title)}</h2><p>The agent now uses an online text classifier plus site-specific memory. It learns only from answers/mappings you explicitly approve, never invents unknown information, and stops on CAPTCHA or sensitive/legal questions.</p><p><span class="badge">Agent: {enabled}</span><span class="badge">Auto-submit: {submit}</span><span class="badge">Autopilot: {autopilot}</span><span class="badge">Profile: {info['profile_completeness']}%</span></p><p class="muted">ML examples: {learning.get('ml_training_examples',0)} · learned mappings: {learning.get('field_mappings',0)} · reusable answers: {learning.get('question_answers',0)} · sites learned: {learning.get('sites_learned',0)}</p></div>
 

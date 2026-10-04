@@ -1,5 +1,8 @@
 import json
 import threading
+from pathlib import Path
+import mimetypes
+from urllib.parse import quote
 from urllib.parse import parse_qs, urlparse
 import http.server
 import socketserver
@@ -59,11 +62,12 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.safe_write(encoded)
 
-    def _html(self, payload):
+    def _html(self, payload, private=False):
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
-        self.send_cors_headers()
+        if not private:
+            self.send_cors_headers()
         self.end_headers()
         self.safe_write(payload.encode("utf-8"))
 
@@ -85,6 +89,25 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         path, qs = parsed.path, parse_qs(parsed.query)
+        if path in {"/assets/dashboard.css", "/assets/dashboard.js", "/assets/pages.css"}:
+            asset = Path(__file__).parent / "assets" / path.rsplit("/", 1)[-1]
+            content_type = "text/css; charset=utf-8" if path.endswith(".css") else "application/javascript; charset=utf-8"
+            return self._raw(asset.read_bytes(), content_type, "no-cache")
+        if path == "/api/autoapply/document":
+            from autoapply.browser_handoff import owned_document
+            kind = qs.get("kind", [""])[0]
+            document = owned_document(kind)
+            if document is None:
+                return self._json({"status": "error", "message": "Saved document not found."}, 404, private=True)
+            payload = document.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", mimetypes.guess_type(document.name)[0] or "application/octet-stream")
+            self.send_header("Content-Length", str(len(payload)))
+            self.send_header("Content-Disposition", "attachment; filename*=UTF-8''" + quote(document.name, safe=""))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            return self.safe_write(payload)
         if path == "/manifest.webmanifest":
             manifest = {
                 "name": "ApplicationTrackr",
@@ -125,6 +148,9 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             return self._html(render_unified_dashboard_html("diagnostics"))
         if path == "/closed":
             return self._html(render_unified_dashboard_html("closed"))
+        if path == "/profile":
+            from web.profile_view import render_profile_html
+            return self._html(render_profile_html(), private=True)
         if path == "/autoapply":
             return self._html(render_autoapply_html(qs.get("job_id", [""])[0]))
         if path == "/sankey-embed":
@@ -175,7 +201,7 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
         if path == "/api/autoapply/browser-bundle":
             from autoapply.browser_handoff import browser_bundle
             try:
-                return self._json(browser_bundle(qs.get("job_id", [""])[0]), private=True)
+                return self._json(browser_bundle(qs.get("job_id", [""])[0], include_documents=qs.get("include_documents", ["true"])[0] != "false"), private=True)
             except ValueError as exc:
                 return self._json({"status": "error", "message": str(exc)}, 400)
         if path == "/api/autoapply/questions":

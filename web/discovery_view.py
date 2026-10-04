@@ -10,17 +10,17 @@ from scrapers_engine.quality import REVIEW_FILE
 def render_discovery_report():
     reviews = list(load_json_safe(REVIEW_FILE, {}).values())
     counts = Counter(j.get('state', 'unknown') for j in reviews)
-    source_rows = ''.join(f'<tr><td>{escape(name)}</td><td>{escape(str(status))}</td></tr>' for name, status in SCRAPER_STATUS.get('source_status', {}).items())
+    source_rows = ''.join(f'<tr><td data-label="Source">{escape(name)}</td><td data-label="Latest result">{escape(str(status))}</td></tr>' for name, status in SCRAPER_STATUS.get('source_status', {}).items())
     rows = []
     for job in sorted(reviews, key=lambda j: j.get('checked_at', ''), reverse=True):
         if job.get('state') not in {'unknown', 'needs_check'}: continue
         url = str(job.get('link') or '')
         title = escape(str(job.get('title') or 'Untitled'))
         link = f'<a href="{escape(url, quote=True)}" target="_blank" rel="noopener noreferrer">{title} ↗</a>' if urlparse(url).scheme in {'http', 'https'} else title
-        rows.append(f'<tr><td>{escape(str(job.get("company") or "Unknown"))}<br>{link}</td><td>{escape(str(job.get("source") or "Unknown"))}</td><td>{escape(str(job.get("reason") or "Awaiting checks"))}</td></tr>')
+        rows.append(f'<tr><td data-label="Role">{escape(str(job.get("company") or "Unknown"))}<br>{link}</td><td data-label="Source">{escape(str(job.get("source") or "Unknown"))}</td><td data-label="Check result">{escape(str(job.get("reason") or "Awaiting checks"))}</td></tr>')
     trackr = SCRAPER_STATUS.get('trackr_coverage', {})
     return f'''<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Discovery coverage</title>
-<style>body{{font:16px system-ui;margin:30px auto;padding:0 20px;max-width:1050px;color:#172033;background:#f6f8fb}}table{{width:100%;border-collapse:collapse;background:white;margin:20px 0}}td,th{{padding:14px;text-align:left;border-bottom:1px solid #ddd;overflow-wrap:anywhere}}a{{color:#17669e}}small{{color:#566}}</style>
+<style>body{{font:16px system-ui;margin:30px auto;padding:0 20px;max-width:1050px;color:#172033;background:#f6f8fb}}table{{width:100%;border-collapse:collapse;background:white;margin:20px 0}}td,th{{padding:14px;text-align:left;border-bottom:1px solid #ddd;overflow-wrap:anywhere}}a{{color:#17669e}}small{{color:#566}}</style><link rel="stylesheet" href="/assets/pages.css">
 <a href="/jobs">← Back to jobs</a><h1>Discovery coverage</h1>
 <p>Trackr supplied {trackr.get('fetched', 0)} programmes. {trackr.get('relevant_candidates', 0)} passed the first suitability check; {trackr.get('verified', 0)} were verified from that source during the scan.</p>
 <p>{counts['unknown'] + counts['needs_check']} candidates need more checks. {counts['filtered']} were unsuitable and {counts['closed']} were closed. These counts describe checked candidates, including repeats from older scans.</p>

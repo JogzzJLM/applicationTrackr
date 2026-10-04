@@ -40,7 +40,7 @@ def render_unified_dashboard_html(active_tab="flow"):
             application['object_id'] = obj.id
     sheet_url = get_sheet_edit_url()
     ntfy_status = escape(str(SCRAPER_STATUS.get("ntfy", {"ok": False, "error": "No notification receipt recorded yet."})))
-    sheet_button = f'<a href="{escape(sheet_url, quote=True)}" target="_blank" rel="noopener noreferrer" class="btn btn-tinted">Open Sheet ↗</a>' if sheet_url else '<span class="btn btn-ghost" title="Set GOOGLE_SHEET_EDIT_URL in Portainer">Sheet URL needed</span>'
+    sheet_button = f'<a href="{escape(sheet_url, quote=True)}" target="_blank" rel="noopener noreferrer" class="btn btn-tinted sheet-shortcut" aria-label="Open Google Sheet" title="Open Google Sheet"><span aria-hidden="true">▦</span><span class="desktop-label"> Open Sheet ↗</span></a>' if sheet_url else '<span class="btn btn-ghost" title="Set GOOGLE_SHEET_EDIT_URL in Portainer">Sheet URL needed</span>'
     applied_jobs, applied_companies = get_applied_jobs_set(csv_text=csv_text)
     settings = load_settings()
     hidden_jobs = load_hidden_jobs()
@@ -296,7 +296,7 @@ def render_unified_dashboard_html(active_tab="flow"):
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>ApplicationTrackr // UK Early Career Dashboard</title>
     <meta name="description" content="UK graduate scheme application tracker and job discovery engine">
     <meta name="theme-color" content="#ffffff">
@@ -850,8 +850,10 @@ def render_unified_dashboard_html(active_tab="flow"):
             .applications-grid {{ grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }}
         }}
     </style>
+    <link rel="stylesheet" href="/assets/dashboard.css">
+    <script src="/assets/dashboard.js" defer></script>
 </head>
-<body>
+<body data-active-tab="{active_tab}">
 
 <!-- Clean Topbar -->
 <div class="topbar">
@@ -863,10 +865,17 @@ def render_unified_dashboard_html(active_tab="flow"):
         <div class="status-pill" title="Engine Online"><span class="dot"></span><span class="status-label">Engine Online</span></div>
         <button onclick="openLogModal()" class="btn btn-filled" aria-label="Log application" title="Log application">+<span class="desktop-label"> Log App</span></button>
         {sheet_button}
-        <button onclick="openManualJobModal()" class="btn btn-tinted">+ Add Job</button>
-        <button onclick="testNotification()" class="btn btn-ghost">Test ntfy</button>
-        <button onclick="syncSheetAndReload()" class="btn btn-tinted" aria-label="Sync Google Sheet" title="Sync Google Sheet">↻<span class="desktop-label"> Sync Sheet</span></button>
-        <a href="/api/rescan" class="btn btn-ghost" aria-label="Rescan jobs" title="Rescan jobs">⚡<span class="desktop-label"> Rescan</span></a>
+        <details class="header-menu">
+            <summary class="btn btn-ghost" aria-label="More actions">•••</summary>
+            <div class="header-menu-items">
+                <button onclick="openLogModal()" class="btn btn-ghost">Log application</button>
+                <button onclick="openManualJobModal()" class="btn btn-ghost">Add your own job</button>
+                <button onclick="testNotification()" class="btn btn-ghost">Test notification</button>
+                <button onclick="syncSheetAndReload()" class="btn btn-ghost">Sync Google Sheet</button>
+                <a href="/api/rescan" class="btn btn-ghost">Rescan listings</a>
+                <a href="/profile" class="btn btn-ghost">Saved application profile</a>
+            </div>
+        </details>
     </div>
 </div>
 
@@ -980,13 +989,14 @@ def render_unified_dashboard_html(active_tab="flow"):
 
     <!-- Panel: Discovered Schemes -->
     <div id="view-jobs" class="panel" style="{view_jobs}">
-        <p style="color:var(--text-tertiary);">{verified_count} verified listings · {review_count} candidates awaiting checks. New roles must pass location, programme and live-page checks. <a href="/discovery-report" target="_blank" rel="noopener">Coverage report ↗</a></p>
+        <h1 class="browse-heading">Find your next opportunity</h1>
+        <p class="browse-subtitle">{verified_count} verified listings · {review_count} being checked. <a href="/discovery-report" target="_blank" rel="noopener">Coverage report ↗</a></p>
         <div class="toolbar">
             <div class="search-wrap">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" /></svg>
-                <input type="text" id="job-search" class="search-input" placeholder="Search company, role, or location..." onkeyup="filterJobs()">
+                <input type="text" id="job-search" class="search-input" placeholder="Search company, role, or location..." oninput="filterJobs()" aria-label="Search jobs">
             </div>
-            <select id="sort-select" class="sort-select" onchange="sortJobs()">
+            <select id="sort-select" aria-label="Sort jobs" class="sort-select" onchange="sortJobs()">
                 <option value="newest">Newest first</option>
                 <option value="oldest">Oldest first</option>
                 <option value="match_desc">Best match</option>
@@ -995,11 +1005,15 @@ def render_unified_dashboard_html(active_tab="flow"):
                 <option value="company_asc">Company A-Z</option>
                 <option value="title_asc">Role A-Z</option>
             </select>
-            <button class="btn btn-ghost mobile-only filter-toggle" onclick="toggleMobileFilters(this)">Filters</button>
+            <select id="job-status" class="sort-select" aria-label="Application status" onchange="filterJobs()">
+                <option value="not_applied">Not applied</option><option value="applied">Applied</option><option value="all">All statuses</option>
+            </select>
+            <button class="btn btn-ghost filter-toggle" aria-expanded="false" aria-controls="mobile-filters" onclick="toggleMobileFilters(this)">Categories</button>
+            <button id="density-toggle" class="btn btn-ghost" aria-pressed="false" onclick="toggleJobDensity()">Compact view</button>
         </div>
 
         <div id="mobile-filters" class="filter-chips-wrap mobile-filter-panel">
-            <div class="filter-group-label">Programme Type (Year Target)</div>
+            <div class="filter-group-label">Programme type</div>
             <div class="filter-chips">
                 <button class="chip active" data-prog-chip="all" onclick="filterProgram('all', this)">All Programmes ({discovered_count})</button>
                 <button class="chip" data-prog-chip="graduate" onclick="filterProgram('graduate', this)">Graduate Schemes (Yr 3+) ({grad_count})</button>
@@ -1007,11 +1021,9 @@ def render_unified_dashboard_html(active_tab="flow"):
                 <button class="chip" data-prog-chip="placement" onclick="filterProgram('placement', this)">Industrial Placements (Yr 2 / 12-Mo) ({placement_count})</button>
             </div>
 
-            <div class="filter-group-label" style="margin-top:6px;">Domain Focus & Status</div>
+            <div class="filter-group-label" style="margin-top:6px;">Area of interest</div>
             <div class="filter-chips">
-                <button class="chip" data-dom-chip="all" onclick="filterDomain('all', this)">All Focuses ({discovered_count})</button>
-                <button class="chip active" data-dom-chip="not_applied" onclick="filterDomain('not_applied', this)">Not Applied ({not_applied_count})</button>
-                <button class="chip" data-dom-chip="applied" onclick="filterDomain('applied', this)">Applied ({applied_count})</button>
+                <button class="chip active" data-dom-chip="all" onclick="filterDomain('all', this)">All Focuses ({discovered_count})</button>
                 <button class="chip" data-dom-chip="quant" onclick="filterDomain('quant', this)">Quant ({quant_count})</button>
                 <button class="chip" data-dom-chip="software" onclick="filterDomain('software', this)">Software ({sw_count})</button>
                 <button class="chip" data-dom-chip="ml" onclick="filterDomain('ml', this)">ML & AI ({ml_count})</button>
@@ -1019,9 +1031,16 @@ def render_unified_dashboard_html(active_tab="flow"):
             </div>
         </div>
 
+        <div class="results-summary" id="results-summary" role="status" aria-live="polite"></div>
         <div id="jobs-container" class="grid">
             {cards_html}
         </div>
+        <div id="jobs-empty" class="empty-jobs" hidden>No jobs match these filters. <button class="btn btn-tinted" onclick="resetJobFilters()">Reset filters</button></div>
+        <nav class="job-pagination" aria-label="Job list pages">
+            <button id="jobs-prev" class="btn btn-ghost" onclick="changeJobPage(-1)">← Previous</button>
+            <span id="jobs-page-label"></span>
+            <button id="jobs-next" class="btn btn-tinted" onclick="changeJobPage(1)">Next →</button>
+        </nav>
     </div>
 
     <!-- Panel: Settings -->
@@ -1044,7 +1063,7 @@ def render_unified_dashboard_html(active_tab="flow"):
                 <div class="form-group">
                     <label class="form-label">British citizenship (for restricted roles)</label>
                     <select name="british_citizen" class="form-input">
-                        <option value="unknown" {'selected' if settings.get('british_citizen') is None else ''}>Not confirmed — keep restricted roles for review</option>
+                        <option value="unknown" {'selected' if settings.get('british_citizen') is None else ''}>Not confirmed — restricted roles need review</option>
                         <option value="true" {'selected' if settings.get('british_citizen') is True else ''}>British citizen, including dual nationality</option>
                         <option value="false" {'selected' if settings.get('british_citizen') is False else ''}>Not a British citizen</option>
                     </select>
@@ -1195,18 +1214,6 @@ def render_unified_dashboard_html(active_tab="flow"):
 <button class="btn btn-filled" type="submit">Save details</button><button class="btn btn-ghost" type="button" onclick="document.getElementById('job-details-modal').style.display='none'">Close</button>
 </form></div></div>
 <script>
-    function openFilledApplication(jobId, url) {{
-        if (document.documentElement.dataset.applicationtrackrBrowserHelper === 'ready') {{
-            window.postMessage({{type:'applicationtrackr:open-job',jobId}}, location.origin);
-        }} else {{
-            window.open(url, '_blank', 'noopener,noreferrer');
-            alert('Application opened. The ApplicationTrackr browser helper must be enabled to fill saved details automatically.');
-        }}
-    }}
-    window.addEventListener('message', event => {{
-        if(event.source!==window || event.origin!==location.origin || event.data?.type!=='applicationtrackr:job-opened')return;
-        if(event.data.error || event.data.notice)alert(event.data.error || event.data.notice);
-    }});
     function addExtraField(containerId, key='', value='') {{
         const row=document.createElement('div'); row.style.cssText='display:flex;gap:6px;margin-bottom:8px';
         const name=document.createElement('input');name.className='form-input';name.placeholder='Field name';name.value=key;
@@ -1279,7 +1286,7 @@ def render_unified_dashboard_html(active_tab="flow"):
         var panel = document.getElementById('mobile-filters');
         if (!panel) return;
         var open = panel.classList.toggle('open');
-        if (button) button.innerText = open ? 'Hide filters' : 'Filters';
+        if (button) {{ button.innerText = open ? 'Hide categories' : 'Categories'; button.setAttribute('aria-expanded', String(open)); }}
     }}
 
     var pendingLogId = null;
@@ -1433,6 +1440,7 @@ def render_unified_dashboard_html(active_tab="flow"):
     }}
 
     function switchTab(tabId) {{
+        document.body.dataset.activeTab = tabId;
         document.querySelectorAll('.panel').forEach(el => el.style.display = 'none');
         document.querySelectorAll('.tab, .mobile-tab').forEach(el => el.classList.remove('active'));
 
@@ -1454,7 +1462,7 @@ def render_unified_dashboard_html(active_tab="flow"):
     }}
 
     var currentProgramPill = 'all';
-    var currentDomainPill = 'not_applied';
+    var currentDomainPill = 'all';
 
     function filterProgram(prog, btn) {{
         currentProgramPill = prog;
@@ -1470,8 +1478,9 @@ def render_unified_dashboard_html(active_tab="flow"):
         filterJobs();
     }}
 
-    function filterJobs() {{
+    function filterJobs(resetPage = true) {{
         var q = document.getElementById('job-search').value.toLowerCase().trim();
+        var status = document.getElementById('job-status').value;
         var cards = document.querySelectorAll('#jobs-container .card');
 
         var visibleCount = 0;
@@ -1493,26 +1502,28 @@ def render_unified_dashboard_html(active_tab="flow"):
             else if (currentDomainPill === 'applied') matchesDomain = (statusData === 'applied');
             else if (currentDomainPill !== 'all') matchesDomain = (catData === currentDomainPill);
 
-            var isVisible = matchesSearch && matchesProgram && matchesDomain;
+            var matchesStatus = status === 'all' || statusData === status;
+            var isVisible = matchesSearch && matchesProgram && matchesDomain && matchesStatus;
+            c.dataset.matches = isVisible ? 'true' : 'false';
             c.style.display = isVisible ? 'flex' : 'none';
             if (isVisible) visibleCount++;
 
-            if (matchesSearch && matchesDomain) {{
+            if (matchesSearch && matchesDomain && matchesStatus) {{
                 progCounts.all++;
                 if (progData in progCounts) progCounts[progData]++;
             }}
 
-            if (matchesSearch && matchesProgram) {{
+            if (matchesSearch && matchesProgram && matchesStatus) {{
                 domainCounts.all++;
                 if (statusData in domainCounts) domainCounts[statusData]++;
                 if (catData in domainCounts) domainCounts[catData]++;
             }}
         }});
 
-        updateChipText('data-prog-chip="all"', 'All Programmes (' + progCounts.all + ')');
-        updateChipText('data-prog-chip="graduate"', 'Graduate Schemes (Yr 3+) (' + progCounts.graduate + ')');
-        updateChipText('data-prog-chip="internship"', 'Internships (Yr 2 / Summer) (' + progCounts.internship + ')');
-        updateChipText('data-prog-chip="placement"', 'Industrial Placements (Yr 2 / 12-Mo) (' + progCounts.placement + ')');
+        updateChipText('data-prog-chip="all"', 'All programmes (' + progCounts.all + ')');
+        updateChipText('data-prog-chip="graduate"', 'Graduate (' + progCounts.graduate + ')');
+        updateChipText('data-prog-chip="internship"', 'Internships (' + progCounts.internship + ')');
+        updateChipText('data-prog-chip="placement"', 'Placements (' + progCounts.placement + ')');
 
         updateChipText('data-dom-chip="all"', 'All Focuses (' + domainCounts.all + ')');
         updateChipText('data-dom-chip="not_applied"', 'Not Applied (' + domainCounts.not_applied + ')');
@@ -1524,8 +1535,9 @@ def render_unified_dashboard_html(active_tab="flow"):
 
         var tabBtn = document.getElementById('tab-jobs-btn');
         if (tabBtn) {{
-            tabBtn.innerText = 'Discovered Schemes (' + visibleCount + ')';
+            tabBtn.innerText = 'Jobs (' + visibleCount + ')';
         }}
+        if (typeof renderJobPage === 'function') renderJobPage(resetPage);
     }}
 
     function updateChipText(attr, text) {{
@@ -1550,6 +1562,7 @@ def render_unified_dashboard_html(active_tab="flow"):
         }});
 
         cards.forEach(card => container.appendChild(card));
+        filterJobs();
     }}
 
     function escapeHtml(str) {{
@@ -1563,7 +1576,7 @@ def render_unified_dashboard_html(active_tab="flow"):
     }}
 
     document.addEventListener('DOMContentLoaded', function() {{
-        filterJobs();
+        sortJobs();
         if ('{active_tab}' === 'diagnostics') {{
             startLivePolling();
         }}
