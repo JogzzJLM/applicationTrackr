@@ -250,14 +250,27 @@ def handle_incoming_email_update(company_name, detected_stage, subject="", from_
         repo.record_email(job, event_id, detected_stage, subject)
         # Ordinary follow-up emails must not manufacture additional interview rounds.
         same_stage = detected_stage == 'Application Update' or detected_stage in job.stages or (detected_stage == 'Interview' and any(s.lower().startswith('interview') for s in job.stages)) or (detected_stage == 'Online Assessment' and any(s.lower().startswith(('assessment', 'online assessment')) for s in job.stages))
-        success = update_google_sheet_via_webhook(job.company, detected_stage, role=job.title,
-            link=job.link, resolve_sequential=False) if not same_stage else True
-        if success:
-            repo.record_email(job, event_id, detected_stage, subject, synced=True)
-            send_notification(f"Update Logged: {job.company} ({detected_stage})",
-                f"{job.title}: {detected_stage}", link=f"{APP_BASE_URL}/")
-            return True
-        reason = 'Sheet update failed; retry or assign on the dashboard'
+        # Catch-up mail must not silently undo a later round or reopen a finished application.
+        def phase(stage):
+            value = stage.lower()
+            if any(word in value for word in ('reject', 'offer', 'withdraw', 'ghost')): return 3
+            if 'interview' in value: return 2
+            if any(word in value for word in ('assessment', 'online test', 'oa')): return 1
+            return 0
+        current_stage = job.stages[-1] if job.stages else 'Applied'
+        needs_review = not same_stage and (phase(current_stage) == 3 or phase(detected_stage) < phase(current_stage))
+        if needs_review:
+            reason = 'Email conflicts with the current Sheet stage; review before changing the application'
+        else:
+            success = update_google_sheet_via_webhook(job.company, detected_stage, role=job.title,
+                link=job.link, resolve_sequential=False) if not same_stage else True
+            if success:
+                repo.record_email(job, event_id, detected_stage, subject, synced=True)
+                if not same_stage or detected_stage == 'Application Update':
+                    send_notification(f"Update Logged: {job.company} ({detected_stage})",
+                        f"{job.title}: {detected_stage}", link=f"{APP_BASE_URL}/")
+                return True
+            reason = 'Sheet update failed; retry or assign on the dashboard'
     add_pending_email_update({
         "id": 'email_' + sha256(event_id.encode()).hexdigest()[:24],
         "event_id": event_id, "job_id": job.id if job else None,

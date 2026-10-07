@@ -129,3 +129,14 @@ def test_verified_employer_corrects_aggregator_identity(tmp_path, monkeypatch):
     audit.purge_expired_jobs()
     assert listing['company'] == 'Acme'
     assert listing['metadata']['source_company'] == 'Wrong Company'
+
+
+@pytest.mark.parametrize('current, old', [('Rejected','Interview'), ('Interview 2','Applied'), ('Assessment 1','Applied')])
+def test_email_catchup_cannot_reopen_or_regress_application(current, old):
+    from core.jobs import Job
+    job = Job('one','Acme','Software Intern',stages=['Applied',current])
+    with patch.object(listener, 'JobRepository') as repository, patch.object(listener, '_get_sheet_apps_with_retry',return_value=[]), patch.object(listener,'fetch_google_sheet_csv',return_value=''), patch.object(listener,'match_email_to_job',return_value=(job,[job],'role title')), patch.object(listener,'update_google_sheet_via_webhook') as write, patch.object(listener,'add_pending_email_update') as pending, patch.object(listener,'send_notification'), patch('scrapers_engine.audit.load_discovered_jobs',return_value=[]):
+        repository.return_value.email_synced.return_value=False
+        assert listener.handle_incoming_email_update('Acme',old,'Old application email',event_id='old1')
+        write.assert_not_called()
+        assert 'conflicts' in pending.call_args.args[0]['reason']
