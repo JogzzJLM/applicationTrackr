@@ -28,6 +28,8 @@ def email_listener_loop():
 
 if __name__ == "__main__":
     from scrapers_engine.audit import load_discovered_jobs
+    from core.jobs import JobRepository
+    JobRepository().invalidate_cinema_newsletter_events()
     initialize_discovery_alerts(load_discovered_jobs())
     generate_sankey_from_google_sheets()
 

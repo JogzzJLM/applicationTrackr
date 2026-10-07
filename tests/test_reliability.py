@@ -54,6 +54,18 @@ class ReliabilityTests(unittest.TestCase):
         self.assertEqual(updated.custom_fields['contact'], 'Recruiter')
         self.assertEqual(len(updated.email_events), 1)
 
+    def test_cinema_false_event_is_retained_but_invalidated(self):
+        repo = jobs.JobRepository()
+        job = repo.sync([{'id':'one','company':'Google','title':'Software Intern'}], [])[0]
+        event_id = 'message:gmail:<newsletter@e-mail.odeon.co.uk>'
+        repo.record_email(job,event_id,'Interview',"What's new at ODEON",synced=True)
+        self.assertEqual(repo.invalidate_cinema_newsletter_events(),1)
+        self.assertEqual(repo.invalidate_cinema_newsletter_events(),0)
+        updated = repo.sync([], [{'company':'Google','title':'Software Intern','stages':['Applied']}])[0]
+        self.assertEqual(updated.stages,['Applied'])
+        self.assertTrue(updated.email_events[0]['invalidated'])
+        self.assertEqual(len(updated.email_events),1)
+
     def test_manual_job_accepts_no_url_and_rejects_unsafe_url(self):
         row = jobs.add_manual_job('Acme', 'Software Intern', notes='Contact directly')
         self.assertEqual(row['source'], 'Manual')

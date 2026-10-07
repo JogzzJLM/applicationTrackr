@@ -44,5 +44,42 @@ class EmailListenerTests(unittest.TestCase):
         self.assertGreaterEqual(ranked[0][0], 10)
 
 
+ODEON_NEWSLETTER = """Other Mommy in cinemas Friday
+Joga, secrets, scares and scandals hit ODEON this week.
+Interviews with the director and cast of Digger
+Interviews with the cast of Verity
+Book your tickets to enter our prize draw. Terms and conditions apply.
+Facebook Twitter Instagram Apple Store Google Play
+Please do not reply directly to this email. ODEON Cinemas Limited.
+Unsubscribe | Privacy policy | View in browser
+"""
+
+class NonRecruitmentEmailTests(unittest.TestCase):
+    def test_odeon_newsletter_is_not_an_application_event(self):
+        self.assertIsNone(classify_email_stage(ODEON_NEWSLETTER))
+    def test_generic_next_step_or_call_is_not_an_interview(self):
+        for text in ('The next step is to book cinema tickets', 'Speaking with the cast', 'Join our video call', 'Read these interview tips'):
+            self.assertIsNone(classify_email_stage(text))
+    def test_actual_interview_invitation_and_confirmation_still_work(self):
+        for text in ('We invite you to interview for the Software Engineering Intern role.', 'Your second interview is scheduled for Friday.', 'Interview invitation: Google Software Engineer Intern', 'Please book your interview using the link below.'):
+            self.assertEqual(classify_email_stage(text),'Interview')
+    def test_google_play_footer_does_not_match_google_application(self):
+        from core.jobs import Job, match_email_to_job
+        job=Job('google-test','Google','Software Engineering Intern',stages=['Applied'])
+        result,candidates,_=match_email_to_job([job],'Odeon','Other Mommy in cinemas Friday','news@odeon.co.uk',ODEON_NEWSLETTER)
+        self.assertIsNone(result);self.assertEqual(candidates,[])
+    def test_real_google_recruitment_mail_matches_even_with_footer(self):
+        from core.jobs import Job, match_email_to_job
+        job=Job('google-test','Google','Software Engineering Intern',stages=['Applied'])
+        result,_,_=match_email_to_job([job],'Google','Interview invitation','Recruiter <recruiter@careers.google.com>','Your interview is confirmed. Google Play')
+        self.assertEqual(result.id,job.id)
+    def test_newsletter_ingestion_never_records_or_notifies(self):
+        from unittest.mock import patch
+        from email_listener import _process_message
+        with patch('email_listener.handle_incoming_email_update') as handle, patch('email_listener.save_seen_emails'):
+            seen=set();self.assertEqual(_process_message('Gmail','odeon-test','Other Mommy in cinemas Friday','news@odeon.co.uk',ODEON_NEWSLETTER,seen),1)
+        handle.assert_not_called();self.assertIn('odeon-test',seen)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from hashlib import sha256
 import re
 from urllib.parse import urlparse
+from email.utils import parseaddr
 from core.normalization import normalize_company, normalize_role, extract_ats_post_id, normalize_url
 from core.storage import DATA_DIR, load_json_safe, atomic_write_json, _FILE_LOCK
 
@@ -72,8 +73,25 @@ class JobRepository:
                 row['stages'].append(stage)
             atomic_write_json(JOBS_FILE, saved)
 
+    def invalidate_cinema_newsletter_events(self):
+        """Retain audit evidence for the known cinema-newsletter false positive."""
+        with _FILE_LOCK:
+            saved = load_json_safe(JOBS_FILE, {})
+            changed = 0
+            for row in saved.values():
+                for event in row.get('email_events', []):
+                    if ('@e-mail.odeon.co.uk>' in event.get('id', '').lower()
+                            and event.get('subject', '').lower() == "what's new at odeon"
+                            and event.get('stage') == 'Interview' and not event.get('invalidated')):
+                        event.update(invalidated=True, invalidated_reason='Cinema newsletter, not a recruitment invitation',
+                                     invalidated_at=datetime.now(timezone.utc).isoformat())
+                        changed += 1
+            if changed:
+                atomic_write_json(JOBS_FILE, saved)
+            return changed
+
     def email_synced(self, job, event_id):
-        return any(e['id'] == event_id and e.get('sheet_synced') for e in job.email_events)
+        return any(e['id'] == event_id and (e.get('sheet_synced') or e.get('invalidated')) for e in job.email_events)
 
 
 def match_email_to_job(jobs, company, subject, sender, body):
@@ -86,12 +104,14 @@ def match_email_to_job(jobs, company, subject, sender, body):
     if len(exact) == 1:
         return exact[0], exact, 'job URL'
     norm_text = ' ' + normalize_role(text) + ' '
-    sender_host = sender.lower().split('@')[-1].strip('> ')
+    sender_host = parseaddr(sender)[1].lower().partition('@')[2]
+    # App-store and social/footer brands are not employer evidence.
+    employer_text = re.sub(r'\b(?:google play|google maps|apple store|app store|facebook|instagram|twitter)\b', '', text, flags=re.I)
     candidates = []
     for job in jobs:
         name = normalize_company(job.company)
-        mentioned = bool(name and re.search(r'\b' + re.escape(job.company.lower()) + r'\b', text.lower()))
-        own_domain = bool(name and sender_host.split('.')[0] == name)
+        mentioned = bool(name and re.search(r'\b' + re.escape(job.company.lower()) + r'\b', employer_text.lower()))
+        own_domain = bool(name and name in sender_host.split('.'))
         if mentioned or own_domain or (normalize_company(company) == name and company != 'Application Company'):
             candidates.append(job)
     roles = [j for j in candidates if normalize_role(j.title) and

@@ -125,10 +125,16 @@ def classify_email_stage(text):
         "experience platform", "complete your assessment", "assessment invitation",
     )):
         return "Online Assessment"
-    if any(k in text_lower for k in (
-        "interview", "schedule a call", "invitation to interview", "next step", "speaking with",
-        "first round", "final round", "assessment centre", "assessment center", "video call",
-    )):
+    # An entertainment interview, generic "next step" or video call is not
+    # evidence that the recipient has progressed in a recruitment process.
+    invitation = re.search(
+        r"\b(?:invitation to (?:an? )?interview|interview invitation|"
+        r"(?:invite|inviting|invited) you.{0,100}\b(?:interview|assessment cent(?:re|er))|"
+        r"your (?:[a-z0-9-]+\s+){0,3}interview|"
+        r"(?:schedule|book|reschedule|confirm).{0,45}\b(?:an? |your )?interview|"
+        r"interview (?:has been |is )?(?:scheduled|confirmed)|"
+        r"(?:first|second|third|final) round interview)\b", text_lower, re.S)
+    if invitation:
         round_match = re.search(r"(?:interview|round)\s*(\d+)", text_lower)
         if round_match:
             return f"Interview {round_match.group(1)}"
