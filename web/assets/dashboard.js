@@ -202,17 +202,20 @@ async function refreshDashboard() {
         const response = await fetch(location.pathname, {cache:'no-store'});
         if (!response.ok) return;
         const page = new DOMParser().parseFromString(await response.text(), 'text/html');
-        for (const selector of ['#applications-grid', '#jobs-container', '.hero-stats-grid', '.status-pill']) {
+        let applicationsChanged = false;
+        for (const selector of ['#applications-grid', '#pending-email-updates', '#application-count', '#application-distribution', '#jobs-container', '.hero-stats-grid', '.status-pill']) {
             const current = document.querySelector(selector), updated = page.querySelector(selector);
             if (current && updated && current.innerHTML !== updated.innerHTML) {
+                if (selector === '#applications-grid') applicationsChanged = true;
                 if (selector === '.status-pill') current.title = updated.title;
                 current.innerHTML = updated.innerHTML;
             }
         }
         filterApplications();
-        if (typeof sortJobs === 'function') sortJobs();
+        if (typeof sortJobs === 'function') sortJobs(false);
         if (typeof filterJobs === 'function') filterJobs(false);
         updateFillActions();
+        if (applicationsChanged && typeof reloadSankeyIframe === 'function') reloadSankeyIframe();
     } catch (_) { /* Keep the displayed data during a temporary connection failure. */ }
     finally { dashboardRefreshRunning = false; }
 }

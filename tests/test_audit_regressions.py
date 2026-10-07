@@ -143,3 +143,16 @@ def test_email_catchup_cannot_reopen_or_regress_application(current, old):
             assert 'conflicts' in pending.call_args.args[0]['reason']
         else:
             pending.assert_not_called()
+
+
+def test_assigning_general_email_does_not_add_a_sheet_stage():
+    from core.jobs import Job
+    handler = object.__new__(CleanHandler)
+    handler._json = Mock()
+    job = Job('one','Acme','Intern',stages=['Applied'])
+    with patch('web.handlers.load_pending_email_updates',return_value=[{'id':'pending1','event_id':'mail1','stage':'Application Update'}]), patch('web.handlers.JobRepository') as repository, patch('web.handlers.load_discovered_jobs',return_value=[]), patch('web.handlers.get_detailed_applications',return_value=[]), patch('web.handlers.fetch_google_sheet_csv',return_value=''), patch('web.handlers.update_google_sheet_via_webhook') as write, patch('core.storage.remove_pending_email_update') as remove:
+        repository.return_value.sync.return_value=[job]
+        handler._mutate('/api/resolve-pending-update',{'id':['pending1'],'company':['Acme'],'role':['Intern'],'stage':['Application Update']})
+        write.assert_not_called()
+        remove.assert_called_once_with('pending1')
+        repository.return_value.record_email.assert_called_once()

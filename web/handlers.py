@@ -274,20 +274,21 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             comp = qs.get("company", [""])[0]
             title = qs.get("role", ["Software/Quant Role"])[0]
             stage = qs.get("stage", ["Rejected"])[0]
-            if not comp or not title or not valid_stage(stage):
-                return self._json({"status": "error", "message": "Company and role required."}, 400)
-            if comp and title:
-                if not update_google_sheet_via_webhook(comp, stage, role=title, resolve_sequential=True):
-                    return self._json({"status": "error", "message": "Sheet update failed. Check webhook configuration and logs."}, 502)
-                pending = next((p for p in load_pending_email_updates() if p.get('id') == u_id), None)
-                if pending:
-                    repo = JobRepository()
-                    jobs = repo.sync(load_discovered_jobs(), get_detailed_applications(), reconcile=bool(fetch_google_sheet_csv()))
-                    from core.normalization import normalize_company, normalize_role
-                    job = next((j for j in jobs if normalize_company(j.company) == normalize_company(comp) and normalize_role(j.title) == normalize_role(title)), None)
-                    if job:
-                        repo.record_email(job, pending.get('event_id', u_id), stage, pending.get('subject', ''), synced=True)
-                    remove_pending_email_update(u_id)
+            pending = next((p for p in load_pending_email_updates() if p.get('id') == u_id), None)
+            if pending is None:
+                return self._json({'status':'error', 'message':'This email is no longer pending.'}, 404)
+            if not comp or not title or not (valid_stage(stage) or stage == 'Application Update'):
+                return self._json({'status':'error', 'message':'Company, role and a recognised stage are required.'}, 400)
+            if stage != 'Application Update' and not update_google_sheet_via_webhook(comp, stage, role=title, resolve_sequential=True):
+                return self._json({'status':'error', 'message':'Sheet update failed. Check webhook configuration and logs.'}, 502)
+            repo = JobRepository()
+            jobs = repo.sync(load_discovered_jobs(), get_detailed_applications(), reconcile=bool(fetch_google_sheet_csv()))
+            from core.normalization import normalize_company, normalize_role
+            job = next((j for j in jobs if normalize_company(j.company) == normalize_company(comp) and normalize_role(j.title) == normalize_role(title)), None)
+            if job is None:
+                return self._json({'status':'error', 'message':'Select a logged application to attach this email.'}, 400)
+            repo.record_email(job, pending.get('event_id', u_id), stage, pending.get('subject', ''), synced=True)
+            remove_pending_email_update(u_id)
             return self._json({"status": "ok"})
         if path == "/api/dismiss-pending-update":
             from core.storage import remove_pending_email_update

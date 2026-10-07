@@ -946,7 +946,7 @@ def render_unified_dashboard_html(active_tab="flow"):
 
     <!-- Panel: Pipeline & Sankey (Side-by-Side Split View) -->
     <div id="view-flow" class="panel" style="{view_flow}">
-        {pending_updates_banner_html}
+        <div id="pending-email-updates">{pending_updates_banner_html}</div>
 
         <div class="pipeline-grid">
             <div class="section-card flow-sankey">
@@ -962,11 +962,11 @@ def render_unified_dashboard_html(active_tab="flow"):
 
             <div class="section-card flow-apps">
                 <div class="section-title">
-                    <span>Logged Applications ({total})</span>
+                    <span id="application-count">Logged Applications ({total})</span>
                     <button onclick="openLogModal()" class="btn btn-filled" style="font-size:12px;">+ Log App</button>
                 </div>
 
-                <div style="margin-bottom:16px;">
+                <div id="application-distribution" style="margin-bottom:16px;">
                     <div class="stage-distribution-row" style="display:flex; justify-content:space-between; font-size:12px; font-weight:700; color:var(--text-tertiary); margin-bottom:6px;">
                         <span>Stage Distribution</span>
                         <span>{cnt_applied} Applied · {cnt_assessment} OA · {cnt_interview} Int · {cnt_offer} Offer</span>
@@ -1186,7 +1186,7 @@ def render_unified_dashboard_html(active_tab="flow"):
         <div class="form-group">
             <label class="form-label">Application Stage</label>
             <select id="modal-stage" class="form-input">
-                <option value="Application Update">Application Update</option>
+                <option value="Application Update" hidden disabled>Record email only</option>
                 <option value="Interview">Interview</option>
                 <option value="Applied" selected>Applied</option>
                 <option value="Online Assessment">Online Assessment (OA)</option>
@@ -1299,12 +1299,17 @@ def render_unified_dashboard_html(active_tab="flow"):
     var pendingLogId = null;
     function openLogModal() {{
         pendingLogId = null;
+        document.querySelector('#modal-stage option[value=\"Application Update\"]').disabled = true;
+        document.querySelector('#modal-stage option[value=\"Application Update\"]').hidden = true;
+        document.getElementById('modal-stage').value = 'Applied';
         document.getElementById('log-modal').style.display = 'flex';
         document.getElementById('modal-company').focus();
     }}
 
     function openLogModalForPending(pendingId, comp, stage) {{
         pendingLogId = pendingId;
+        document.querySelector('#modal-stage option[value="Application Update"]').disabled = false;
+        document.querySelector('#modal-stage option[value="Application Update"]').hidden = false;
         document.getElementById('log-modal').style.display = 'flex';
         document.getElementById('modal-company').value = comp;
         document.getElementById('modal-stage').value = stage || 'Applied';
@@ -1557,7 +1562,7 @@ def render_unified_dashboard_html(active_tab="flow"):
         if (el) el.innerText = text;
     }}
 
-    function sortJobs() {{
+    function sortJobs(resetPage = true) {{
         var mode = document.getElementById('sort-select').value;
         var container = document.getElementById('jobs-container');
         var cards = Array.from(container.children);
@@ -1574,7 +1579,7 @@ def render_unified_dashboard_html(active_tab="flow"):
         }});
 
         cards.forEach(card => container.appendChild(card));
-        filterJobs();
+        filterJobs(resetPage);
     }}
 
     function escapeHtml(str) {{
