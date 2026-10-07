@@ -164,3 +164,6 @@ button:disabled { opacity: .45; cursor: default; }
 .sankey-frame { height: 380px; }
 @media (max-width:700px) { .sankey-frame { height:300px; } }
 .status-pill[title="Needs attention"] { color: #965200; background: #fff4e3; border-color: #f4d3a4; }
+.pending-update-card { border: 1px solid #f4d3a4; border-radius: 12px; padding: 14px; margin-top: 10px; background: #fffaf2; }
+.pending-update-card p { font-size: 13px; line-height: 1.45; margin: 6px 0; }
+.pending-update-card label { font-size: 12px; font-weight: 700; display: block; margin: 10px 0 5px; }

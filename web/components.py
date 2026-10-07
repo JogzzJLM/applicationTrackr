@@ -292,7 +292,7 @@ class ApplicationCardViewModel:
             f'<button onclick="quickUpdateStage({_js_literal(self.company)}, {_js_literal("Rejected")}, {_js_literal(self.role)})" class="btn btn-ghost btn-danger-text">Reject</button>'
         ) if status_type == "active" else f'<button onclick="logJob({_js_literal(self.company)}, {_js_literal(self.role)})" class="btn btn-tinted">Update stage</button>'
         activity = _text(self.raw.get("last_activity"))[:16].replace("T", " ")
-        recent = f'<span class="application-status">Latest email: {html.escape(activity)} UTC</span>' if activity else ''
+        recent = f'<span class="application-status">Email logged: {html.escape(activity)} UTC</span>' if activity else ''
         return f'''<article class="application-card" data-status="{html.escape(status_type, quote=True)}" data-search="{html.escape((self.company + " " + self.role + " " + self.latest_stage).lower(), quote=True)}">
     <div class="application-card-head">
         <div>

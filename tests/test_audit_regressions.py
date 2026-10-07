@@ -156,3 +156,22 @@ def test_assigning_general_email_does_not_add_a_sheet_stage():
         write.assert_not_called()
         remove.assert_called_once_with('pending1')
         repository.return_value.record_email.assert_called_once()
+
+
+def test_pending_selector_labels_employer_and_role_without_duplicate_choices():
+    from web.pending_view import render_pending_updates
+    markup = render_pending_updates([{'id':'p1','options':[{'company':'Acme','role':'Intern'},{'company':'Other','role':'Intern'},{'company':'Acme','role':'Intern'}]}])
+    assert 'Acme — Intern' in markup and 'Other — Intern' in markup
+    assert markup.count('Acme — Intern') == 1
+    assert 'Confirm update' in markup
+
+
+def test_assigning_newly_logged_role_uses_its_job_object():
+    from core.jobs import Job
+    handler = object.__new__(CleanHandler); handler._json = Mock()
+    old = Job('old','Existing','Intern',stages=['Applied'])
+    new = Job('new','Acme','Intern',stages=['Applied'])
+    with patch('web.handlers.load_pending_email_updates',return_value=[{'id':'p1','event_id':'mail1'}]), patch('web.handlers.JobRepository') as repository, patch('web.handlers.load_discovered_jobs',return_value=[]), patch('web.handlers.get_detailed_applications',return_value=[]), patch('web.handlers.fetch_google_sheet_csv',return_value=''), patch('web.handlers.update_google_sheet_via_webhook',return_value=True), patch('core.storage.remove_pending_email_update'):
+        repository.return_value.sync.side_effect=[[old],[old,new]]
+        handler._mutate('/api/resolve-pending-update',{'id':['p1'],'company':['Acme'],'role':['Intern'],'stage':['Applied']})
+        assert repository.return_value.record_email.call_args.args[0].id == 'new'

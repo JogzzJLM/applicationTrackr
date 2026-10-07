@@ -220,3 +220,9 @@ async function refreshDashboard() {
     finally { dashboardRefreshRunning = false; }
 }
 setInterval(refreshDashboard, 90000);
+function assignPendingSelection(id, selectId, stage) {
+    const value = document.getElementById(selectId)?.value;
+    if (!value) { showNotice('Choose the company and role before confirming.'); return; }
+    const choice = JSON.parse(value);
+    resolvePendingUpdate(id, choice.company, choice.role, stage);
+}

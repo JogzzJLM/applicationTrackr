@@ -285,6 +285,9 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             jobs = repo.sync(load_discovered_jobs(), get_detailed_applications(), reconcile=bool(fetch_google_sheet_csv()))
             from core.normalization import normalize_company, normalize_role
             job = next((j for j in jobs if normalize_company(j.company) == normalize_company(comp) and normalize_role(j.title) == normalize_role(title)), None)
+            if job is None and stage != 'Application Update':
+                created = repo.sync([], [{'company':comp, 'role':title, 'stages':[stage]}])
+                job = next((j for j in created if normalize_company(j.company) == normalize_company(comp) and normalize_role(j.title) == normalize_role(title)), None)
             if job is None:
                 return self._json({'status':'error', 'message':'Select a logged application to attach this email.'}, 400)
             repo.record_email(job, pending.get('event_id', u_id), stage, pending.get('subject', ''), synced=True)
