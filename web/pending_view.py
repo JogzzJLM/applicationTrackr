@@ -29,7 +29,7 @@ def render_pending_updates(updates):
 <select class="form-input" id="{escape(select_id, quote=True)}">{''.join(options)}</select>
 <div class="card-extra-actions">
 <button class="btn btn-filled" onclick="assignPendingSelection({uid}, {_js_literal(select_id)}, {_js_literal(stage)})">Confirm update</button>
-<button class="btn btn-tinted" onclick="openLogModalForPending({uid}, {_js_literal(company)}, {_js_literal(stage)})">Another role</button>
+<button class="btn btn-tinted" onclick="openLogModalForPending({uid}, {_js_literal(company)}, {_js_literal(stage)})">Assign another role</button>
 <button class="btn btn-ghost" onclick="dismissPendingUpdate({uid})">Dismiss</button>
 </div></div>''')
     return f'<div class="section-card"><div class="section-title">Email updates to review ({len(updates)})</div>{"".join(items)}</div>'
