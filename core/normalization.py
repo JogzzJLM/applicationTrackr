@@ -102,9 +102,9 @@ def normalize_role(title):
     if not title:
         return ""
     cleaned = str(title).lower().strip()
-    cleaned = re.sub(r'-\s*(london|uk|2027|2026|remote)', '', cleaned)
+    cleaned = re.sub(r'-\s*(london|uk|remote)', '', cleaned)
     cleaned = re.sub(r'[^a-z0-9\s]', ' ', cleaned)
-    stop_words = {"london", "uk", "2027", "2026", "remote", "year", "in", "industry"}
+    stop_words = {"london", "uk", "remote", "year", "in", "industry"}
     words = [w for w in cleaned.split() if w not in stop_words]
     return " ".join(words)
 
@@ -122,8 +122,12 @@ def fuzzy_roles_match(title1, title2, threshold=0.70):
     """
     if not title1 or not title2:
         return False
-    norm1 = normalize_role(title1)
-    norm2 = normalize_role(title2)
+    years1 = set(re.findall(r'\b20\d{2}\b', str(title1)))
+    years2 = set(re.findall(r'\b20\d{2}\b', str(title2)))
+    if years1 and years2 and years1 != years2:
+        return False
+    norm1 = re.sub(r'\b20\d{2}\b', '', normalize_role(title1)).strip()
+    norm2 = re.sub(r'\b20\d{2}\b', '', normalize_role(title2)).strip()
     if norm1 == norm2:
         return True
     words1 = set(stem_word(w) for w in norm1.split())

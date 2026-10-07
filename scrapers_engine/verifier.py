@@ -5,12 +5,13 @@ import re
 import threading
 import time
 from datetime import date, datetime, timezone
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 
 import requests
 from bs4 import BeautifulSoup
 from core.storage import DATA_DIR, atomic_write_json, load_json_safe
 
+VERIFICATION_SCHEMA = 2
 CACHE_FILE = str(DATA_DIR / 'listing_checks.json')
 _LOCK = threading.RLock()
 HEADERS = {'User-Agent': 'Mozilla/5.0', 'Accept': 'text/html,application/json'}
@@ -37,7 +38,7 @@ def job_postings(markup):
         if isinstance(value, list):
             for item in value: yield from walk(item)
         elif isinstance(value, dict):
-            if value.get('@type') == 'JobPosting': yield value
+            if value.get('@type') == 'JobPosting' or (isinstance(value.get('@type'), list) and 'JobPosting' in value['@type']): yield value
             for key in ('@graph', 'itemListElement', 'item', 'mainEntity'):
                 if key in value: yield from walk(value[key])
     soup = BeautifulSoup(markup, 'html.parser')
@@ -58,6 +59,7 @@ def posting_fields(post):
         if isinstance(country, dict): country = country.get('name', '')
         if country: countries.append(str(country))
     company = post.get('hiringOrganization') or {}
+    if isinstance(company, str): company = {'name': company}
     return {'title': plain(post.get('title', '')), 'company': plain(company.get('name', '')),
             'location': ', '.join(dict.fromkeys(cities + countries)),
             'description': plain(post.get('description')), 'country': ', '.join(dict.fromkeys(countries)),
@@ -66,7 +68,7 @@ def posting_fields(post):
 
 
 def _result(state, reason, **fields):
-    return {'state': state, 'reason': reason, 'checked_at': datetime.now(timezone.utc).isoformat(), **fields}
+    return {'schema_version': VERIFICATION_SCHEMA, 'state': state, 'reason': reason, 'checked_at': datetime.now(timezone.utc).isoformat(), **fields}
 
 
 def _workday(url):
@@ -116,6 +118,20 @@ def _check(url, expected_title=''):
             if closing and closing < date.today(): return _result('closed', 'Application deadline passed', **fields)
             if fields['title'] and fields['description']:
                 return _result('verified', 'Specific JobPosting with job description', final_url=r.url, **fields)
+        # Employer-hosted Greenhouse pages often embed their form and omit JSON-LD.
+        # Resolve the explicit board/job ID rather than trusting the aggregator's name.
+        embed = re.search(r'greenhouse\.io/embed/[^\s"<>]*[?&]for=([a-zA-Z0-9_-]+)', r.text)
+        job_id = parse_qs(parsed.query).get('gh_jid', [''])[0]
+        if embed and job_id.isdigit():
+            board = embed.group(1)
+            detail = requests.get(f'https://boards-api.greenhouse.io/v1/boards/{board}/jobs/{job_id}', headers=HEADERS, timeout=8)
+            if detail.status_code == 200:
+                job = detail.json()
+                if job.get('title') and job.get('content'):
+                    from scrapers_engine.employer_identity import greenhouse_employer
+                    return _result('verified', 'Employer embedded ATS job detail', title=job['title'],
+                        company=greenhouse_employer(board), location=(job.get('location') or {}).get('name', ''),
+                        description=plain(job['content']), final_url=r.url)
         headings = ' '.join(h.get_text(' ', strip=True) for h in soup.find_all(['h1', 'h2'])).lower()
         title_tokens = [w for w in re.findall(r'[a-z]+', expected_title.lower()) if len(w) > 3 and w not in {'summer', 'programme', 'program', 'internship'}]
         matches = sum(w in headings for w in title_tokens)
@@ -138,7 +154,7 @@ def _check(url, expected_title=''):
 def verify_listing(url, expected_title='', force=False):
     with _LOCK:
         cached = load_json_safe(CACHE_FILE, {}).get(url)
-    if cached and not force:
+    if cached and cached.get('schema_version') == VERIFICATION_SCHEMA and not force:
         age = time.time() - cached.get('saved_at', 0)
         ttl = 6 * 3600 if cached.get('state') == 'verified' else 30 * 60
         if age < ttl: return dict(cached)

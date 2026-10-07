@@ -9,10 +9,11 @@ from bs4 import BeautifulSoup
 from core.normalization import extract_ats_post_id, fuzzy_roles_match, normalize_company, normalize_role, normalize_url, same_listing
 from core.relevance import evaluate_job, detect_programme_type
 from core.storage import load_closed_urls_cache, load_reported_closed_jobs, load_settings, mark_url_as_closed, save_settings
-from scrapers_engine.verifier import verify_listing, deadline_date
+from scrapers_engine.verifier import verify_listing, deadline_date, VERIFICATION_SCHEMA
 from scrapers_engine.quality import record_review, clear_review
 from datetime import date, datetime, timezone
 from config import update_source_status
+from scrapers_engine.employer_identity import greenhouse_employer
 
 _JOB_LOCK = threading.Lock()
 _REGISTRY_LOCK = threading.Lock()
@@ -73,7 +74,7 @@ def add_discovered_job(discovered_list, job_id, company, title, location, link, 
             if normalize_url(c_job.get('link', '')) == norm_u:
                 return False
     if metadata.get('listing_status') == 'published' and source.startswith(('Greenhouse (', 'Lever (', 'Ashby (', 'SmartRecruiters (')):
-        verification = {'state': 'verified', 'reason': 'Published employer ATS feed', 'checked_at': datetime.now(timezone.utc).isoformat()}
+        verification = {'schema_version': VERIFICATION_SCHEMA, 'state': 'verified', 'reason': 'Published employer ATS feed', 'checked_at': datetime.now(timezone.utc).isoformat()}
     else:
         verification = verify_listing(link, title)
     if verification['state'] != 'verified':
@@ -104,7 +105,7 @@ def add_discovered_job(discovered_list, job_id, company, title, location, link, 
         "match_reasons": relevance.reasons[:5],
         "category": relevance.category,
         "program_type": relevance.program_type,
-        "verification": {k: verification[k] for k in ('state', 'reason', 'checked_at')},
+        "verification": {k: verification.get(k) for k in ('state', 'reason', 'checked_at', 'schema_version')},
         "last_seen": datetime.now(timezone.utc).isoformat(),
     }
     if closing: payload['deadline'] = closing.isoformat()
@@ -150,10 +151,14 @@ def _register_ats_company(url):
         return
     settings = load_settings()
     updated = False
+    embed = re.search(r"greenhouse\.io/embed/[^\s\"<>]*[?&]for=([a-zA-Z0-9_-]+)", url)
+    if embed:
+        url = "https://boards.greenhouse.io/" + embed.group(1)
     patterns = (
         (r"greenhouse\.io/([^/?#]+)", "greenhouse_companies", {"embed", "jobs", "embeds"}),
         (r"lever\.co/([^/?#]+)", "lever_companies", {"jobs"}),
         (r"ashbyhq\.com/([^/?#]+)", "ashby_companies", {"jobs"}),
+        (r"(?:careers|jobs)\.smartrecruiters\.com/([^/?#]+)", "smartrecruiters_companies", set()),
     )
     for pattern, key, ignored in patterns:
         match = re.search(pattern, url, re.I)
@@ -205,6 +210,7 @@ def scrape_greenhouse_jobs(seen_jobs, discovered_list, scraper_status=None):
                 return local
             with _JOB_LOCK: online += 1
             jobs = resp.json().get("jobs", [])
+            employer = greenhouse_employer(company) or company.capitalize()
             local_relevant = 0
             for job in jobs:
                 title = job.get("title", "")
@@ -220,7 +226,7 @@ def scrape_greenhouse_jobs(seen_jobs, discovered_list, scraper_status=None):
                     "team": ", ".join(o.get("name", "") for o in job.get("offices", []) if o.get("name")),
                 }
                 job_id = f"gh_{company}_{job.get('id')}"
-                if _record_job(discovered_list, seen_jobs, local, relevant, job_id=job_id, company=company.capitalize(), title=title, location=location, job_url=job.get("absolute_url", ""), source=f"Greenhouse ({company})", board_url=f"https://boards.greenhouse.io/{company}", metadata=metadata):
+                if _record_job(discovered_list, seen_jobs, local, relevant, job_id=job_id, company=employer, title=title, location=location, job_url=job.get("absolute_url", ""), source=f"Greenhouse ({company})", board_url=f"https://boards.greenhouse.io/{company}", metadata=metadata):
                     local_relevant += 1
                     with _JOB_LOCK: relevant += 1
             if local_relevant:

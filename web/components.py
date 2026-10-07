@@ -1,5 +1,6 @@
 import html
 import json
+import re
 import urllib.parse
 from dataclasses import dataclass
 from typing import Any, Mapping
@@ -45,7 +46,9 @@ class JobCardViewModel:
 
     @property
     def location(self) -> str:
-        return _text(self.raw.get("location"), "Unknown")
+        parts = re.split(r"[,;]", _text(self.raw.get("location"), "Unknown"))
+        parts = ["UK" if p.strip().upper() in {"GB", "GBR", "UNITED KINGDOM"} else p.strip() for p in parts if p.strip().upper() not in {"UNAVAILABLE", "NULL", "NONE", ""}]
+        return ", ".join(dict.fromkeys(parts)) or "Location not published"
 
     @property
     def link(self) -> str:
@@ -231,6 +234,7 @@ data-title="{html.escape(self.title.lower(), quote=True)}">
     <div class="card-company">{html.escape(self.company)}</div>
     <div class="card-role">{html.escape(self.title)}</div>
     <div class="card-meta">{html.escape(self.location)} · {html.escape(self.deadline)}</div>
+    <div class="card-freshness">{("Checked " + html.escape(checked) + " UTC") if checked else "Manually added" if self.raw.get("source") == "Manual" else "Check time unavailable"}</div>
     <div class="card-actions">
         {apply_action}
         {agent_action}
@@ -282,7 +286,14 @@ class ApplicationCardViewModel:
         return "badge-yellow"
 
     def render(self) -> str:
-        return f'''<article class="application-card">
+        status_type = self.raw.get("status_type") or ("rejected" if "reject" in self.latest_stage.lower() else "offer" if "offer" in self.latest_stage.lower() else "active")
+        actions = (
+            f'<button onclick="quickUpdateStage({_js_literal(self.company)}, {_js_literal("Interview")}, {_js_literal(self.role)})" class="btn btn-tinted">+ Interview</button>'
+            f'<button onclick="quickUpdateStage({_js_literal(self.company)}, {_js_literal("Rejected")}, {_js_literal(self.role)})" class="btn btn-ghost btn-danger-text">Reject</button>'
+        ) if status_type == "active" else f'<button onclick="logJob({_js_literal(self.company)}, {_js_literal(self.role)})" class="btn btn-tinted">Update stage</button>'
+        activity = _text(self.raw.get("last_activity"))[:16].replace("T", " ")
+        recent = f'<span class="application-status">Latest email: {html.escape(activity)} UTC</span>' if activity else ''
+        return f'''<article class="application-card" data-status="{html.escape(status_type, quote=True)}" data-search="{html.escape((self.company + " " + self.role + " " + self.latest_stage).lower(), quote=True)}">
     <div class="application-card-head">
         <div>
             <div class="application-company">{html.escape(self.company)}</div>
@@ -291,11 +302,10 @@ class ApplicationCardViewModel:
         <span class="badge {self.badge_class}">{html.escape(self.latest_stage)}</span>
     </div>
     <div class="application-card-foot">
-        <span class="application-status">{html.escape(self.status)}</span>
+        <span class="application-status">{html.escape(self.status)}</span>{recent}
         <div class="application-actions">
             <button onclick="openJobDetails({_js_literal(self.raw.get("object_id", ""))})" class="btn btn-ghost">Details / Notes</button>
-            <button onclick="quickUpdateStage({_js_literal(self.company)}, 'Interview', {_js_literal(self.role)})" class="btn btn-tinted">+ Interview</button>
-            <button onclick="quickUpdateStage({_js_literal(self.company)}, 'Rejected', {_js_literal(self.role)})" class="btn btn-ghost btn-danger-text">Reject</button>
+            {actions}
         </div>
     </div>
 </article>'''

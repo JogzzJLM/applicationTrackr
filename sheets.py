@@ -4,11 +4,22 @@ import time
 import io
 import requests
 import plotly.graph_objects as go
-from config import GOOGLE_SHEET_WEBHOOK_URL, GOOGLE_SHEET_CSV_URL, normalize_company, normalize_role
+from config import GOOGLE_SHEET_WEBHOOK_URL, GOOGLE_SHEET_CSV_URL, normalize_company, normalize_role, update_scraper_status
+from core.storage import DATA_DIR, load_json_safe, atomic_write_json
+from datetime import datetime, timezone
+import threading
+
+_SHEET_LOCK = threading.RLock()
+_SHEET_SNAPSHOT = str(DATA_DIR / "sheet_snapshot.json")
 
 _SHEET_CSV_CACHE = {"timestamp": 0, "content": ""}
 
 def fetch_google_sheet_csv(force_refresh=False):
+    with _SHEET_LOCK:
+        return _fetch_google_sheet_csv(force_refresh)
+
+
+def _fetch_google_sheet_csv(force_refresh=False):
     """Fetches CSV from Google Sheets with 5-second in-memory caching & automatic retry handling."""
     now = time.time()
     if not force_refresh and (now - _SHEET_CSV_CACHE["timestamp"]) < 5 and _SHEET_CSV_CACHE["content"]:
@@ -16,7 +27,9 @@ def fetch_google_sheet_csv(force_refresh=False):
 
     if not GOOGLE_SHEET_CSV_URL:
         print("⚠️ GOOGLE_SHEET_CSV_URL is not configured.")
-        return _SHEET_CSV_CACHE.get("content", "")
+        snapshot = load_json_safe(_SHEET_SNAPSHOT, {})
+        update_scraper_status("sheet_health", {"ok": False, "using_cached": bool(snapshot.get("content")), "error": "Sheet read not configured"})
+        return _SHEET_CSV_CACHE.get("content") or snapshot.get("content", "")
 
     separator = "&" if "?" in GOOGLE_SHEET_CSV_URL else "?"
     cache_url = f"{GOOGLE_SHEET_CSV_URL}{separator}_cb={int(now * 1000)}"
@@ -24,15 +37,27 @@ def fetch_google_sheet_csv(force_refresh=False):
     for attempt in range(2):
         try:
             resp = requests.get(cache_url, timeout=6)
-            if resp.status_code == 200 and resp.text.strip():
+            columns = next(csv.reader(io.StringIO(resp.text)), []) if resp.status_code == 200 else []
+            if resp.status_code == 200 and {'Company', 'Role'}.issubset(set(columns)):
                 _SHEET_CSV_CACHE["timestamp"] = now
                 _SHEET_CSV_CACHE["content"] = resp.text
+                atomic_write_json(_SHEET_SNAPSHOT, {'content': resp.text, 'timestamp': now})
+                update_scraper_status('sheet_health', {'ok': True, 'checked_at': datetime.now(timezone.utc).isoformat(), 'using_cached': False})
                 return resp.text
         except Exception:
             if attempt == 0:
                 time.sleep(0.5)
 
-    return _SHEET_CSV_CACHE.get("content", "")
+    snapshot = load_json_safe(_SHEET_SNAPSHOT, {})
+    update_scraper_status('sheet_health', {'ok': False, 'checked_at': datetime.now(timezone.utc).isoformat(),
+        'using_cached': bool(_SHEET_CSV_CACHE.get('content') or snapshot.get('content')), 'error': 'Sheet read unavailable; retaining last successful snapshot'})
+    return _SHEET_CSV_CACHE.get("content") or snapshot.get('content', '')
+
+def sheet_stages(row):
+    """Only explicit Stage columns, in numeric order, are application history."""
+    stages = sorted(((int(m.group(1)), str(value).strip()) for key, value in row.items()
+        if (m := re.fullmatch(r'stage\s*(\d+)', str(key or '').strip(), re.I)) and value and str(value).strip()))
+    return [value for _, value in stages]
 
 def resolve_smart_stage(company, stage, role=None):
     """
@@ -164,17 +189,15 @@ def parse_sheet_stats(csv_text=None):
         rejections = 0
 
         for row in reader:
-            stages = []
-            for k, v in row.items():
-                if v and v.strip() and k.strip().lower() not in ["company", "role", "link", "date"]:
-                    stages.append(v.strip())
+            stages = sheet_stages(row)
 
-            if stages:
+            if str(row.get("Company", "")).strip():
                 total += 1
+                stages = stages or ["Applied"]
                 latest = stages[-1].lower()
                 if "offer" in latest:
                     offers += 1
-                elif "reject" in latest or "fail" in latest or "ghost" in latest:
+                elif any(word in latest for word in ("reject", "fail", "ghost", "withdraw")):
                     rejections += 1
                 else:
                     active += 1
@@ -197,10 +220,7 @@ def get_detailed_applications(csv_text=None, force_refresh=False):
                 role = row.get("Role", "Software/Quant Role").strip()
                 if not company:
                     continue
-                stages = []
-                for k, v in row.items():
-                    if v and v.strip() and k.strip().lower() not in ["company", "role", "link", "date"]:
-                        stages.append(v.strip())
+                stages = sheet_stages(row)
 
                 latest_stage = stages[-1] if stages else "Applied"
                 latest_lower = latest_stage.lower()
@@ -210,6 +230,9 @@ def get_detailed_applications(csv_text=None, force_refresh=False):
                 elif "reject" in latest_lower or "fail" in latest_lower:
                     status = "Rejected"
                     status_type = "rejected"
+                elif "withdraw" in latest_lower:
+                    status = "Withdrawn"
+                    status_type = "withdrawn"
                 elif "ghost" in latest_lower:
                     status = "Ghosted"
                     status_type = "ghosted"
@@ -255,6 +278,11 @@ def generate_default_sankey():
         f.write(html_content)
 
 def generate_sankey_from_google_sheets(force_refresh=False):
+    with _SHEET_LOCK:
+        return _generate_sankey_from_google_sheets(force_refresh)
+
+
+def _generate_sankey_from_google_sheets(force_refresh=False):
     try:
         csv_text = fetch_google_sheet_csv(force_refresh)
         if not csv_text:
@@ -270,13 +298,7 @@ def generate_sankey_from_google_sheets(force_refresh=False):
         row_count = 0
 
         for row in reader:
-            stages = []
-            for col_name, val in row.items():
-                if val and val.strip():
-                    clean_val = val.strip()
-                    if col_name and col_name.strip().lower() in ["company", "role", "link", "date"]:
-                        continue
-                    stages.append(clean_val)
+            stages = sheet_stages(row) or (["Applied"] if str(row.get("Company", "")).strip() else [])
 
             if stages:
                 row_count += 1
@@ -379,17 +401,20 @@ def generate_sankey_from_google_sheets(force_refresh=False):
             font_color="#1d1d1f",
             font_family="Inter, -apple-system, BlinkMacSystemFont, sans-serif",
             autosize=True,
-            height=380,
+
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
             margin=dict(l=15, r=15, t=15, b=15)
         )
 
-        fig.write_html(
-            "sankey_diagram.html",
-            include_plotlyjs="cdn",
-            config={'displayModeBar': False, 'responsive': True, 'scrollZoom': False}
-        )
+        markup = fig.to_html(include_plotlyjs="cdn", default_height="100%", default_width="100%",
+            config={'displayModeBar': False, 'responsive': True, 'scrollZoom': False})
+        markup = markup.replace('</head>', '<style>html,body{height:100%;margin:0;overflow:hidden}</style></head>')
+        import os
+        from pathlib import Path
+        temporary = Path('sankey_diagram.html.tmp')
+        temporary.write_text(markup, encoding='utf-8')
+        os.replace(temporary, 'sankey_diagram.html')
 
     except Exception as e:
         print(f"Error generating Sankey diagram: {e}")

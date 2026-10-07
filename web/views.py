@@ -1,4 +1,5 @@
 from html import escape
+import json
 import urllib.parse
 from config import SCRAPER_STATUS
 from core.storage import (
@@ -26,7 +27,7 @@ def render_unified_dashboard_html(active_tab="flow"):
     apps = get_detailed_applications(csv_text=csv_text)
     all_jobs = load_discovered_jobs()
     from core.jobs import JobRepository
-    job_objects = JobRepository().sync(all_jobs, apps)
+    job_objects = JobRepository().sync(all_jobs, apps, reconcile=bool(csv_text))
     details = {j.id: j for j in job_objects}
     for listing in all_jobs:
         obj = details.get(listing.get('id')) or next((j for j in job_objects if normalize_company(j.company) == normalize_company(listing.get('company')) and normalize_role(j.title) == normalize_role(listing.get('title'))), None)
@@ -38,9 +39,11 @@ def render_unified_dashboard_html(active_tab="flow"):
         obj = next((j for j in job_objects if normalize_company(j.company) == normalize_company(application.get('company')) and normalize_role(j.title) == normalize_role(application.get('role'))), None)
         if obj:
             application['object_id'] = obj.id
+            events = [e for e in obj.email_events if not e.get("invalidated")]
+            application["last_activity"] = max((e.get("received_at", "") for e in events), default="")
     sheet_url = get_sheet_edit_url()
     ntfy_status = escape(str(SCRAPER_STATUS.get("ntfy", {"ok": False, "error": "No notification receipt recorded yet."})))
-    sheet_button = f'<a href="{escape(sheet_url, quote=True)}" target="_blank" rel="noopener noreferrer" class="btn btn-tinted sheet-shortcut" aria-label="Open Google Sheet" title="Open Google Sheet"><span aria-hidden="true">▦</span><span class="desktop-label"> Open Sheet ↗</span></a>' if sheet_url else '<span class="btn btn-ghost" title="Set GOOGLE_SHEET_EDIT_URL in Portainer">Sheet URL needed</span>'
+    sheet_button = f'<a href="{escape(sheet_url, quote=True)}" target="_blank" rel="noopener noreferrer" class="btn btn-tinted sheet-shortcut" aria-label="Open Google Sheet" title="Open Google Sheet"><span aria-hidden="true">▦</span><span class="desktop-label"> Open Sheet ↗</span></a>' if sheet_url else '<span class="btn btn-ghost sheet-shortcut" aria-label="Sheet URL needed" title="Set GOOGLE_SHEET_EDIT_URL in Portainer"><span aria-hidden="true">▦</span><span class="desktop-label"> Sheet URL needed</span></span>'
     applied_jobs, applied_companies = get_applied_jobs_set(csv_text=csv_text)
     settings = load_settings()
     hidden_jobs = load_hidden_jobs()
@@ -117,6 +120,11 @@ def render_unified_dashboard_html(active_tab="flow"):
     cnt_offer = 0
     cnt_rejected = 0
 
+    from core.health import engine_health
+    health = engine_health()
+    engine_label = escape(health["label"])
+    connection_pct = health["source_connection_percent"]
+    apps.sort(key=lambda a: a.get("last_activity", ""), reverse=True)
     apps_cards_html = ""
     if not apps:
         apps_cards_html = '<div class="empty-state">No applications logged yet. Tap "+ Log App" to track your first role.</div>'
@@ -163,7 +171,7 @@ def render_unified_dashboard_html(active_tab="flow"):
 
     kb_phrases = load_closed_keywords_kb()
     kb_count = len(kb_phrases)
-    kb_badges_html = " ".join([f'<span class="kb-tag">{p}</span>' for p in kb_phrases])
+    kb_badges_html = " ".join([f'<span class="kb-tag">{escape(p)}</span>' for p in kb_phrases])
 
     closed_jobs_list = []
     for c_id, c_job in reported_closed_map.items():
@@ -204,12 +212,13 @@ def render_unified_dashboard_html(active_tab="flow"):
         if is_reported_closed:
             closed_count += 1
         else:
-            if prog_type == "placement":
-                placement_count += 1
-            elif prog_type == "internship":
-                intern_count += 1
-            else:
-                grad_count += 1
+            if j.get("verification", {}).get("state") == "verified":
+                if prog_type == "placement":
+                    placement_count += 1
+                elif prog_type == "internship":
+                    intern_count += 1
+                else:
+                    grad_count += 1
 
             if any(k in title_lower for k in ["quant", "trader", "trading", "finance", "financial"]):
                 quant_count += 1
@@ -231,19 +240,19 @@ def render_unified_dashboard_html(active_tab="flow"):
                 if closing and 0 <= (closing - date.today()).days <= 7:
                     if action_items_count < 6:
                         action_items_count += 1
-                        comp_js = comp_name.replace("'", "\\'").replace('"', '&quot;')
-                        title_js = title_name.replace("'", "\\'").replace('"', '&quot;')
+                        comp_js = escape(json.dumps(comp_name), quote=True)
+                        title_js = escape(json.dumps(title_name), quote=True)
                         action_items_html += f"""
                         <div class="action-item-card">
                             <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-                                <div style="font-weight:800; font-size:15px; color:var(--text-primary);">{comp_name}</div>
+                                <div style="font-weight:800; font-size:15px; color:var(--text-primary);">{escape(comp_name)}</div>
                                 <span class="badge badge-papaya">CLOSING SOON</span>
                             </div>
-                            <div style="font-size:13.5px; color:var(--cyan); font-weight:700; margin-top:3px;">{title_name}</div>
+                            <div style="font-size:13.5px; color:var(--cyan); font-weight:700; margin-top:3px;">{escape(title_name)}</div>
                             <div style="font-size:12px; color:var(--text-tertiary); margin-top:4px;">Deadline: <strong style="color:var(--papaya); font-family:var(--font-mono);">{j.get('deadline')}</strong></div>
                             <div style="margin-top:12px; display:flex; gap:8px;">
-                                <a href="{j_link}" target="_blank" rel="noopener" class="btn btn-filled" style="flex:1; justify-content:center;">Apply Now ↗</a>
-                                <button onclick="logJob('{comp_js}', '{title_js}')" class="btn btn-tinted">+ Log</button>
+                                <a href="{escape(j_link, quote=True)}" target="_blank" rel="noopener" class="btn btn-filled" style="flex:1; justify-content:center;">Apply Now ↗</a>
+                                <button onclick="logJob({comp_js}, {title_js})" class="btn btn-tinted">+ Log</button>
                             </div>
                         </div>
                         """
@@ -281,16 +290,10 @@ def render_unified_dashboard_html(active_tab="flow"):
     auto_hide_chk = "checked" if settings.get("auto_hide_applied_company_jobs", False) else ""
 
     applications_toggle_html = ""
-    if total > 4:
-        applications_toggle_html = (
-            f'<button id="applications-toggle" class="btn btn-ghost mobile-only" '
-            f'style="width:100%;justify-content:center;margin-top:10px;" '
-            f'onclick="toggleApplications(this)">Show all {total} applications</button>'
-        )
 
     src_status_html = ""
     for s_name, s_msg in SCRAPER_STATUS.get("source_status", {}).items():
-        src_status_html += f'<div class="diag-row"><span class="diag-label">{s_name}</span><span class="diag-value">{s_msg}</span></div>'
+        src_status_html += f'<div class="diag-row"><span class="diag-label">{escape(str(s_name))}</span><span class="diag-value">{escape(str(s_msg))}</span></div>'
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -862,7 +865,7 @@ def render_unified_dashboard_html(active_tab="flow"):
         <span>Application</span>Trackr
     </div>
     <div class="topbar-right">
-        <div class="status-pill" title="Engine Online"><span class="dot"></span><span class="status-label">Engine Online</span></div>
+        <div class="status-pill" title="{engine_label}"><span class="dot"></span><span class="status-label">{engine_label}</span></div>
         <button onclick="openLogModal()" class="btn btn-filled" aria-label="Log application" title="Log application">+<span class="desktop-label"> Log App</span></button>
         {sheet_button}
         <details class="header-menu">
@@ -872,7 +875,7 @@ def render_unified_dashboard_html(active_tab="flow"):
                 <button onclick="openManualJobModal()" class="btn btn-ghost">Add your own job</button>
                 <button onclick="testNotification()" class="btn btn-ghost">Test notification</button>
                 <button onclick="syncSheetAndReload()" class="btn btn-ghost">Sync Google Sheet</button>
-                <a href="/api/rescan" class="btn btn-ghost">Rescan listings</a>
+                <button onclick="mutate('/api/rescan').then(() => location.reload())" class="btn btn-ghost">Rescan listings</button>
                 <a href="/profile" class="btn btn-ghost">Saved application profile</a>
             </div>
         </details>
@@ -927,7 +930,7 @@ def render_unified_dashboard_html(active_tab="flow"):
             <div class="stat-number">{discovered_count} <span style="font-size:16px; font-weight:700; color:var(--yellow);">SCHEMES</span></div>
             <div class="stat-footer">
                 <span class="stat-sub">{intern_count} Intern · {grad_count} Grad · {placement_count} Placement</span>
-                <div class="stat-meter"><div style="width: 88%; background: var(--yellow);"></div></div>
+                <div class="stat-meter"><div style="width: {connection_pct}%; background: var(--yellow);"></div></div>
             </div>
         </div>
     </div>
@@ -977,7 +980,12 @@ def render_unified_dashboard_html(active_tab="flow"):
                     </div>
                 </div>
 
-                <div id="applications-grid" class="applications-grid is-collapsed">
+                <div class="application-filters">
+                    <input id="application-search" class="search-input" type="search" placeholder="Search company, role or stage" aria-label="Search applications" oninput="filterApplications()">
+                    <select id="application-status" class="sort-select" aria-label="Filter applications" onchange="filterApplications()"><option value="active">Active applications</option><option value="all">All applications</option><option value="offer">Offers</option><option value="rejected">Rejected</option><option value="withdrawn">Withdrawn</option><option value="ghosted">Ghosted</option></select>
+                </div>
+                <p id="application-results" class="results-summary" aria-live="polite"></p>
+                <div id="applications-grid" class="applications-grid">
                     {apps_cards_html}
                 </div>
                 {applications_toggle_html}
@@ -1049,15 +1057,15 @@ def render_unified_dashboard_html(active_tab="flow"):
             <form action="/api/settings" method="POST">
                 <div class="form-group">
                     <label class="form-label">Skills</label>
-                    <input type="text" name="my_skills" class="form-input" value="{my_skills_str}">
+                    <input type="text" name="my_skills" class="form-input" value="{escape(my_skills_str, quote=True)}">
                 </div>
                 <div class="form-group">
                     <label class="form-label">Exclude keywords</label>
-                    <input type="text" name="exclude_keywords" class="form-input" value="{ex_kw}">
+                    <input type="text" name="exclude_keywords" class="form-input" value="{escape(ex_kw, quote=True)}">
                 </div>
                 <div class="form-group">
                     <label class="form-label">Exclude locations</label>
-                    <input type="text" name="exclude_locations" class="form-input" value="{ex_loc}">
+                    <input type="text" name="exclude_locations" class="form-input" value="{escape(ex_loc, quote=True)}">
                 </div>
                 <div class="form-group">
                     <label class="form-label">British citizenship (for restricted roles)</label>
@@ -1069,19 +1077,19 @@ def render_unified_dashboard_html(active_tab="flow"):
                 </div>
                 <div class="form-group">
                     <label class="form-label">Greenhouse companies</label>
-                    <textarea name="greenhouse_companies" class="form-input" rows="3">{gh_comp}</textarea>
+                    <textarea name="greenhouse_companies" class="form-input" rows="3">{escape(gh_comp)}</textarea>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Lever companies</label>
-                    <textarea name="lever_companies" class="form-input" rows="2">{lev_comp}</textarea>
+                    <textarea name="lever_companies" class="form-input" rows="2">{escape(lev_comp)}</textarea>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Ashby companies</label>
-                    <textarea name="ashby_companies" class="form-input" rows="2">{ash_comp}</textarea>
+                    <textarea name="ashby_companies" class="form-input" rows="2">{escape(ash_comp)}</textarea>
                 </div>
                 <div class="form-group">
                     <label class="form-label">SmartRecruiters companies</label>
-                    <textarea name="smartrecruiters_companies" class="form-input" rows="2">{sr_comp}</textarea>
+                    <textarea name="smartrecruiters_companies" class="form-input" rows="2">{escape(sr_comp)}</textarea>
                 </div>
                 <div class="form-group">
                     <label style="display:flex; align-items:center; gap:10px; font-size:14px; font-weight:600; cursor:pointer; color:var(--text-primary);">
@@ -1120,7 +1128,7 @@ def render_unified_dashboard_html(active_tab="flow"):
                 <span class="diag-label">Indexed active schemes</span>
                 <span class="diag-value" id="diag-indexed-count" style="color:var(--papaya); font-size:16px;">{discovered_count}</span>
             </div>
-            <div style="margin-top:18px; font-size:12px; font-weight:800; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:10px;">Live Source Connectors (7 Sources)</div>
+            <div style="margin-top:18px; font-size:12px; font-weight:800; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:10px;">Live Source Connectors</div>
             <div id="diag-source-status">
                 {src_status_html}
             </div>
@@ -1253,7 +1261,7 @@ def render_unified_dashboard_html(active_tab="flow"):
             document.getElementById('job-details-fields').replaceChildren();
             for(const [key,value] of Object.entries(job.custom_fields||{{}})) addExtraField('job-details-fields',key,value);
             document.getElementById('job-details-title').textContent=job.company+' · '+job.title;
-            document.getElementById('job-email-history').textContent='Email history: '+(job.email_events||[]).map(e=>e.stage+' — '+e.subject+(e.sheet_synced?' (synced)':' (pending)')).join('\\n');
+            document.getElementById('job-email-history').textContent='Email history: '+(job.email_events||[]).map(e=>(e.received_at||'').slice(0,16).replace('T',' ')+' UTC · '+e.stage+' — '+e.subject+(e.invalidated?' (invalidated: '+e.invalidated_reason+')':e.sheet_synced?' (synced)':' (pending)')).join('\\n');
             document.getElementById('job-details-modal').style.display='flex';
         }} catch(error) {{alert(error.message);}}
     }}
@@ -1307,6 +1315,10 @@ def render_unified_dashboard_html(active_tab="flow"):
         document.getElementById('log-modal').style.display = 'none';
     }}
 
+    function mutate(url) {{
+        const target = new URL(url, location.origin);
+        return fetch(target.pathname, {{method: 'POST', headers: {{'Content-Type':'application/x-www-form-urlencoded'}}, body: target.searchParams}});
+    }}
     function reloadSankeyIframe() {{
         var iframe = document.getElementById('sankey-iframe');
         if (iframe) {{
@@ -1315,7 +1327,7 @@ def render_unified_dashboard_html(active_tab="flow"):
     }}
 
     function syncSheetAndReload() {{
-        fetch('/api/sync-sheet')
+        mutate('/api/sync-sheet')
             .then(() => {{
                 reloadSankeyIframe();
                 location.reload();
@@ -1340,7 +1352,7 @@ def render_unified_dashboard_html(active_tab="flow"):
     }}
 
     function resolvePendingUpdate(id, comp, role, stage) {{
-        fetch('/api/resolve-pending-update?id=' + encodeURIComponent(id) + '&company=' + encodeURIComponent(comp) + '&role=' + encodeURIComponent(role) + '&stage=' + encodeURIComponent(stage))
+        mutate('/api/resolve-pending-update?id=' + encodeURIComponent(id) + '&company=' + encodeURIComponent(comp) + '&role=' + encodeURIComponent(role) + '&stage=' + encodeURIComponent(stage))
             .then(r => r.json())
             .then(data => {{
                 if (data.status === "error") {{ alert(data.message || "Save failed"); return; }}
@@ -1350,13 +1362,13 @@ def render_unified_dashboard_html(active_tab="flow"):
     }}
 
     function dismissPendingUpdate(id) {{
-        fetch('/api/dismiss-pending-update?id=' + encodeURIComponent(id))
+        mutate('/api/dismiss-pending-update?id=' + encodeURIComponent(id))
             .then(r => r.json())
             .then(() => location.reload());
     }}
 
     function logJobWithStage(comp, title, stage) {{
-        fetch('/api/mark-applied?company=' + encodeURIComponent(comp) + '&title=' + encodeURIComponent(title) + '&stage=' + encodeURIComponent(stage || 'Applied'))
+        mutate('/api/mark-applied?company=' + encodeURIComponent(comp) + '&title=' + encodeURIComponent(title) + '&stage=' + encodeURIComponent(stage || 'Applied'))
             .then(r => r.json())
             .then(data => {{
                 if (data.status === "error") {{ alert(data.message || "Save failed"); return; }}
@@ -1570,7 +1582,7 @@ def render_unified_dashboard_html(active_tab="flow"):
     }}
 
     function clearLiveLogs() {{
-        fetch('/api/clear-logs')
+        mutate('/api/clear-logs')
             .then(r => r.json())
             .then(() => fetchLiveLogs());
     }}
@@ -1592,20 +1604,20 @@ def render_unified_dashboard_html(active_tab="flow"):
 
     function reportClosedJob(jobId, link) {{
         if (confirm('Report this scheme as closed?')) {{
-            fetch('/api/report-closed?id=' + encodeURIComponent(jobId) + '&link=' + encodeURIComponent(link))
+            mutate('/api/report-closed?id=' + encodeURIComponent(jobId) + '&link=' + encodeURIComponent(link))
                 .then(r => r.json())
                 .then(() => location.reload());
         }}
     }}
 
     function reopenJob(jobId) {{
-        fetch('/api/reopen-job?id=' + encodeURIComponent(jobId))
+        mutate('/api/reopen-job?id=' + encodeURIComponent(jobId))
             .then(r => r.json())
             .then(() => location.reload());
     }}
 
     function logJob(comp, title) {{
-        fetch('/api/mark-applied?company=' + encodeURIComponent(comp) + '&title=' + encodeURIComponent(title))
+        mutate('/api/mark-applied?company=' + encodeURIComponent(comp) + '&title=' + encodeURIComponent(title))
             .then(r => r.json())
             .then(() => {{
                 alert('Marked as applied.');

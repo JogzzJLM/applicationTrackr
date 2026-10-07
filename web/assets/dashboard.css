@@ -144,3 +144,23 @@ button:disabled { opacity: .45; cursor: default; }
 .card-role { color: #0369a1; }
 .assist-head { position: sticky; top: -22px; background: white; z-index: 1; padding-block: 6px; }
 @media (max-width: 700px) { .assist-head { top: -18px; } }
+/* Dense automatic layout: retain legible text and usable touch targets. */
+.hero-stat-card { padding: 16px 18px; }
+.stat-number { font-size: clamp(25px, 3vw, 38px); }
+.section-card { padding: 18px; }
+.application-filters { display: flex; flex-wrap: wrap; gap: 8px; }
+.application-filters .search-input { flex: 1 1 220px; min-width: 0; }
+.application-filters select { flex: 0 1 200px; }
+.card-freshness { font-size: 11px; color: var(--text-tertiary); line-height: 1.4; }
+.application-card { padding: 14px; gap: 10px; }
+.application-role { font-size: 13px; line-height: 1.4; }
+.status-pill[title="Needs attention"] .dot { background: var(--papaya); }
+@media (max-width: 700px) {
+    .application-filters > * { width: 100%; flex-basis: 100%; }
+    .applications-grid.is-collapsed .application-card:nth-child(n+5) { display: flex; }
+    .hero-stat-card { padding: 12px; }
+}
+
+.sankey-frame { height: 380px; }
+@media (max-width:700px) { .sankey-frame { height:300px; } }
+.status-pill[title="Needs attention"] { color: #965200; background: #fff4e3; border-color: #f4d3a4; }

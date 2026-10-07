@@ -7,7 +7,7 @@ from email.header import decode_header
 from hashlib import sha256
 from bs4 import BeautifulSoup
 from core.jobs import JobRepository, match_email_to_job
-from core.storage import atomic_write_json
+from core.storage import atomic_write_json, DATA_DIR, load_json_safe
 from config import APP_BASE_URL
 import time
 from datetime import datetime, timedelta
@@ -18,7 +18,7 @@ from config import (
     SEEN_EMAILS_FILE, update_source_status,
 )
 from notifications import send_notification
-from sheets import update_google_sheet_via_webhook, get_detailed_applications, normalize_company
+from sheets import fetch_google_sheet_csv, update_google_sheet_via_webhook, get_detailed_applications, normalize_company
 from core.storage import (
     add_pending_email_update,
     load_pending_email_updates,
@@ -106,27 +106,37 @@ def extract_company_name(subject, from_sender, body_text=""):
     return "Application Company"
 
 
+def latest_message_text(text):
+    """Discard reply history and quoted lines; keep an intentionally forwarded message."""
+    text = str(text or '').replace('\r\n', '\n')
+    boundary = re.search(r"(?im)^\s*(?:on .{5,150}wrote:|[-_]{2,}\s*original message|previous (?:email|message)\s*:|from:.*\n(?:sent:|date:))", text)
+    # Plain one-line HTML email exports can still contain an explicit history label.
+    boundary = boundary or re.search(r"(?i)\bprevious (?:email|message)\s*:", text)
+    if boundary and text[:boundary.start()].strip():
+        text = text[:boundary.start()]
+    return '\n'.join(line for line in text.splitlines() if not line.lstrip().startswith('>'))
+
+
 def classify_email_stage(text):
-    text_lower = (text or "").lower()
-    if any(k in text_lower for k in (
-        "regret to inform", "unable to offer", "not moving forward", "other candidates",
-        "unsuccessful", "application was rejected",
-        "decided not to proceed", "will not be proceeding",
-    )):
+    text_lower = latest_message_text(text).lower()
+    # A provider name, newsletter or preparation resource is not a stage event.
+    recruitment = re.search(r"\b(?:your application|application (?:for|received|submitted|status|was)|thank you for applying|candidate|recruitment|interview|offer of employment|offer letter|pleased to offer|complete your assessment|assessment invitation|online assessment)\b", text_lower)
+    if not recruitment:
+        return None
+    rejection = re.finditer(r"regret to inform|unable to offer|not moving forward|(?:proceed|progress|move forward|moving forward) with other candidates|unsuccessful|application was rejected|decided not to proceed|will not be proceeding", text_lower)
+    for match in rejection:
+        before = text_lower[max(0, match.start()-45):match.start()]
+        # Avoid negated outcomes and references to hypothetical rejection.
+        if re.search(r"\b(?:not|never|isn't|wasn't|hasn't|haven't)(?:\s+\w+){0,3}\s*$|\bif (?:you are|your application is)\s*$", before):
+            continue
         return "Rejected"
-    if any(k in text_lower for k in (
-        "offer of employment", "pleased to offer", "congratulations on your offer",
-        "job offer", "formal offer", "offer letter", "we would like to offer",
-    )):
-        return "Offer"
-    if any(k in text_lower for k in (
-        "online test", "coding assessment", "hackerrank", "codility", "hirevue",
-        "online assessment", "numerical reasoning", "logic test", "take-home",
-        "experience platform", "complete your assessment", "assessment invitation",
-    )):
-        return "Online Assessment"
-    # An entertainment interview, generic "next step" or video call is not
-    # evidence that the recipient has progressed in a recruitment process.
+    offers = re.finditer(r"offer of employment|pleased to offer|congratulations on your offer|formal offer|offer letter|we would like to offer", text_lower)
+    for match in offers:
+        before = text_lower[max(0, match.start()-45):match.start()]
+        if not re.search(r"\b(?:not|no|never|isn't|cannot)(?:\s+\w+){0,3}\s*$", before):
+            return "Offer"
+    if re.search(r"(?:your interview|interview (?:has been|is)).{0,30}\b(?:cancelled|canceled)\b", text_lower):
+        return "Application Update"
     invitation = re.search(
         r"\b(?:invitation to (?:an? )?interview|interview invitation|"
         r"(?:invite|inviting|invited) you.{0,100}\b(?:interview|assessment cent(?:re|er))|"
@@ -136,17 +146,14 @@ def classify_email_stage(text):
         r"(?:first|second|third|final) round interview)\b", text_lower, re.S)
     if invitation:
         round_match = re.search(r"(?:interview|round)\s*(\d+)", text_lower)
-        if round_match:
-            return f"Interview {round_match.group(1)}"
-        return "Interview"
-    if any(k in text_lower for k in (
-        "thank you for applying", "application received", "received your application",
-        "confirming your application", "application submitted", "successfully submitted",
-    )):
+        return f"Interview {round_match.group(1)}" if round_match else "Interview"
+    if any(k in text_lower for k in ("online test", "coding assessment", "online assessment", "numerical reasoning", "logic test", "take-home", "complete your assessment", "assessment invitation", "experience platform")):
+        # Generic practice/promotional messages must never advance an application.
+        if not re.search(r"\b(?:practice|preparation|prepare for|sample|mock)\b", text_lower) or re.search(r"\b(?:invite|invited|invitation|must complete|please complete|your application)\b", text_lower):
+            return "Online Assessment"
+    if any(k in text_lower for k in ("thank you for applying", "application received", "received your application", "confirming your application", "application submitted", "successfully submitted")):
         return "Applied"
-    if any(k in text_lower for k in (
-        "application status", "update regarding your", "regarding your application",
-    )):
+    if any(k in text_lower for k in ("application status", "update regarding your", "regarding your application")):
         return "Application Update"
     return None
 
@@ -235,14 +242,14 @@ def handle_incoming_email_update(company_name, detected_stage, subject="", from_
     from scrapers_engine.audit import load_discovered_jobs
     event_id = event_id or sha256(f"{from_sender}|{subject}|{body_text}".encode()).hexdigest()
     repo = JobRepository()
-    jobs = repo.sync(load_discovered_jobs(), _get_sheet_apps_with_retry())
+    jobs = repo.sync(load_discovered_jobs(), _get_sheet_apps_with_retry(), reconcile=bool(fetch_google_sheet_csv()))
     job, candidates, reason = match_email_to_job(jobs, company_name, subject, from_sender, body_text)
     if job and repo.email_synced(job, event_id):
         return True
     if job:
         repo.record_email(job, event_id, detected_stage, subject)
         # Ordinary follow-up emails must not manufacture additional interview rounds.
-        same_stage = detected_stage in job.stages or (detected_stage == 'Interview' and any(s.lower().startswith('interview') for s in job.stages)) or (detected_stage == 'Online Assessment' and any(s.lower().startswith(('assessment', 'online assessment')) for s in job.stages))
+        same_stage = detected_stage == 'Application Update' or detected_stage in job.stages or (detected_stage == 'Interview' and any(s.lower().startswith('interview') for s in job.stages)) or (detected_stage == 'Online Assessment' and any(s.lower().startswith(('assessment', 'online assessment')) for s in job.stages))
         success = update_google_sheet_via_webhook(job.company, detected_stage, role=job.title,
             link=job.link, resolve_sequential=False) if not same_stage else True
         if success:
@@ -300,6 +307,8 @@ def _extract_plain_text(msg):
             plain.append(text)
         else:
             soup = BeautifulSoup(text, 'html.parser')
+            for quoted in soup.select("blockquote, .gmail_quote, .yahoo_quoted, #divRplyFwdMsg"):
+                quoted.decompose()
             for tag in soup(['script', 'style']):
                 tag.decompose()
             html.append(soup.get_text(' ', strip=True) + ' ' + ' '.join(a.get('href', '') for a in soup.find_all('a')))
@@ -308,6 +317,7 @@ def _extract_plain_text(msg):
 def _process_message(label, seen_key, subject, from_sender, body_text, seen_emails):
     if seen_key in seen_emails:
         return 0
+    body_text = latest_message_text(body_text)
     stage = classify_email_stage(f"{subject} {body_text}")
     if stage:
         company = extract_company_name(subject, from_sender, body_text)
@@ -318,6 +328,9 @@ def _process_message(label, seen_key, subject, from_sender, body_text, seen_emai
     return 1
 
 
+MAIL_CHECKPOINTS_FILE = str(DATA_DIR / 'mail_checkpoints.json')
+
+
 def _check_one_imap_inbox(account, seen_emails):
     label = account["label"]
     source_name = f"{label} Inbox Listener"
@@ -326,28 +339,43 @@ def _check_one_imap_inbox(account, seen_emails):
     try:
         mail = imaplib.IMAP4_SSL(account["host"], account["port"], timeout=12)
         mail.login(account["user"], account["password"])
-        mail.select("inbox", readonly=True)
+        status, _ = mail.select(account.get('folder', 'INBOX'), readonly=True)
+        if status != 'OK':
+            raise RuntimeError('Configured mail folder could not be selected')
         validity = mail.response("UIDVALIDITY")[1]
         generation = validity[0].decode() if validity and validity[0] else "unknown"
-        since_date = (datetime.now() - timedelta(days=3)).strftime("%d-%b-%Y")
+        checkpoints = load_json_safe(MAIL_CHECKPOINTS_FILE, {})
+        checkpoint_key = sha256(f"{account['host']}|{account['user']}|{account.get('folder', 'INBOX')}".encode()).hexdigest()
+        checkpoint = checkpoints.get(checkpoint_key, {})
+        last_check = checkpoint.get('completed_at', time.time() - 30 * 86400)
+        since_date = datetime.fromtimestamp(last_check - 86400).strftime("%d-%b-%Y")
         status, messages = mail.uid("search", None, f'(SINCE "{since_date}")')
-        if status != "OK" or not messages[0]:
-            return 0
+        if status != "OK":
+            raise RuntimeError('Mailbox search failed')
+        complete = True
 
         processed = 0
-        for e_id in messages[0].split():
+        account_key = sha256(f"{account['host']}|{account['user']}".encode()).hexdigest()
+        for e_id in (messages[0] or b'').split():
             raw_id = e_id.decode()
-            seen_key = f"uid:{account['key']}:{generation}:{raw_id}"
+            seen_key = f"uid:{checkpoint_key}:{generation}:{raw_id}"
             if seen_key in seen_emails:
                 continue
             status, msg_data = mail.uid("fetch", e_id, "(BODY.PEEK[])")
             if status != "OK":
+                complete = False
                 continue
+            fetched = False
             for response_part in msg_data:
                 if isinstance(response_part, tuple):
+                    fetched = True
                     msg = email.message_from_bytes(response_part[1])
+                    legacy_key = f"message:{account['key']}:{msg.get('Message-ID') or seen_key}"
+                    if legacy_key in seen_emails:
+                        seen_emails.add(seen_key)
+                        break
                     processed += _process_message(
-                        label, f"message:{account['key']}:{msg.get('Message-ID') or seen_key}",
+                        label, f"message:{account_key}:{msg.get('Message-ID') or seen_key}",
                         _decode_header_value(msg.get("Subject", "")),
                         _decode_header_value(msg.get("From", "")),
                         _extract_plain_text(msg), seen_emails,
@@ -355,13 +383,22 @@ def _check_one_imap_inbox(account, seen_emails):
                     seen_emails.add(seen_key)
                     save_seen_emails(seen_emails)
                     break
+            if not fetched:
+                complete = False
         save_seen_emails(seen_emails)
+        if complete:
+            checkpoints[checkpoint_key] = {'completed_at': time.time(), 'uidvalidity': generation}
+            atomic_write_json(MAIL_CHECKPOINTS_FILE, checkpoints)
+        from config import update_scraper_status
+        update_scraper_status('mail_health', {'ok': complete, 'checked_at': datetime.now().astimezone().isoformat(), 'evaluated': processed})
         update_source_status(source_name, f"🟢 Active • {processed} new messages evaluated this check")
         print(f"  ├── ✅ {label} check complete ({processed} new messages evaluated).")
         return processed
     except Exception as exc:
-        update_source_status(source_name, f"⚠️ Connection/check error ({str(exc)[:120]})")
-        print(f"  ├── ⚠️ {label} listener error: {exc}")
+        from config import update_scraper_status
+        update_scraper_status('mail_health', {'ok': False, 'checked_at': datetime.now().astimezone().isoformat(), 'error': type(exc).__name__})
+        update_source_status(source_name, f"⚠️ Connection/check error ({type(exc).__name__})")
+        print(f"  ├── ⚠️ {label} listener error: {type(exc).__name__}")
         return 0
     finally:
         if mail:
@@ -373,6 +410,8 @@ def _check_one_imap_inbox(account, seen_emails):
 
 def check_email_inbox():
     inboxes = _configured_imap_inboxes()
+    folders = [f.strip() for f in os.getenv('EMAIL_FOLDERS', 'INBOX').split(',') if f.strip()]
+    inboxes = [{**account, 'folder': folder, 'label': account['label'] + ' · ' + folder} for account in inboxes for folder in folders]
 
     print("""
 ┌────────────────────────────────────────────────────────────────────────┐
@@ -391,8 +430,12 @@ def check_email_inbox():
 
     seen = load_seen_emails()
     total = 0
+    from config import SCRAPER_STATUS, update_scraper_status
+    checks = []
     for account in inboxes:
         total += _check_one_imap_inbox(account, seen)
+        checks.append(dict(SCRAPER_STATUS.get("mail_health", {})))
+    update_scraper_status("mail_health", {"ok": all(c.get("ok", False) for c in checks), "checked_at": datetime.now().astimezone().isoformat(), "folders_checked": len(checks), "failed_folders": sum(not c.get("ok", False) for c in checks), "evaluated": total})
 
     # Try again after inbox processing in case the first Sheet fetch was transient.
     try:
@@ -401,6 +444,8 @@ def check_email_inbox():
         print(f"  ├── ⚠️ Could not repair pending role choices after polling: {exc}")
 
     save_seen_emails(seen)
-    update_source_status("Email Inbox Listener", f"🟢 Active • {len(inboxes)} inbox(es) • {total} new messages this check")
+    from config import SCRAPER_STATUS
+    ok = SCRAPER_STATUS.get('mail_health', {}).get('ok', False)
+    update_source_status("Email Inbox Listener", f"{'🟢 Active' if ok else '⚠️ Needs attention'} • {len(inboxes)} folder(s) • {total} new messages this check")
     print(f"  └── ✅ Email listener cycle complete ({total} new messages evaluated across {len(inboxes)} inbox(es)).")
     return total

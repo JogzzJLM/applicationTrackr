@@ -88,7 +88,8 @@ def purge_expired_jobs():
         verification = job.get('verification', {})
         try: age = (datetime.now(timezone.utc) - datetime.fromisoformat(verification.get('checked_at', ''))).total_seconds()
         except (ValueError, TypeError): age = float('inf')
-        if verification.get('state') == 'verified' and age < 6 * 3600: return job
+        from scrapers_engine.verifier import VERIFICATION_SCHEMA
+        if verification.get('schema_version') == VERIFICATION_SCHEMA and verification.get('state') == 'verified' and age < 6 * 3600: return job
         result = verify_listing(link, job.get('title', ''))
         if result['state'] != 'verified':
             record_review(job.get('company'), job.get('title'), link, job.get('source'), result['reason'], result['state'])
@@ -99,12 +100,16 @@ def purge_expired_jobs():
         if metadata.get('closing_date') and not deadline_date(metadata['closing_date']):
             metadata.pop('closing_date', None)
             job.pop('deadline', None)
+        if result.get('company') and result['company'] != job.get('company'):
+            metadata['source_company'] = metadata.get('source_company') or job.get('company')
+            metadata['company_evidence'] = result.get('final_url') or link
+            job['company'] = result['company']
         title, location = result.get('title') or job.get('title', ''), result.get('location') or job.get('location', '')
         decision = evaluate_job(title, job.get('company', ''), location, metadata)
         if not decision.eligible:
             record_review(job.get('company'), title, link, job.get('source'), '; '.join(decision.rejection_reasons), 'filtered')
             return None
-        job.update(title=title, location=location, metadata=metadata, verification={k: result[k] for k in ('state', 'reason', 'checked_at')},
+        job.update(title=title, location=location, metadata=metadata, verification={k: result.get(k) for k in ('state', 'reason', 'checked_at', 'schema_version')},
                    match_score=decision.score, match_tier=decision.tier, match_reasons=decision.reasons[:5])
         if deadline_date(metadata.get('closing_date')): job['deadline'] = deadline_date(metadata['closing_date']).isoformat()
         return job
@@ -151,8 +156,14 @@ def run_all_scrapers():
     if not _RUN_LOCK.acquire(blocking=False):
         add_scraper_log('Discovery scan already running; avoiding an overlapping rescan.')
         return
+    from config import update_scraper_status
+    update_scraper_status('scan_health', {'running': True, 'started_at': datetime.now(timezone.utc).isoformat()})
     try:
         _run_scrapers()
+        update_scraper_status('scan_health', {'running': False, 'ok': True, 'completed_at': datetime.now(timezone.utc).isoformat()})
+    except Exception as exc:
+        update_scraper_status('scan_health', {'running': False, 'ok': False, 'error': type(exc).__name__, 'completed_at': datetime.now(timezone.utc).isoformat()})
+        raise
     finally:
         _RUN_LOCK.release()
 
@@ -166,7 +177,13 @@ def _run_scrapers():
         'The Trackr API': scrape_trackr_website, 'Gradcracker API': scrape_gradcracker_website,
         'UK student boards': scrape_uk_boards,
     }
+    from scrapers_engine.official_careers import scrape_official_careers
+    # Discover embedded feeds before the ATS workers load the updated registry.
     failures = {}
+    try:
+        new_jobs.extend(scrape_official_careers(seen_jobs, discovered))
+    except Exception as exc:
+        failures['Official employer careers'] = type(exc).__name__
     with concurrent.futures.ThreadPoolExecutor(max_workers=7) as pool:
         futures = {pool.submit(fn, seen_jobs, discovered, scraper_status=SCRAPER_STATUS): name for name, fn in sources.items()}
         for future in concurrent.futures.as_completed(futures):

@@ -26,6 +26,8 @@ class Job:
     custom_fields: dict = field(default_factory=dict)
     stages: list = field(default_factory=list)
     email_events: list = field(default_factory=list)
+    sheet_managed: bool = False
+    sheet_present: bool = False
 
     @classmethod
     def from_listing(cls, row):
@@ -37,10 +39,12 @@ class Job:
                    row.get('notes', ''), row.get('custom_fields', {}), row.get('stages', []))
 
 class JobRepository:
-    def sync(self, listings, applications):
+    def sync(self, listings, applications, reconcile=False):
         with _FILE_LOCK:
             saved = load_json_safe(JOBS_FILE, {})
-            for row in list(listings) + list(applications):
+            application_rows = list(applications)
+            sheet_ids = set()
+            for row in list(listings) + application_rows:
                 job = Job.from_listing(row)
                 existing = saved.get(job.id) or next((j for j in saved.values() if
                     normalize_company(j['company']) == normalize_company(job.company) and
@@ -56,6 +60,18 @@ class JobRepository:
                         existing['link'] = job.link
                 else:
                     saved[job.id] = asdict(job)
+                    existing = saved[job.id]
+                if any(row is app for app in application_rows):
+                    sheet_ids.add(existing['id'])
+                    existing.update(sheet_managed=True, sheet_present=True)
+                    if reconcile:
+                        existing['stages'] = list(row.get('stages') or [])
+            if reconcile:
+                for row in saved.values():
+                    # Migrate objects created before authoritative Sheet reconciliation.
+                    managed = row.get('sheet_managed') or any(e.get('sheet_synced') for e in row.get('email_events', []))
+                    if managed and row['id'] not in sheet_ids:
+                        row.update(stages=[], sheet_present=False, sheet_managed=True)
             atomic_write_json(JOBS_FILE, saved)
             return [Job(**j) for j in saved.values()]
 
@@ -69,7 +85,7 @@ class JobRepository:
             else:
                 row['email_events'].append({'id': event_id, 'stage': stage, 'subject': subject,
                     'sheet_synced': synced, 'received_at': datetime.now(timezone.utc).isoformat()})
-            if synced and stage not in row['stages']:
+            if synced and stage != 'Application Update' and stage not in row['stages']:
                 row['stages'].append(stage)
             atomic_write_json(JOBS_FILE, saved)
 
@@ -119,7 +135,7 @@ def match_email_to_job(jobs, company, subject, sender, body):
     if len(roles) == 1:
         return roles[0], candidates, 'role title'
     # Only a previously logged application can be allocated by company alone.
-    applied = [j for j in candidates if j.stages]
+    applied = [j for j in candidates if j.stages or j.sheet_present]
     if len(applied) == 1 and len(candidates) == 1:
         return applied[0], candidates, 'single logged application'
     return None, candidates, 'ambiguous or insufficient evidence'

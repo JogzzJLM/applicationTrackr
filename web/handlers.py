@@ -10,7 +10,7 @@ import socketserver
 from config import APP_BASE_URL, PORT, add_scraper_log
 from core.storage import hide_job, load_reported_closed_jobs, load_settings, save_reported_closed_jobs, save_settings
 from core.kb import load_closed_keywords_kb, save_closed_keywords_kb, extract_generic_closure_phrases
-from sheets import generate_sankey_from_google_sheets, update_google_sheet_via_webhook, get_detailed_applications
+from sheets import fetch_google_sheet_csv, generate_sankey_from_google_sheets, update_google_sheet_via_webhook, get_detailed_applications
 from core.jobs import JobRepository, add_manual_job, save_job_details
 from scrapers_engine.audit import load_discovered_jobs
 from core.storage import load_pending_email_updates, remove_pending_email_update
@@ -35,6 +35,16 @@ class ThreadedHTTPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     daemon_threads = True
 
 
+def valid_stage(stage):
+    import re
+    return bool(re.fullmatch(r'Applied|(?:Online Assessment|Assessment|Interview|Digital Interview)(?: [1-9][0-9]?)?|Offer|Rejected|Withdrawn|Ghosted', stage or ''))
+
+
+MUTATION_PATHS = {'/api/relevance-audit', '/api/mark-applied', '/api/resolve-pending-update',
+    '/api/dismiss-pending-update', '/api/rescan', '/api/sync-sheet', '/api/hide-job',
+    '/api/report-closed', '/api/reopen-job', '/api/clear-logs'}
+
+
 class CleanHandler(http.server.BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
@@ -47,7 +57,10 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             return False
 
     def send_cors_headers(self):
-        self.send_header("Access-Control-Allow-Origin", "*")
+        origin = self.headers.get('Origin')
+        if origin and urlparse(origin).netloc == self.headers.get('Host'):
+            self.send_header('Access-Control-Allow-Origin', origin)
+            self.send_header('Vary', 'Origin')
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
@@ -66,6 +79,9 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+        self.send_header("X-Frame-Options", "SAMEORIGIN")
+        self.send_header("Referrer-Policy", "same-origin")
+        self.send_header("X-Content-Type-Options", "nosniff")
         if not private:
             self.send_cors_headers()
         self.end_headers()
@@ -162,14 +178,16 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             return self._html(page)
         if path == "/api/health":
             from config import NTFY_TOPIC, GOOGLE_SHEET_CSV_URL, GOOGLE_SHEET_WEBHOOK_URL, SCRAPER_STATUS
-            return self._json({"status": "ok", "integrations": {
+            from core.health import engine_health
+            return self._json({**engine_health(), "integrations": {
                 "ntfy_configured": bool(NTFY_TOPIC), "ntfy": SCRAPER_STATUS.get("ntfy", {}),
                 "notification_queue": SCRAPER_STATUS.get("notification_queue", {}),
                 "discovery_alerts": SCRAPER_STATUS.get("discovery_alerts", {}),
                 "sheet_read_configured": bool(GOOGLE_SHEET_CSV_URL),
-                "sheet_write_configured": bool(GOOGLE_SHEET_WEBHOOK_URL)}})
+                "sheet_write_configured": bool(GOOGLE_SHEET_WEBHOOK_URL),
+                "sheet": SCRAPER_STATUS.get("sheet_health", {}), "email": SCRAPER_STATUS.get("mail_health", {})}})
         if path == "/api/jobs":
-            jobs = JobRepository().sync(load_discovered_jobs(), get_detailed_applications())
+            jobs = JobRepository().sync(load_discovered_jobs(), get_detailed_applications(), reconcile=bool(fetch_google_sheet_csv()))
             from dataclasses import asdict
             return self._json({"jobs": [asdict(j) for j in jobs]})
         if path == "/api/status":
@@ -195,9 +213,7 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             from config import get_scraper_logs
             return self._json({"logs": get_scraper_logs()})
         if path == "/api/clear-logs":
-            from config import clear_scraper_logs
-            clear_scraper_logs()
-            return self._json({"status": "ok"})
+            return self._json({'status': 'error', 'message': 'Use POST.'}, 405)
         if path == "/api/autoapply/browser-bundle":
             from autoapply.browser_handoff import browser_bundle
             try:
@@ -228,12 +244,23 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             batch_id = qs.get("id", [""])[0]
             payload = get_batch(batch_id) if batch_id else None
             return self._json(payload or {"status": "not_found"}, 200 if payload else 404)
+        if path in MUTATION_PATHS:
+            return self._json({'status': 'error', 'message': 'Use POST from the dashboard for this action.'}, 405)
+        return self._json({"status":"not_found","path":path},404)
+
+    def _mutate(self, path, qs):
+        if path == '/api/clear-logs':
+            from config import clear_scraper_logs
+            clear_scraper_logs()
+            return self._json({'status': 'ok'})
         if path == "/api/relevance-audit":
             return self._json({"status": "ok", "removed": purge_irrelevant_jobs()})
         if path == "/api/mark-applied":
             comp = qs.get("company", [""])[0]
             title = qs.get("title", ["Software/Quant Role"])[0]
             stage = qs.get("stage", ["Applied"])[0]
+            if not comp.strip() or not title.strip() or not valid_stage(stage):
+                return self._json({'status': 'error', 'message': 'Company, role and a recognised application stage are required.'}, 400)
             if comp:
                 if not update_google_sheet_via_webhook(comp, stage, role=title, resolve_sequential=True):
                     return self._json({"status": "error", "message": "Sheet update failed. Check webhook configuration and logs."}, 502)
@@ -247,7 +274,7 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             comp = qs.get("company", [""])[0]
             title = qs.get("role", ["Software/Quant Role"])[0]
             stage = qs.get("stage", ["Rejected"])[0]
-            if not comp or not title:
+            if not comp or not title or not valid_stage(stage):
                 return self._json({"status": "error", "message": "Company and role required."}, 400)
             if comp and title:
                 if not update_google_sheet_via_webhook(comp, stage, role=title, resolve_sequential=True):
@@ -255,7 +282,7 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
                 pending = next((p for p in load_pending_email_updates() if p.get('id') == u_id), None)
                 if pending:
                     repo = JobRepository()
-                    jobs = repo.sync(load_discovered_jobs(), get_detailed_applications())
+                    jobs = repo.sync(load_discovered_jobs(), get_detailed_applications(), reconcile=bool(fetch_google_sheet_csv()))
                     from core.normalization import normalize_company, normalize_role
                     job = next((j for j in jobs if normalize_company(j.company) == normalize_company(comp) and normalize_role(j.title) == normalize_role(title)), None)
                     if job:
@@ -302,10 +329,13 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             if j_id in closed:
                 del closed[j_id]; save_reported_closed_jobs(closed)
             return self._json({"status":"ok","reopened_id":j_id})
-        return self._json({"status":"not_found","path":path},404)
+        return self._json({'status': 'not_found'}, 404)
 
     def do_POST(self):
         path = urlparse(self.path).path
+        origin = self.headers.get('Origin')
+        if (origin and urlparse(origin).netloc != self.headers.get('Host')) or self.headers.get('Sec-Fetch-Site') == 'cross-site':
+            return self._json({'status': 'error', 'message': 'Use the ApplicationTrackr dashboard for this action.'}, 403, private=True)
         try:
             length = int(self.headers.get("Content-Length", 0))
         except ValueError:
@@ -335,6 +365,8 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
         if length < 0 or length > 65536:
             return self._json({"status": "error", "message": "Request too large"}, 413)
         form = parse_qs(self.rfile.read(length).decode("utf-8") if length else "")
+        if path in MUTATION_PATHS:
+            return self._mutate(path, form)
         if path == "/api/autoapply/profile":
             try:
                 update_profile(json.loads(form.get("values", ["{}"]) [0]))
@@ -362,7 +394,7 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
                 fields = json.loads(form.get('custom_fields', ['{}'])[0] or '{}')
                 job = add_manual_job(form.get('company', [''])[0], form.get('title', [''])[0],
                     form.get('link', [''])[0], form.get('location', [''])[0], form.get('notes', [''])[0], fields)
-                JobRepository().sync(load_discovered_jobs(), get_detailed_applications())
+                JobRepository().sync(load_discovered_jobs(), get_detailed_applications(), reconcile=bool(fetch_google_sheet_csv()))
                 return self._json({"status": "ok", "job": job}, 201)
             except (ValueError, TypeError) as exc:
                 return self._json({"status": "error", "message": str(exc)}, 400)

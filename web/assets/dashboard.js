@@ -171,3 +171,49 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 });
+function filterApplications() {
+    const search = document.getElementById('application-search');
+    const status = document.getElementById('application-status');
+    if (!search || !status) return;
+    const query = search.value.trim().toLowerCase();
+    let count = 0;
+    document.querySelectorAll('#applications-grid .application-card').forEach(card => {
+        const visible = (status.value === 'all' || card.dataset.status === status.value) && card.dataset.search.includes(query);
+        card.hidden = !visible; count += visible;
+    });
+    document.getElementById('application-results').textContent = `${count} matching application${count === 1 ? '' : 's'}`;
+    localStorage.setItem('applicationtrackr:application-filter', JSON.stringify({search: search.value, status: status.value}));
+}
+document.addEventListener('DOMContentLoaded', () => {
+    try {
+        const saved = JSON.parse(localStorage.getItem('applicationtrackr:application-filter') || '{}');
+        const search = document.getElementById('application-search'), status = document.getElementById('application-status');
+        if (search) search.value = saved.search || '';
+        if (status && [...status.options].some(o => o.value === saved.status)) status.value = saved.status;
+    } catch (_) {}
+    filterApplications();
+});
+// Refresh cards and totals after background email/Sheet updates without losing filters.
+let dashboardRefreshRunning = false;
+async function refreshDashboard() {
+    if (dashboardRefreshRunning || document.hidden || document.querySelector('dialog[open]') || [...document.querySelectorAll('.modal-backdrop')].some(m => m.style.display !== 'none') || ['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName) || document.querySelector('#jobs-container details[open]')) return;
+    dashboardRefreshRunning = true;
+    try {
+        const response = await fetch(location.pathname, {cache:'no-store'});
+        if (!response.ok) return;
+        const page = new DOMParser().parseFromString(await response.text(), 'text/html');
+        for (const selector of ['#applications-grid', '#jobs-container', '.hero-stats-grid', '.status-pill']) {
+            const current = document.querySelector(selector), updated = page.querySelector(selector);
+            if (current && updated && current.innerHTML !== updated.innerHTML) {
+                if (selector === '.status-pill') current.title = updated.title;
+                current.innerHTML = updated.innerHTML;
+            }
+        }
+        filterApplications();
+        if (typeof sortJobs === 'function') sortJobs();
+        if (typeof filterJobs === 'function') filterJobs(false);
+        updateFillActions();
+    } catch (_) { /* Keep the displayed data during a temporary connection failure. */ }
+    finally { dashboardRefreshRunning = false; }
+}
+setInterval(refreshDashboard, 90000);
