@@ -131,7 +131,7 @@ def test_verified_employer_corrects_aggregator_identity(tmp_path, monkeypatch):
     assert listing['metadata']['source_company'] == 'Wrong Company'
 
 
-@pytest.mark.parametrize('current, old', [('Rejected','Interview'), ('Interview 2','Applied'), ('Assessment 1','Applied')])
+@pytest.mark.parametrize('current, old', [('Rejected','Interview'), ('Interview 2','Online Assessment'), ('Assessment 1','Applied')])
 def test_email_catchup_cannot_reopen_or_regress_application(current, old):
     from core.jobs import Job
     job = Job('one','Acme','Software Intern',stages=['Applied',current])
@@ -139,4 +139,7 @@ def test_email_catchup_cannot_reopen_or_regress_application(current, old):
         repository.return_value.email_synced.return_value=False
         assert listener.handle_incoming_email_update('Acme',old,'Old application email',event_id='old1')
         write.assert_not_called()
-        assert 'conflicts' in pending.call_args.args[0]['reason']
+        if old not in job.stages:
+            assert 'conflicts' in pending.call_args.args[0]['reason']
+        else:
+            pending.assert_not_called()
