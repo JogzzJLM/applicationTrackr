@@ -189,7 +189,7 @@ class JobCardViewModel:
         if not self.is_reported_closed and self.link != "#":
             agent_action = (
                 f'<button onclick="openFilledApplication({_js_literal(self.job_id)}, {_js_literal(self.link)})" '
-                'class="btn btn-ghost card-secondary-action browser-fill-action">Saved details</button>'
+                'class="btn btn-ghost card-secondary-action browser-fill-action" hidden>Open &amp; fill ↗</button>'
             )
 
         reason_html = ""

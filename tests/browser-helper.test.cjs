@@ -50,3 +50,22 @@ test('tracker bridge ignores other services on the same IP address',()=>{
  vm.runInNewContext(code,other);
  assert.deepEqual(other.document.documentElement.dataset,{});
 });
+
+test('dashboard only exposes direct filling with a connected supported helper',()=>{
+ const button={hidden:false,closest:()=>({querySelector:()=>({href:'https://job-boards.greenhouse.io/figma/jobs/123'})})};
+ const messages=[];
+ const dashboard={URL,setInterval(){},document:{documentElement:{dataset:{}},querySelectorAll:()=>[button],addEventListener(){}},window:{addEventListener(){},postMessage:m=>messages.push(m)},location:{origin:'http://192.168.0.136:5000'}};
+ vm.createContext(dashboard);
+ vm.runInContext(fs.readFileSync(require.resolve('../web/assets/dashboard.js'),'utf8'),dashboard);
+ dashboard.updateFillActions();
+ assert.equal(button.hidden,true);
+ dashboard.document.documentElement.dataset.applicationtrackrBrowserHelper='ready';
+ dashboard.updateFillActions();
+ assert.equal(button.hidden,false);
+ assert.equal(button.textContent,'Open & fill ↗');
+ assert.equal(dashboard.canFillApplication('https://example.com/job'),false);
+ dashboard.showNotice=()=>{};
+ dashboard.openFilledApplication('123','https://job-boards.greenhouse.io/figma/jobs/123');
+ assert.equal(messages[0].jobId,'123');
+ assert.equal(dashboard.openApplicationDetails,undefined);
+});

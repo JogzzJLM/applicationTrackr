@@ -7,7 +7,7 @@
 - Listings use collapsible context/actions, two main buttons and 12 results per page. Search, programme, domain and application status filters combine; sorting and filtering reset the page correctly.
 - Job density adapts automatically through CSS as the viewport changes. There is no compact-view control or stored density preference.
 - Long titles, badges, buttons, grids and form fields can wrap/shrink. Browser zoom is enabled. Keyboard focus indicators, input labels, dialog focus containment and reduced-motion support are included.
-- Open & fill is shown only when a connected helper supports the destination. Other browsers/sites offer Saved details: copy individual answers, open the employer form and download owned CV/cover-letter files. No application is submitted by these controls.
+- Open & fill is shown only when a connected helper supports the destination. Other browsers/sites use Open listing; there is no copy-and-paste fallback. No application is submitted by these controls.
 - A grouped /profile editor uses the existing profile and upload endpoints. Existing answers and UK-format dates are preserved. Private documents are restricted to the upload directory; profile pages, bundles and downloads have no permissive cross-origin header and are not cached.
 - Legacy application-agent and discovery-report tables also adapt to small screens.
 

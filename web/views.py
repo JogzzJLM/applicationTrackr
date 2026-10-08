@@ -876,7 +876,7 @@ def render_unified_dashboard_html(active_tab="flow"):
                 <button onclick="testNotification()" class="btn btn-ghost">Test notification</button>
                 <button onclick="syncSheetAndReload()" class="btn btn-ghost">Sync Google Sheet</button>
                 <button onclick="mutate('/api/rescan').then(() => location.reload())" class="btn btn-ghost">Rescan listings</button>
-                <a href="/profile" class="btn btn-ghost">Saved application profile</a>
+                <a href="/profile" class="btn btn-ghost">Mac autofill settings</a>
             </div>
         </details>
     </div>
