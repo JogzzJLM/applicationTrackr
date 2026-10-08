@@ -1621,14 +1621,21 @@ def render_unified_dashboard_html(active_tab="flow"):
             .then(() => location.reload());
     }}
 
-    function logJob(comp, title) {{
-        mutate('/api/mark-applied?company=' + encodeURIComponent(comp) + '&title=' + encodeURIComponent(title))
-            .then(r => r.json())
-            .then(() => {{
-                alert('Marked as applied.');
-                location.reload();
-            }});
+    async function logJob(comp, title, button) {{
+        if (button?.disabled) return;
+        if (button) {{ button.disabled = true; button.textContent = 'Saving…'; }}
+        try {{
+            const response = await mutate('/api/mark-applied?company=' + encodeURIComponent(comp) + '&title=' + encodeURIComponent(title));
+            const result = await response.json();
+            if (!response.ok || result.status !== 'ok') throw new Error(result.message || 'Could not log this application.');
+            if (button) button.textContent = 'Applied ✓';
+            location.reload();
+        }} catch (error) {{
+            if (button) {{ button.disabled = false; button.textContent = 'Log applied'; }}
+            showNotice(error.message);
+        }}
     }}
+
 </script>
 
 </body>

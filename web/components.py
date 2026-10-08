@@ -169,8 +169,8 @@ class JobCardViewModel:
             status_dot = '<span class="status-dot dot-green"></span>'
             status_label = "Open"
             sheet_action = (
-                f'<button onclick="logJob({_js_literal(self.company)}, {_js_literal(self.title)})" '
-                'class="btn btn-tinted card-secondary-action">+ Log</button>'
+                f'<button onclick="logJob({_js_literal(self.company)}, {_js_literal(self.title)}, this)" '
+                'class="btn btn-tinted card-secondary-action">Log applied</button>'
             )
 
         report_action = ""
@@ -237,13 +237,14 @@ data-title="{html.escape(self.title.lower(), quote=True)}">
     <div class="card-freshness">{("Checked " + html.escape(checked) + " UTC") if checked else "Manually added" if self.raw.get("source") == "Manual" else "Check time unavailable"}</div>
     <div class="card-actions">
         {apply_action}
+        {sheet_action}
         {agent_action}
     </div>
     <details class="card-more">
-        <summary>Listing details &amp; actions</summary>
+        <summary>Listing details</summary>
         <div class="card-detail">{reason_html}{source_html}</div>
         <div class="card-extra-actions">
-            {sheet_action}{report_action}
+            {report_action}
             <button class="btn btn-ghost" onclick="openJobDetails({_js_literal(self.raw.get("object_id") or self.job_id)})">Notes &amp; custom fields</button>
         </div>
     </details>
