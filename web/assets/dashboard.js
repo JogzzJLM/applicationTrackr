@@ -43,19 +43,30 @@ function showNotice(message) {
     toast.textContent = message; toast.hidden = false;
     clearTimeout(toastTimer); toastTimer = setTimeout(() => toast.hidden = true, 6000);
 }
-function canFillApplication(url) {
-    if (document.documentElement.dataset.applicationtrackrBrowserHelper !== 'ready') return false;
+function supportsApplication(url) {
     try {
         const target = new URL(url);
-        return target.protocol === 'https:' && (target.hostname.endsWith('.greenhouse.io') || ['jobs.lever.co', 'jobs.ashbyhq.com', 'careers.smartrecruiters.com'].includes(target.hostname));
+        return target.protocol === 'https:' && (target.hostname.endsWith('.greenhouse.io') || ['jobs.lever.co', 'jobs.ashbyhq.com', 'careers.smartrecruiters.com', 'jobs.smartrecruiters.com'].includes(target.hostname));
     } catch (_) { return false; }
 }
+function canFillApplication(url) {
+    return document.documentElement.dataset.applicationtrackrBrowserHelper === 'ready' && supportsApplication(url);
+}
 function updateFillActions() {
+    const status = document.getElementById('autofill-status');
+    if (status) {
+        const ready = document.documentElement.dataset.applicationtrackrBrowserHelper === 'ready';
+        const mac = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform || navigator.userAgent || '');
+        status.hidden = !ready && !mac;
+        status.textContent = ready ? 'Mac autofill connected · Open & fill appears on compatible forms.' : 'Mac autofill disconnected · Enable the Safari helper, then reload.';
+    }
     document.querySelectorAll('.browser-fill-action').forEach(button => {
         const ready = canFillApplication(button.closest('.job-card').querySelector('.card-primary-action')?.href);
-        button.hidden = !ready;
+        const mac = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform || navigator.userAgent || '');
+        button.hidden = !supportsApplication(button.closest('.job-card').querySelector('.card-primary-action')?.href) || (!ready && !mac);
+        button.disabled = !ready;
         button.textContent = 'Open & fill ↗';
-        button.title = 'Open the employer form and fill known answers. You finish and submit it.';
+        button.title = ready ? 'Open the employer form and fill known answers. You finish and submit it.' : 'Safari helper disconnected. Enable it in Safari Settings → Extensions, then reload.';
     });
 }
 function openFilledApplication(jobId, url) {

@@ -54,7 +54,7 @@ test('tracker bridge ignores other services on the same IP address',()=>{
 test('dashboard only exposes direct filling with a connected supported helper',()=>{
  const button={hidden:false,closest:()=>({querySelector:()=>({href:'https://job-boards.greenhouse.io/figma/jobs/123'})})};
  const messages=[];
- const dashboard={URL,setInterval(){},document:{documentElement:{dataset:{}},querySelectorAll:()=>[button],addEventListener(){}},window:{addEventListener(){},postMessage:m=>messages.push(m)},location:{origin:'http://192.168.0.136:5000'}};
+ const dashboard={URL,setInterval(){},document:{getElementById:()=>null,documentElement:{dataset:{}},querySelectorAll:()=>[button],addEventListener(){}},window:{addEventListener(){},postMessage:m=>messages.push(m)},location:{origin:'http://192.168.0.136:5000'}};
  vm.createContext(dashboard);
  vm.runInContext(fs.readFileSync(require.resolve('../web/assets/dashboard.js'),'utf8'),dashboard);
  dashboard.updateFillActions();
@@ -64,6 +64,13 @@ test('dashboard only exposes direct filling with a connected supported helper',(
  assert.equal(button.hidden,false);
  assert.equal(button.textContent,'Open & fill ↗');
  assert.equal(dashboard.canFillApplication('https://example.com/job'),false);
+ assert.equal(dashboard.canFillApplication('https://jobs.smartrecruiters.com/TTP1/744000149038758'),true);
+ dashboard.navigator={platform:'MacIntel'};
+ dashboard.document.documentElement.dataset.applicationtrackrBrowserHelper='';
+ dashboard.updateFillActions();
+ assert.equal(button.hidden,false);
+ assert.equal(button.disabled,true);
+ dashboard.document.documentElement.dataset.applicationtrackrBrowserHelper='ready';
  dashboard.showNotice=()=>{};
  dashboard.openFilledApplication('123','https://job-boards.greenhouse.io/figma/jobs/123');
  assert.equal(messages[0].jobId,'123');

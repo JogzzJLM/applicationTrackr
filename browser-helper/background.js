@@ -2,7 +2,7 @@ const api = globalThis.browser || globalThis.chrome;
 const tracker = 'http://192.168.0.136:5000';
 const supported = url => {
   const u = new URL(url);
-  return u.protocol === 'https:' && (u.hostname.endsWith('.greenhouse.io') || ['jobs.lever.co','jobs.ashbyhq.com','careers.smartrecruiters.com'].includes(u.hostname));
+  return u.protocol === 'https:' && (u.hostname.endsWith('.greenhouse.io') || ['jobs.lever.co','jobs.ashbyhq.com','careers.smartrecruiters.com', 'jobs.smartrecruiters.com'].includes(u.hostname));
 };
 function sameApplication(expected, actual) {
   try {

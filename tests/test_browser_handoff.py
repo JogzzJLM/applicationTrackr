@@ -76,3 +76,30 @@ def test_saved_document_download_is_private_and_rejects_arbitrary_paths(tmp_path
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_smartrecruiters_form_resolves_only_matching_published_job(monkeypatch):
+    original = 'https://jobs.smartrecruiters.com/TTP1/744000149038758'
+    uuid = 'a1627c22-2aa5-49af-bc6c-7b03e6f8a5b7'
+    data = {'id':'744000149038758', 'uuid':uuid, 'company':{'identifier':'TTP1'}}
+    class Response:
+        def raise_for_status(self): pass
+        def json(self): return data
+    monkeypatch.setattr(browser_handoff.requests, 'get', lambda *a, **k: Response())
+    monkeypatch.setattr(browser_handoff, '_SMART_FORMS', {})
+    assert browser_handoff.application_form_url(original) == f'https://jobs.smartrecruiters.com/oneclick-ui/company/TTP1/publication/{uuid}'
+    browser_handoff._SMART_FORMS.clear()
+    data['company']['identifier'] = 'AnotherEmployer'
+    assert browser_handoff.application_form_url(original) == original
+    data['company']['identifier'] = 'TTP1'
+    data['id'] = '999'
+    assert browser_handoff.application_form_url(original) == original
+
+
+def test_smartrecruiters_lookup_failure_keeps_original_destination(monkeypatch):
+    original = 'https://jobs.smartrecruiters.com/TTP1/744000149038758'
+    def unavailable(*a, **k): raise browser_handoff.requests.Timeout()
+    monkeypatch.setattr(browser_handoff.requests, 'get', unavailable)
+    monkeypatch.setattr(browser_handoff, '_SMART_FORMS', {})
+    assert browser_handoff.application_form_url(original) == original
+    assert browser_handoff.application_form_url('https://example.com/TTP1/744000149038758') == 'https://example.com/TTP1/744000149038758'

@@ -12,7 +12,8 @@
     "https://*.greenhouse.io/*",
     "https://jobs.lever.co/*",
     "https://jobs.ashbyhq.com/*",
-    "https://careers.smartrecruiters.com/*"
+    "https://careers.smartrecruiters.com/*",
+    "https://jobs.smartrecruiters.com/*"
   ],
   "background": {
     "scripts": [

@@ -999,6 +999,7 @@ def render_unified_dashboard_html(active_tab="flow"):
     <div id="view-jobs" class="panel" style="{view_jobs}">
         <h1 class="browse-heading">Find your next opportunity</h1>
         <p class="browse-subtitle">{verified_count} verified listings · {review_count} being checked. <a href="/discovery-report" target="_blank" rel="noopener">Coverage report ↗</a></p>
+        <p id="autofill-status" class="browse-subtitle" hidden></p>
         <div class="toolbar">
             <div class="search-wrap">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" /></svg>
