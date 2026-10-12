@@ -74,6 +74,7 @@ def extract_company_name(subject, from_sender, body_text=""):
         match = re.search(pattern, body_text)
         if match:
             candidate = re.sub(r"\s+", " ", match.group(1)).strip(" -–|,.")
+            candidate = re.sub(r"^(?:kind|best|warm)\s+regards[, :]*", "", candidate, flags=re.I)
             if 2 < len(candidate) <= 50:
                 return candidate
 
@@ -117,12 +118,38 @@ def latest_message_text(text):
     return '\n'.join(line for line in text.splitlines() if not line.lstrip().startswith('>'))
 
 
+REJECTION_WORDING_REVISION = 1
+PROGRESSION_REJECTION = re.compile(
+    r"\b(?:unable to|cannot|can't|will not|won't) "
+    r"(?:be )?(?:progress(?:ing)?|proceed(?:ing)?|continue|continuing|move|moving)"
+    r"(?: with)? (?:your|the) application(?: further| forward)?\b|"
+    r"\b(?:will not|won't) be taking (?:your|the) application (?:further|forward)\b",
+    re.I,
+)
+
+
+def progression_rejection(text):
+    """An actual application outcome, not a conditional eligibility warning."""
+    text = latest_message_text(text).lower()
+    for match in PROGRESSION_REJECTION.finditer(text):
+        before = text[max(0, match.start() - 200):match.start()]
+        sentence = re.split(r'[.!?\n]', before)[-1]
+        if re.search(r'\b(?:if|unless)\b', sentence):
+            continue
+        if re.search(r"\b(?:not|never|isn't|wasn't|hasn't|haven't)(?:\s+\w+){0,3}\s*$", before[-45:]):
+            continue
+        return True
+    return False
+
+
 def classify_email_stage(text):
     text_lower = latest_message_text(text).lower()
     # A provider name, newsletter or preparation resource is not a stage event.
     recruitment = re.search(r"\b(?:your application|application (?:for|received|submitted|status|was)|thank you for applying|candidate|recruitment|interview|offer of employment|offer letter|pleased to offer|complete your assessment|assessment invitation|online assessment)\b", text_lower)
     if not recruitment:
         return None
+    if progression_rejection(text_lower):
+        return "Rejected"
     rejection = re.finditer(r"regret to inform|unable to offer|not moving forward|(?:proceed|progress|move forward|moving forward) with other candidates|unsuccessful|application was rejected|decided not to proceed|will not be proceeding", text_lower)
     for match in rejection:
         before = text_lower[max(0, match.start()-45):match.start()]
@@ -327,11 +354,13 @@ def _extract_plain_text(msg):
             html.append(soup.get_text(' ', strip=True) + ' ' + ' '.join(a.get('href', '') for a in soup.find_all('a')))
     return '\n'.join(plain or html)
 
-def _process_message(label, seen_key, subject, from_sender, body_text, seen_emails):
-    if seen_key in seen_emails:
+def _process_message(label, seen_key, subject, from_sender, body_text, seen_emails, recheck_rejections=False):
+    if seen_key in seen_emails and not recheck_rejections:
         return 0
     body_text = latest_message_text(body_text)
     stage = classify_email_stage(f"{subject} {body_text}")
+    if seen_key in seen_emails and not (stage == "Rejected" and progression_rejection(f"{subject} {body_text}")):
+        return 0
     if stage:
         company = extract_company_name(subject, from_sender, body_text)
         print(f"  │   ↳ {label}: detected {company} → {stage} | {subject[:70]}")
@@ -360,7 +389,8 @@ def _check_one_imap_inbox(account, seen_emails):
         checkpoints = load_json_safe(MAIL_CHECKPOINTS_FILE, {})
         checkpoint_key = sha256(f"{account['host']}|{account['user']}|{account.get('folder', 'INBOX')}".encode()).hexdigest()
         checkpoint = checkpoints.get(checkpoint_key, {})
-        last_check = checkpoint.get('completed_at', time.time() - 30 * 86400)
+        recheck_rejections = checkpoint.get('rejection_wording_revision', 0) < REJECTION_WORDING_REVISION
+        last_check = time.time() - 30 * 86400 if recheck_rejections else checkpoint.get('completed_at', time.time() - 30 * 86400)
         since_date = datetime.fromtimestamp(last_check - 86400).strftime("%d-%b-%Y")
         status, messages = mail.uid("search", None, f'(SINCE "{since_date}")')
         if status != "OK":
@@ -372,7 +402,7 @@ def _check_one_imap_inbox(account, seen_emails):
         for e_id in (messages[0] or b'').split():
             raw_id = e_id.decode()
             seen_key = f"uid:{checkpoint_key}:{generation}:{raw_id}"
-            if seen_key in seen_emails:
+            if seen_key in seen_emails and not recheck_rejections:
                 continue
             status, msg_data = mail.uid("fetch", e_id, "(BODY.PEEK[])")
             if status != "OK":
@@ -384,14 +414,17 @@ def _check_one_imap_inbox(account, seen_emails):
                     fetched = True
                     msg = email.message_from_bytes(response_part[1])
                     legacy_key = f"message:{account['key']}:{msg.get('Message-ID') or seen_key}"
-                    if legacy_key in seen_emails:
+                    if legacy_key in seen_emails and not recheck_rejections:
                         seen_emails.add(seen_key)
                         break
+                    message_key = f"message:{account_key}:{msg.get('Message-ID') or seen_key}"
+                    if recheck_rejections and (seen_key in seen_emails or legacy_key in seen_emails):
+                        seen_emails.add(message_key)
                     processed += _process_message(
-                        label, f"message:{account_key}:{msg.get('Message-ID') or seen_key}",
+                        label, message_key,
                         _decode_header_value(msg.get("Subject", "")),
                         _decode_header_value(msg.get("From", "")),
-                        _extract_plain_text(msg), seen_emails,
+                        _extract_plain_text(msg), seen_emails, recheck_rejections=recheck_rejections,
                     )
                     seen_emails.add(seen_key)
                     save_seen_emails(seen_emails)
@@ -400,7 +433,7 @@ def _check_one_imap_inbox(account, seen_emails):
                 complete = False
         save_seen_emails(seen_emails)
         if complete:
-            checkpoints[checkpoint_key] = {'completed_at': time.time(), 'uidvalidity': generation}
+            checkpoints[checkpoint_key] = {'completed_at': time.time(), 'uidvalidity': generation, 'rejection_wording_revision': REJECTION_WORDING_REVISION}
             atomic_write_json(MAIL_CHECKPOINTS_FILE, checkpoints)
         from config import update_scraper_status
         update_scraper_status('mail_health', {'ok': complete, 'checked_at': datetime.now().astimezone().isoformat(), 'evaluated': processed})

@@ -175,3 +175,38 @@ def test_assigning_newly_logged_role_uses_its_job_object():
         repository.return_value.sync.side_effect=[[old],[old,new]]
         handler._mutate('/api/resolve-pending-update',{'id':['p1'],'company':['Acme'],'role':['Intern'],'stage':['Applied']})
         assert repository.return_value.record_email.call_args.args[0].id == 'new'
+
+
+AWE_REJECTION = """Dear Joga,
+Thank you for your application to the position of Year in Industry- Data Scientist.
+Unfortunately you do not meet our nationality or residency requirements and we are therefore unable to progress your application further.
+Kind regards
+AWE Recruitment Team"""
+
+@pytest.mark.parametrize('body, expected', [
+    (AWE_REJECTION, 'Rejected'),
+    ('Regarding your application: we cannot proceed with your application further.', 'Rejected'),
+    ('Your application: we will not be progressing your application.', 'Rejected'),
+    ('Your application: if you do not meet eligibility requirements we are unable to progress your application further.', None),
+    ('Your application has not been unsuccessful and we are not unable to progress your application.', None),
+    ('Your interview is confirmed. Previous email: we are unable to progress your application further.', 'Interview'),
+])
+def test_progression_rejection_is_an_outcome_not_a_conditional_warning(body, expected):
+    assert listener.classify_email_stage(body) == expected
+
+
+def test_signature_employer_does_not_include_salutation():
+    assert listener.extract_company_name('', 'awepeople@myworkday.com', AWE_REJECTION) == 'AWE'
+
+
+def test_seen_ignored_rejection_can_be_recovered_without_replaying_other_outcomes(monkeypatch):
+    handle = Mock(return_value=True)
+    monkeypatch.setattr(listener, 'handle_incoming_email_update', handle)
+    monkeypatch.setattr(listener, 'save_seen_emails', lambda seen: None)
+    seen = {'awe-email', 'old-interview'}
+    assert listener._process_message('Test', 'awe-email', 'Your AWE Application', 'awepeople@myworkday.com', AWE_REJECTION, seen) == 0
+    assert listener._process_message('Test', 'awe-email', 'Your AWE Application', 'awepeople@myworkday.com', AWE_REJECTION, seen, recheck_rejections=True) == 1
+    assert handle.call_args.args[:2] == ('AWE', 'Rejected')
+    assert listener._process_message('Test', 'old-interview', 'Your interview is confirmed', 'careers@example.com', '', seen, recheck_rejections=True) == 0
+    assert listener._process_message('Test', 'awe-email', 'Your AWE Application', 'awepeople@myworkday.com', AWE_REJECTION, seen) == 0
+    assert handle.call_count == 1
