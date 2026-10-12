@@ -25,3 +25,17 @@ def test_source_and_sheet_objects_merge_without_losing_evidence(tmp_path,monkeyp
  result=JobRepository().sync([], [{'company':'Marshall Wace','role':'Technology Intern 2027','stages':['Applied']}],reconcile=True)
  assert len(result)==1 and result[0].sheet_present and result[0].link=='https://example.org/job'
  assert result[0].email_events[0]['id']=='mail'
+
+@pytest.mark.parametrize('description,eligible',[
+ ('<p>We are seeking exceptional <strong>PhD candidates</strong> to join our Quant Research team.</p>',False),
+ ('We are seeking Bachelor or PhD candidates for our internship.',True),
+ ('PhD study is preferred; undergraduate students are welcome.',True),
+])
+def test_advanced_degree_audience_in_description(description,eligible):
+ from core.relevance import evaluate_job
+ from core.storage import DEFAULT_SETTINGS
+ assert evaluate_job('Quant Research Intern','Example','London',{'description':description},DEFAULT_SETTINGS).eligible is eligible
+
+def test_listing_markup_is_presented_as_text():
+ from core.relevance import plain_listing_text
+ assert plain_listing_text('<p>Build <strong>software</strong> &amp; tools.</p>')=='Build software & tools.'

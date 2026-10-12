@@ -7,6 +7,7 @@ as "intern", "engineer" or "AI".
 from __future__ import annotations
 
 import re
+import html
 from dataclasses import asdict, dataclass
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -111,8 +112,19 @@ class RelevanceDecision:
         return asdict(self)
 
 
+def plain_listing_text(value: Any) -> str:
+    text = html.unescape(str(value or ""))
+    if re.search(r'</?[a-z][^>]*>', text, re.I):
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(text, 'html.parser')
+        for element in soup(['script', 'style']): element.decompose()
+        for element in soup(['p','div','li','h1','h2','h3','h4','br']): element.insert_before('\n')
+        text = '\n'.join(' '.join(line.split()) for line in soup.get_text(' ', strip=True).splitlines() if line.strip())
+    return text.strip()
+
+
 def _norm(value: Any) -> str:
-    return re.sub(r"\s+", " ", str(value or "").strip().lower())
+    return re.sub(r"\s+", " ", plain_listing_text(value).lower())
 
 
 def _pattern(phrase: str) -> re.Pattern:
@@ -268,6 +280,9 @@ def evaluate_job(
     if re.search(r'(?:minimum|require|required|must)[^.\n]{0,160}(?:post[- ]graduate degree|master.s degree|master.s or phd)', description):
         rejection.append("postgraduate qualification appears to be required")
     for clause in re.split(r'[.;\n]', description):
+        if not re.search(r'\b(?:undergraduate|bachelor)', clause) and re.search(r'\b(?:seeking|looking for|open to|only|currently pursuing|currently enrolled)[^.]{0,80}\b(?:phd|ph\.?d|doctoral)[^.]{0,30}\b(?:candidates|students|programme|program|degree)\b', clause):
+            rejection.append('doctoral study is required for this role')
+            break
         if not re.search(r'\b(?:undergraduate|bachelor)', clause) and re.search(r'\bbe in (?:the )?(?:final|penultimate)[^.]{0,80}\b(?:masters|master.s|phd)\b', clause):
             rejection.append('postgraduate study is required')
             break
