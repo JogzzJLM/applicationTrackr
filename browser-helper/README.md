@@ -10,6 +10,8 @@ On a Mac with Xcode, run `bash browser-helper/build-safari.sh`. Builds are creat
 
 Grant website access to ApplicationTrackr and the supported ATS pages you use: Greenhouse, Lever, Ashby and SmartRecruiters. Reload ApplicationTrackr after enabling the extension. Keep your profile and CV updated through the existing profile settings. Unknown answers entered directly on employer websites are not automatically saved or learned by this version.
 
+If Safari does not list the built helper, Safari's Developer settings also provide **Add Temporary Extension…**. Select this repository's `browser-helper` folder, then open **Extensions → Edit Websites…** and allow the tracker and supported employer sites, including both `careers.smartrecruiters.com` and `jobs.smartrecruiters.com`. Temporary loading and unsigned permission can reset when Safari quits; Apple signing is required for installation that survives these development restrictions.
+
 Only a user-selected listing is filled. Redirects must preserve the original job path and identifier. Country-specific eligibility is reused only from an answer already saved for that particular application. Ambiguous dropdown options are left for you to choose.
 
 ## Checks

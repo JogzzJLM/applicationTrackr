@@ -215,7 +215,7 @@ class JobCardViewModel:
         notes = _text(self.metadata.get('location_notes'))
         if context or eligibility or notes:
             source_html += '<details class="card-reasons"><summary>Listing &amp; eligibility</summary>'
-            source_html += '<p>' + html.escape(' '.join([eligibility, notes, context])) + '</p></details>'
+            source_html += f'<p class="listing-description" data-description-id="{html.escape(self.job_id, quote=True)}">Open this section to load the job description and requirements.</p></details>'
 
         return f'''<article class="card job-card"
 data-search="{html.escape((self.company + " " + self.title + " " + self.location + " " + self.status_tag + " " + self.category + " " + self.program + " " + self.source_text).lower(), quote=True)}"

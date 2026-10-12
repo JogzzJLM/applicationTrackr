@@ -219,6 +219,19 @@ def _merge_settings(loaded):
     if saved_schema < 7:
         merged['greenhouse_companies'] = list(dict.fromkeys(list(merged.get('greenhouse_companies', [])) + DIRECT_BOARD_ADDITIONS))
 
+    # These replacement routes were verified from official pages/public ATS metadata.
+    if merged.get('source_routes_version', 0) < 1:
+        moves = [('greenhouse_companies','quadrature','greenhouse_companies','quadraturecapital'),
+                 ('greenhouse_companies','jump-trading','greenhouse_companies','jumptrading'),
+                 ('greenhouse_companies','palantir','lever_companies','palantir'),
+                 ('greenhouse_companies','snyk','ashby_companies','98cd1a00-2706-4aa8-ab72-38a7b8c9c20c'),
+                 ('ashby_companies','mistral','ashby_companies','mistral.ai'),
+                 ('ashby_companies','scaleai','greenhouse_companies','scaleai')]
+        for old_key, old, new_key, new in moves:
+            if old in merged.get(old_key, []):
+                merged[old_key] = [item for item in merged[old_key] if item != old]
+                merged[new_key] = list(dict.fromkeys(merged.get(new_key, []) + [new]))
+        merged['source_routes_version'] = 1
     return merged
 
 

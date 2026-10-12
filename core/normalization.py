@@ -2,6 +2,7 @@ import re
 from urllib.parse import urlsplit, parse_qsl, urlencode
 
 COMPANY_ALIASES = {
+    "ttp1": "ttp", "98cd1a0027064aa8ab7238a7b8c9c20c": "snyk", "mistralai": "mistral",
     "mwinternshipprogram": "marshallwace",
     "marshallwace": "marshallwace",
     "mw": "marshallwace",
@@ -30,6 +31,9 @@ COMPANY_ALIASES = {
 }
 
 COMPANY_DISPLAY_NAMES = {
+    "mistralai": "Mistral AI", "mistral": "Mistral AI", "quadraturecapital": "Quadrature Capital",
+    "ttp1": "TTP", "ttp": "TTP", "bmw": "BMW", "deshaw": "D. E. Shaw", "awe": "AWE",
+    "98cd1a0027064aa8ab7238a7b8c9c20c": "Snyk",
     "marshallwace": "Marshall Wace",
     "mwinternshipprogram": "Marshall Wace",
     "mw": "Marshall Wace",

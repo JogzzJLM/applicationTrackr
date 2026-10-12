@@ -18,6 +18,18 @@ DEFAULT_CAREER_PAGES = [
     'https://www.cambridgeconsultants.com/careers/',
     'https://www.twosigma.com/careers/',
     'https://jobs.bloomberg.com/',
+    'https://www.quadrature.ai/careers/',
+    'https://mistral.ai/careers',
+    'https://www.snyk.io/careers/all-jobs/',
+    'https://wayve.ai/careers/',
+    'https://www.starlingbank.com/careers/',
+    'https://www.checkout.com/jobs',
+    'https://careers.citadel.com/',
+    'https://careers.twosigma.com/careers/SearchJobs',
+    'https://www.hudsonrivertrading.com/careers/',
+    'https://www.mlp.com/careers/',
+    'https://search.jobs.barclays/',
+    'https://www.revolut.com/careers/' ,
 ]
 
 
@@ -34,13 +46,13 @@ def career_links(markup, base):
         title = element.get_text(' ', strip=True)
         if re.search(r'\b(?:intern|internship|placement|graduate)\b', title, re.I) and re.search(r'/jobs?/|/JobDetail/|/careers/details/', url, re.I):
             candidates.append((title, url))
-        elif re.search(r'^(?:view |explore )?open (?:roles|positions)|^search (?:jobs|roles)', title, re.I):
+        elif re.search(r'^(?:(?:view|explore|see) )?(?:all |open )?(?:jobs|roles|positions)|^search (?:jobs|roles)', title, re.I):
             portals.add(url)
     return company, boards, candidates, portals
 
 
 def scrape_official_careers(seen_jobs, discovered_list, scraper_status=None):
-    pages = load_settings().get('employer_career_pages', DEFAULT_CAREER_PAGES)
+    pages = list(dict.fromkeys(load_settings().get('employer_career_pages', []) + DEFAULT_CAREER_PAGES))
     failures, candidates = {}, {}
     online = 0
     def read(url):

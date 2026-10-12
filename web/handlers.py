@@ -176,6 +176,12 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             except Exception:
                 page = "<html><body><h3>Sankey Diagram Loading...</h3></body></html>"
             return self._html(page)
+        if path == "/api/listing-details":
+            from autoapply.service import _find_job
+            job = _find_job(qs.get('id', [''])[0])
+            if not job: return self._json({'error':'Listing not found'}, 404)
+            metadata = job.get('metadata') or {}
+            return self._json({'description':'\n\n'.join(str(metadata.get(k) or job.get(k) or '') for k in ('description','eligibility','location_notes'))})
         if path == "/api/health":
             from config import NTFY_TOPIC, GOOGLE_SHEET_CSV_URL, GOOGLE_SHEET_WEBHOOK_URL, SCRAPER_STATUS
             from core.health import engine_health

@@ -66,6 +66,34 @@ class JobRepository:
                     existing.update(sheet_managed=True, sheet_present=True)
                     if reconcile:
                         existing['stages'] = list(row.get('stages') or [])
+            # Old versions could create both a source-ID and a Sheet-ID object for
+            # the identical employer/role. Merge evidence while keeping the Sheet ID.
+            groups = {}
+            for row in list(saved.values()):
+                groups.setdefault((normalize_company(row['company']), role_identity(row['title'])), []).append(row)
+            for duplicates in groups.values():
+                if len(duplicates) < 2: continue
+                winner = max(duplicates, key=lambda row: (row['id'] in sheet_ids, bool(row.get('sheet_present')), bool(row.get('sheet_managed'))))
+                if winner['id'] not in sheet_ids: continue
+                for other in duplicates:
+                    if other is winner: continue
+                    # Distinct Sheet rows or distinct employer destinations may be
+                    # separate applications, even when their titles are identical.
+                    if other['id'] in sheet_ids: continue
+                    if winner.get('link') and other.get('link') and winner['link'] != other['link']: continue
+                    for field in ('link', 'location'):
+                        if not winner.get(field) and other.get(field): winner[field] = other[field]
+                    winner['custom_fields'] = {**other.get('custom_fields', {}), **winner.get('custom_fields', {})}
+                    if other.get('notes') and other['notes'] not in winner.get('notes', ''):
+                        winner['notes'] = '\n\n'.join(filter(None, [winner.get('notes'), other['notes']]))
+                    events = {event['id']: dict(event) for event in winner.get('email_events', [])}
+                    for event in other.get('email_events', []):
+                        old = events.get(event['id'], {})
+                        events[event['id']] = {**event, **old, 'sheet_synced': bool(old.get('sheet_synced') or event.get('sheet_synced'))}
+                    winner['email_events'] = list(events.values())
+                    if not reconcile and not winner.get('stages'): winner['stages'] = list(other.get('stages', []))
+                    if other['id'] in sheet_ids: sheet_ids.add(winner['id'])
+                    saved.pop(other['id'], None)
             if reconcile:
                 for row in saved.values():
                     # Migrate objects created before authoritative Sheet reconciliation.

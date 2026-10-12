@@ -166,3 +166,18 @@ function assignPendingSelection(id, selectId, stage) {
     const choice = JSON.parse(value);
     resolvePendingUpdate(id, choice.company, choice.role, stage);
 }
+
+// Descriptions are fetched only when needed; background refresh preserves open cards.
+document.addEventListener('toggle', async event => {
+    if (!event.target.matches('details') || !event.target.open) return;
+    const text = event.target.querySelector('.listing-description[data-description-id]');
+    if (!text || text.dataset.loaded) return;
+    text.textContent = 'Loading job description…';
+    try {
+        const response = await fetch('/api/listing-details?id=' + encodeURIComponent(text.dataset.descriptionId));
+        const data = await response.json();
+        if (!response.ok) throw new Error('Could not load description.');
+        text.textContent = data.description || 'Open the employer page for the full job description.';
+        text.dataset.loaded = 'true';
+    } catch (_) { text.textContent = 'Could not load details. Close and reopen this section to retry, or open the employer listing.'; }
+}, true);

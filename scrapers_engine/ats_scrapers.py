@@ -6,7 +6,7 @@ import time
 import requests
 from bs4 import BeautifulSoup
 
-from core.normalization import extract_ats_post_id, fuzzy_roles_match, normalize_company, normalize_role, normalize_url, same_listing
+from core.normalization import clean_company_display_name, extract_ats_post_id, fuzzy_roles_match, normalize_company, normalize_role, normalize_url, same_listing
 from core.relevance import evaluate_job, detect_programme_type
 from core.storage import load_closed_urls_cache, load_reported_closed_jobs, load_settings, mark_url_as_closed, save_settings
 from scrapers_engine.verifier import verify_listing, deadline_date, VERIFICATION_SCHEMA
@@ -270,7 +270,7 @@ def scrape_lever_jobs(seen_jobs, discovered_list, scraper_status=None):
                     "workplace_type": job.get("workplaceType", ""), "country": job.get("country", ""), "apply_url": job.get("applyUrl", ""),
                 }
                 job_id = f"lever_{company}_{job.get('id')}"
-                if _record_job(discovered_list, seen_jobs, local, relevant, job_id=job_id, company=company.capitalize(), title=job.get("text", ""), location=categories.get("location", ""), job_url=job.get("hostedUrl", ""), source=f"Lever ({company})", board_url=f"https://jobs.lever.co/{company}", metadata=metadata):
+                if _record_job(discovered_list, seen_jobs, local, relevant, job_id=job_id, company=clean_company_display_name(company), title=job.get("text", ""), location=categories.get("location", ""), job_url=job.get("hostedUrl", ""), source=f"Lever ({company})", board_url=f"https://jobs.lever.co/{company}", metadata=metadata):
                     local_relevant += 1
                     with _JOB_LOCK: relevant += 1
             if local_relevant: print(f"  │   ↳ {company.capitalize()}: {len(jobs)} fetched ({local_relevant} eligible)")
@@ -312,7 +312,7 @@ def scrape_ashby_jobs(seen_jobs, discovered_list, scraper_status=None):
                 }
                 job_url = job.get("jobUrl", f"https://jobs.ashbyhq.com/{company}/{job.get('id')}")
                 job_id = f"ashby_{company}_{job.get('id') or abs(hash(job_url))}"
-                if _record_job(discovered_list, seen_jobs, local, relevant, job_id=job_id, company=company.capitalize(), title=job.get("title", ""), location=job.get("location", "") or job.get("locationName", ""), job_url=job_url, source=f"Ashby ({company})", board_url=f"https://jobs.ashbyhq.com/{company}", metadata=metadata):
+                if _record_job(discovered_list, seen_jobs, local, relevant, job_id=job_id, company=clean_company_display_name(company), title=job.get("title", ""), location=job.get("location", "") or job.get("locationName", ""), job_url=job_url, source=f"Ashby ({company})", board_url=f"https://jobs.ashbyhq.com/{company}", metadata=metadata):
                     local_relevant += 1
                     with _JOB_LOCK: relevant += 1
             if local_relevant: print(f"  │   ↳ {company.capitalize()}: {len(jobs)} fetched ({local_relevant} eligible)")
@@ -367,7 +367,7 @@ def scrape_smartrecruiters_jobs(seen_jobs, discovered_list, scraper_status=None)
                 metadata['description'] = ' '.join(_plain_html((sections.get(k) or {}).get('text')) for k in ('jobDescription', 'qualifications', 'additionalInformation'))
                 metadata['employment_type'] = (info.get('typeOfEmployment') or {}).get('label', '')
                 job_id = f"sr_{company}_{job.get('id')}"
-                if _record_job(discovered_list, seen_jobs, local, relevant, job_id=job_id, company=company.capitalize(), title=job.get("name", ""), location=location, job_url=f"https://jobs.smartrecruiters.com/{company}/{job.get('id')}", source=f"SmartRecruiters ({company})", board_url=f"https://jobs.smartrecruiters.com/{company}", metadata=metadata):
+                if _record_job(discovered_list, seen_jobs, local, relevant, job_id=job_id, company=clean_company_display_name(company), title=job.get("name", ""), location=location, job_url=f"https://jobs.smartrecruiters.com/{company}/{job.get('id')}", source=f"SmartRecruiters ({company})", board_url=f"https://jobs.smartrecruiters.com/{company}", metadata=metadata):
                     local_relevant += 1
                     with _JOB_LOCK: relevant += 1
             if local_relevant: print(f"  │   ↳ {company.capitalize()}: {len(jobs)} fetched ({local_relevant} eligible)")
