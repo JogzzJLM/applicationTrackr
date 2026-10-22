@@ -1,4 +1,5 @@
 import re
+from html import unescape
 from urllib.parse import urlsplit, parse_qsl, urlencode
 
 COMPANY_ALIASES = {
@@ -105,7 +106,7 @@ def normalize_company(name):
 def normalize_role(title):
     if not title:
         return ""
-    cleaned = str(title).lower().strip()
+    cleaned = unescape(str(title)).lower().strip()
     cleaned = re.sub(r'-\s*(london|uk|remote)', '', cleaned)
     cleaned = re.sub(r'[^a-z0-9\s]', ' ', cleaned)
     stop_words = {"london", "uk", "remote", "year", "in", "industry"}

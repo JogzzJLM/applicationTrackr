@@ -64,7 +64,8 @@ def test_deadline_falls_back_to_metadata_and_ignores_rolling_marker():
 def test_closing_panel_orders_deadlines_excludes_applied_and_hidden_and_always_exists(monkeypatch):
     from web import views
     jobs=[listing('later',5),listing('soon',1),listing('hidden',0),listing('applied',2)]
-    fixture='Company,Role,Stage 1\nLloyds Banking Group,Software Engineering Placement applied,Applied\n'
+    jobs[-1]['title']='Software Engineering & Placement applied'
+    fixture='Company,Role,Stage 1\nLloyds Banking Group,Software Engineering &amp; Placement applied,Applied\n'
     monkeypatch.setattr(views,'fetch_google_sheet_csv',lambda:fixture)
     monkeypatch.setattr(views,'load_discovered_jobs',lambda:jobs)
     monkeypatch.setattr(views,'load_hidden_jobs',lambda:{'hidden'})
@@ -95,3 +96,11 @@ def test_hidden_listings_do_not_reappear_in_digests_or_new_listing_alerts(tmp_pa
     with patch.object(notifications,'send_notification') as notify:
         assert notifications._notify_discoveries(jobs)==1
         assert '/visible' in notify.call_args.kwargs['link']
+
+
+def test_encoded_saved_role_is_the_same_application():
+    from core.normalization import normalize_role, fuzzy_roles_match
+    plain='Software Engineering (Graduate & Internship Opportunites)'
+    encoded='Software Engineering (Graduate &amp; Internship Opportunites)'
+    assert normalize_role(plain)==normalize_role(encoded)
+    assert fuzzy_roles_match(plain,encoded,threshold=.90)
