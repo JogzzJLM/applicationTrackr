@@ -55,3 +55,7 @@ td,th { border-bottom:1px dashed #b9af9e; }
 :focus-visible { outline:3px solid #244fac; outline-offset:4px; }
 @media(max-width:600px) { .wrap { padding:20px 14px 40px; } .card { padding:18px; } }
 @media(prefers-reduced-motion:reduce) { *,*::before,*::after { transition:none !important; animation:none !important; } }
+/* Companion navigation needs its own specificity beside the primary button rule. */
+a.btn.secondary, .btn.secondary { background:#e7dff7; color:var(--ink); }
+button.danger { background:#a1283d; color:white; }
+button.ok { background:#236747; color:white; }
