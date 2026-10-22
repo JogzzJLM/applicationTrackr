@@ -132,8 +132,8 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
                 "start_url": "/",
                 "scope": "/",
                 "display": "standalone",
-                "background_color": "#f5f7fa",
-                "theme_color": "#ffffff",
+                "background_color": "#f8f3e8",
+                "theme_color": "#fffdf7",
                 "icons": [
                     {
                         "src": "/app-icon.svg",
@@ -149,9 +149,9 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             )
         if path == "/app-icon.svg":
             icon = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180">
-<rect width="180" height="180" rx="38" fill="#ffffff"/>
-<rect x="12" y="12" width="156" height="156" rx="31" fill="#ff8000"/>
-<path d="M90 38v104M116 53H77c-17 0-27 9-27 23s10 23 27 23h27c17 0 27 9 27 23s-10 23-27 23H60" fill="none" stroke="#fff" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+<rect width="180" height="180" rx="32" fill="#f8e880"/>
+<rect x="22" y="28" width="136" height="124" rx="12" fill="#b9dcff" stroke="#282335" stroke-width="7"/>
+<path d="m25 34 65 57 65-57M61 111v9m58-9v9M74 132q16 12 32 0" fill="none" stroke="#282335" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>"""
             return self._raw(icon, "image/svg+xml; charset=utf-8", "public, max-age=86400")
         if path == "/":

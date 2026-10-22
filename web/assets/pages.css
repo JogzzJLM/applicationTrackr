@@ -31,3 +31,27 @@ pre, code { overflow-wrap: anywhere; white-space: pre-wrap; }
     td::before { content: attr(data-label); display: block; font-weight: 700; font-size: 12px; color: #667085; }
     th, thead { display: none; }
 }
+
+
+/* Companion pages belong to the same personal-web noticeboard. */
+:root { color-scheme:light; --ink:#282335; --accent:#50329b; }
+body { font-family:"Trebuchet MS",Verdana,sans-serif; color:var(--ink); background:#f8f3e8; background-image:radial-gradient(#cfc6b5 .7px,transparent .7px); background-size:12px 12px; }
+.wrap { max-width:1050px; padding:30px 28px 60px; }
+h1 { font-family:Georgia,serif; font-size:clamp(30px,4vw,44px); letter-spacing:-.04em; }
+h2 { font-family:Georgia,serif; font-size:24px; letter-spacing:-.025em; }
+p { font-size:14px; color:#595162; max-width:80ch; }
+a { color:#244fac; }
+.card { background:#fffdf7; border:1.5px solid var(--ink); border-radius:5px; box-shadow:4px 4px 0 #d7ccb7; }
+button, a.btn, .btn { font-family:"Trebuchet MS",Verdana,sans-serif; font-size:13px; border:1.5px solid var(--ink); background:var(--accent); border-radius:4px; box-shadow:2px 2px 0 var(--ink); }
+button:hover, a.btn:hover { filter:brightness(.95); }
+.secondary { background:#e7dff7; color:var(--ink); }
+input,select,textarea { background:#fffefa; border:1.5px solid #81788c; border-radius:3px; color:var(--ink); }
+label { font-size:12px; }
+.profile-section summary { font-family:Georgia,serif; font-size:20px; }
+.badge { font:11px "Courier New",monospace; background:#eee7ff; color:var(--accent); border:1px solid #beacd9; border-radius:2px; }
+table { background:#fffdf7; font-size:13px; border:1px solid #b9af9e; }
+th { font: bold 11px "Courier New",monospace; background:#e9e0cf; text-align:left; }
+td,th { border-bottom:1px dashed #b9af9e; }
+:focus-visible { outline:3px solid #244fac; outline-offset:4px; }
+@media(max-width:600px) { .wrap { padding:20px 14px 40px; } .card { padding:18px; } }
+@media(prefers-reduced-motion:reduce) { *,*::before,*::after { transition:none !important; animation:none !important; } }

@@ -259,11 +259,10 @@ def generate_default_sankey():
 <html>
 <head>
     <meta charset="UTF-8">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Inter', -apple-system, sans-serif; background: transparent; color: #1d1d1f; text-align: center; padding: 60px 20px; margin: 0; }
+        body { font-family: "Trebuchet MS", Verdana, sans-serif; background: transparent; color: #1d1d1f; text-align: center; padding: 60px 20px; margin: 0; }
         .box { background: rgba(255,255,255,0.7); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.85); border-radius: 16px; padding: 32px; max-width: 420px; margin: 20px auto; box-shadow: 0 4px 16px rgba(0,0,0,0.03); }
-        h2 { font-size: 16px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 6px; color: #0071e3; }
+        h2 { font-size: 16px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 6px; color: #50329b; }
         p { color: #86868b; font-size: 13px; line-height: 1.5; margin: 0; }
     </style>
 </head>
@@ -353,31 +352,31 @@ def _generate_sankey_from_google_sheets(force_refresh=False):
         for name in sorted_nodes:
             lower = name.lower()
             if name == "Applications" or lower == "applied":
-                node_colors.append("#0071e3")
+                node_colors.append("#50329b")
             elif "offer" in lower or "accepted" in lower:
-                node_colors.append("#34c759")
+                node_colors.append("#428057")
             elif "reject" in lower or "fail" in lower:
-                node_colors.append("#ff3b30")
+                node_colors.append("#bd4b63")
             elif "ghost" in lower:
                 node_colors.append("#8e8e93")
             elif "interview" in lower:
-                node_colors.append("#ff9500")
+                node_colors.append("#b97629")
             elif "assessment" in lower or "oa" in lower or "test" in lower:
-                node_colors.append("#af52de")
+                node_colors.append("#5676b1")
             else:
-                node_colors.append("#5856d6")
+                node_colors.append("#7a619a")
 
         link_colors = []
         for src, tgt in flow_counts.keys():
             tgt_lower = tgt.lower()
             if "offer" in tgt_lower or "accepted" in tgt_lower:
-                link_colors.append("rgba(52, 199, 89, 0.35)")
+                link_colors.append("rgba(66, 128, 87, 0.25)")
             elif "reject" in tgt_lower or "fail" in tgt_lower:
-                link_colors.append("rgba(255, 59, 48, 0.22)")
+                link_colors.append("rgba(189, 75, 99, 0.22)")
             elif "interview" in tgt_lower or "assessment" in tgt_lower or "oa" in tgt_lower:
-                link_colors.append("rgba(255, 149, 0, 0.28)")
+                link_colors.append("rgba(185, 118, 41, 0.25)")
             else:
-                link_colors.append("rgba(0, 113, 227, 0.25)")
+                link_colors.append("rgba(80, 50, 155, 0.19)")
 
         fig = go.Figure(data=[go.Sankey(
             arrangement="snap",
@@ -399,7 +398,7 @@ def _generate_sankey_from_google_sheets(force_refresh=False):
         fig.update_layout(
             font_size=13,
             font_color="#1d1d1f",
-            font_family="Inter, -apple-system, BlinkMacSystemFont, sans-serif",
+            font_family="Trebuchet MS, Verdana, sans-serif",
             autosize=True,
 
             paper_bgcolor="rgba(0,0,0,0)",
