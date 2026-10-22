@@ -881,3 +881,26 @@ body { font-family: var(--font); font-size: 14px; background-image: radial-gradi
 }
 @media (prefers-reduced-motion:reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
 @media (prefers-contrast:more) { :root { --border-card:#706574; --text-secondary:#39313f; --text-tertiary:#49404d; } }
+
+/* A compact application log; deadlines keep their place above it. */
+.closing-section { order: 2; }
+.flow-apps { order: 3; }
+.closing-caption { color: var(--text-secondary); font-size: 12px; margin: -4px 0 14px; }
+.closing-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.action-item-card { padding: 13px; gap: 8px; }
+.action-item-card p { font-size: 12px; line-height: 1.4; margin: 0; }
+.closing-date { font: 11px var(--font-mono); color: var(--text-secondary); }
+.action-item-card .btn { align-self: flex-start; margin-top: 4px; }
+.applications-scroll { max-height: 310px; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-gutter: stable; padding: 2px 8px 8px 2px; border-bottom: 1px dashed var(--border-card); }
+.application-scroll-hint { color: var(--text-tertiary); font: 10px var(--font-mono); margin: 8px 0 0; }
+.applications-scroll .application-card { padding: 10px 12px; gap: 7px; }
+.applications-scroll .application-company { font-size: 17px; }
+.applications-scroll .application-card-head { gap: 8px; }
+.applications-scroll .application-card-head > div { flex-basis: 135px; }
+.applications-scroll .application-actions .btn { min-height: 32px; padding: 5px 8px; }
+.hide-listing-button { grid-column: 1 / -1; box-shadow: none; font: 10px var(--font-mono) !important; min-height: 30px !important; border-color: var(--border-card); }
+.toast .btn { min-height: 34px; padding: 5px 10px; margin-left: 6px; }
+@media (max-width:700px) {
+    .applications-scroll { max-height: 280px; }
+    .applications-scroll .application-actions .btn, .hide-listing-button { min-height: 44px !important; }
+}

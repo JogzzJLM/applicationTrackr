@@ -42,7 +42,7 @@ def valid_stage(stage):
 
 MUTATION_PATHS = {'/api/relevance-audit', '/api/mark-applied', '/api/resolve-pending-update',
     '/api/dismiss-pending-update', '/api/rescan', '/api/sync-sheet', '/api/hide-job',
-    '/api/report-closed', '/api/reopen-job', '/api/clear-logs'}
+    '/api/unhide-job', '/api/report-closed', '/api/reopen-job', '/api/clear-logs'}
 
 
 class CleanHandler(http.server.BaseHTTPRequestHandler):
@@ -313,10 +313,16 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             try: generate_sankey_from_google_sheets(force_refresh=True)
             except Exception as exc: add_scraper_log(f"⚠️ Sheet sync error: {exc}")
             self.send_response(302); self.send_header("Location", "/"); self.end_headers(); return
-        if path == "/api/hide-job":
-            j_id = qs.get("id", [""])[0]
-            if j_id: hide_job(j_id)
-            self.send_response(302); self.send_header("Location", "/jobs"); self.end_headers(); return
+        if path in {"/api/hide-job", "/api/unhide-job"}:
+            from core.storage import set_listing_visibility
+            ids = set(qs.get('id', []))
+            if not ids or len(ids) > 2000:
+                return self._json({'status':'error', 'message':'Choose one or more listings.'}, 400)
+            listings = [job for job in load_discovered_jobs() if str(job.get('id')) in ids]
+            if len({str(job.get('id')) for job in listings}) != len(ids):
+                return self._json({'status':'error', 'message':'A listing has changed. Refresh and try again.'}, 404)
+            set_listing_visibility(listings, hidden=path == '/api/hide-job')
+            return self._json({'status':'ok', 'ids':sorted(ids)})
         if path == "/api/report-closed":
             j_id = qs.get("id", [""])[0]
             link = qs.get("link", [""])[0]

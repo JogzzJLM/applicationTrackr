@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 from config import APP_BASE_URL, APP_TIMEZONE, SCRAPER_STATUS, DISCOVERY_SCAN_READY
 from notifications import send_notification, job_alert_line, flush_notification_outbox
 from core.storage import DATA_DIR, load_json_safe, atomic_write_json
-from scrapers_engine.verifier import deadline_date
+from scrapers_engine.verifier import deadline_date, listing_deadline_date
 from sheets import parse_sheet_stats
 
 SCHEDULE_FILE = str(DATA_DIR / 'notification_schedule.json')
@@ -16,10 +16,12 @@ def actionable_jobs():
     from core.normalization import normalize_company, fuzzy_roles_match
     from sheets import get_applied_jobs_set
     from scrapers_engine.quality import is_actionable_listing
+    from core.storage import is_job_hidden, load_hidden_jobs
+    hidden = load_hidden_jobs()
     applied, _ = get_applied_jobs_set()
     today = datetime.now(ZoneInfo(APP_TIMEZONE)).date()
     return [j for j in load_discovered_jobs() if j.get('verification', {}).get('state') == 'verified'
-            and is_actionable_listing(j, today=today)
+            and is_actionable_listing(j, today=today) and not is_job_hidden(j, hidden)
             and not any(normalize_company(j['company']) == c and fuzzy_roles_match(j['title'], r, threshold=.90) for c, r in applied)]
 
 
@@ -27,8 +29,8 @@ def trigger_daily_briefing(period='morning', now=None):
     now = now or datetime.now(ZoneInfo(APP_TIMEZONE))
     jobs = actionable_jobs()
     recent = [j for j in jobs if str(j.get('date_found', '')) >= (now - timedelta(hours=24)).strftime('%Y-%m-%d %H:%M')]
-    soon = [j for j in jobs if deadline_date(j.get('deadline')) and 0 <= (deadline_date(j['deadline']) - now.date()).days <= 7]
-    soon.sort(key=lambda j: j['deadline'])
+    soon = [j for j in jobs if listing_deadline_date(j) and 0 <= (listing_deadline_date(j) - now.date()).days <= 7]
+    soon.sort(key=listing_deadline_date)
     highlights = (soon + sorted(recent, key=lambda j: -j.get('match_score', 0)))
     if not highlights: highlights = sorted(jobs, key=lambda j: -j.get('match_score', 0))
     unique = {j['link']: j for j in highlights}

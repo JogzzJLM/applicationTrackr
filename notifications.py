@@ -132,8 +132,10 @@ def _notify_discoveries(jobs):
     from scrapers_engine.quality import is_actionable_listing
     applied, _ = get_applied_jobs_set()
     notified = set(load_json_safe(NOTIFIED_FILE, []))
+    from core.storage import is_job_hidden, load_hidden_jobs
+    hidden = load_hidden_jobs()
     candidates = [j for j in jobs if j.get('verification', {}).get('state') == 'verified'
-                  and is_actionable_listing(j)
+                  and is_actionable_listing(j) and not is_job_hidden(j, hidden)
                   and not any(normalize_company(j.get('company')) == c and fuzzy_roles_match(j.get('title'), r, threshold=.90) for c, r in applied)]
     candidates.sort(key=lambda j: (j.get('deadline') or '9999', -j.get('match_score', 0)))
     queued = 0

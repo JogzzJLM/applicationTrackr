@@ -140,7 +140,34 @@ def load_hidden_jobs():
     return set(value) if isinstance(value, list) else set()
 def save_hidden_jobs(value): atomic_write_json(HIDDEN_JOBS_FILE, list(value))
 def hide_job(job_id):
-    values = load_hidden_jobs(); values.add(job_id); save_hidden_jobs(values)
+    with _FILE_LOCK:
+        values = load_hidden_jobs(); values.add(job_id); save_hidden_jobs(values)
+
+
+def listing_visibility_key(job):
+    from core.normalization import normalize_url
+    from urllib.parse import urlparse
+    link = str(job.get('link') or '')
+    return 'url:' + normalize_url(link) if urlparse(link).scheme in {'http', 'https'} else str(job.get('id') or '')
+
+
+def is_job_hidden(job, hidden=None):
+    hidden = load_hidden_jobs() if hidden is None else hidden
+    return str(job.get('id') or '') in hidden or listing_visibility_key(job) in hidden
+
+
+def set_listing_visibility(jobs, hidden):
+    """Keep manual choices across restarts, source-ID changes and tracking URLs."""
+    with _FILE_LOCK:
+        values = load_hidden_jobs()
+        for job in jobs:
+            key = listing_visibility_key(job)
+            if hidden and key:
+                values.add(key)
+            elif not hidden:
+                values.discard(key)
+                values.discard(str(job.get('id') or ''))  # legacy ID-only hides
+        save_hidden_jobs(values)
 def load_pending_email_updates(): return load_json_safe(PENDING_EMAILS_FILE, [])
 def save_pending_email_updates(value): atomic_write_json(PENDING_EMAILS_FILE, value)
 def add_pending_email_update(value):

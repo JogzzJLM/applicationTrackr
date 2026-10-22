@@ -3,7 +3,7 @@ import json
 import urllib.parse
 from config import SCRAPER_STATUS
 from core.storage import (
-    load_settings, load_hidden_jobs,
+    load_settings, load_hidden_jobs, is_job_hidden,
     load_reported_closed_jobs, load_json_safe,
     load_pending_email_updates
 )
@@ -47,7 +47,7 @@ def render_unified_dashboard_html(active_tab="flow"):
     applied_jobs, applied_companies = get_applied_jobs_set(csv_text=csv_text)
     settings = load_settings()
     hidden_jobs = load_hidden_jobs()
-    verified_count = sum(j.get('verification', {}).get('state') == 'verified' and is_actionable_listing(j, settings) for j in all_jobs)
+    verified_count = sum(j.get('verification', {}).get('state') == 'verified' and is_actionable_listing(j, settings) and not is_job_hidden(j, hidden_jobs) for j in all_jobs)
     review_count = sum(v.get('state') in {'unknown', 'needs_check'} for v in load_json_safe(REVIEW_FILE, {}).values())
     from config import NTFY_BASE_URL, NTFY_TOPIC
     ntfy_topic_url = escape(f'{NTFY_BASE_URL}/{NTFY_TOPIC}', quote=True) if NTFY_TOPIC else ''
@@ -84,6 +84,7 @@ def render_unified_dashboard_html(active_tab="flow"):
 
     auto_hide_company = settings.get("auto_hide_applied_company_jobs", False)
 
+    hidden_listing_cards_html = ""
     visible_jobs = []
     for j in all_jobs:
         j_id = j.get('id', '')
@@ -91,7 +92,8 @@ def render_unified_dashboard_html(active_tab="flow"):
         title_norm = normalize_role(j.get('title'))
         title_lower = j.get('title', '').lower()
 
-        if j_id in hidden_jobs or (comp_norm, title_norm) in hidden_jobs:
+        if is_job_hidden(j, hidden_jobs):
+            hidden_listing_cards_html += render_job_card(j, is_applied=(comp_norm, title_norm) in applied_jobs, is_hidden=True)
             continue
 
         if j.get('source') != 'Manual' and any(kw.lower() in title_lower for kw in settings.get('exclude_keywords', []) if kw.strip()):
@@ -186,7 +188,7 @@ def render_unified_dashboard_html(active_tab="flow"):
     cards_html = ""
     closed_cards_html = ""
     action_items_html = ""
-    action_items_count = 0
+    closing_candidates = []
 
     for j in visible_jobs:
         j_id = j.get('id', '')
@@ -234,28 +236,13 @@ def render_unified_dashboard_html(active_tab="flow"):
             else:
                 not_applied_count += 1
 
-                from scrapers_engine.verifier import deadline_date
-                from datetime import date
-                closing = deadline_date(j.get('deadline') or j.get('closeDate'))
-                if closing and 0 <= (closing - date.today()).days <= 7:
-                    if action_items_count < 6:
-                        action_items_count += 1
-                        comp_js = escape(json.dumps(comp_name), quote=True)
-                        title_js = escape(json.dumps(title_name), quote=True)
-                        action_items_html += f"""
-                        <div class="action-item-card">
-                            <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-                                <div style="font-weight:800; font-size:15px; color:var(--text-primary);">{escape(comp_name)}</div>
-                                <span class="badge badge-papaya">CLOSING SOON</span>
-                            </div>
-                            <div style="font-size:13.5px; color:var(--cyan); font-weight:700; margin-top:3px;">{escape(title_name)}</div>
-                            <div style="font-size:12px; color:var(--text-tertiary); margin-top:4px;">Deadline: <strong style="color:var(--papaya); font-family:var(--font-mono);">{j.get('deadline')}</strong></div>
-                            <div style="margin-top:12px; display:flex; gap:8px;">
-                                <a href="{escape(j_link, quote=True)}" target="_blank" rel="noopener" class="btn btn-filled" style="flex:1; justify-content:center;">Apply Now ↗</a>
-                                <button onclick="logJob({comp_js}, {title_js})" class="btn btn-tinted">+ Log</button>
-                            </div>
-                        </div>
-                        """
+                from scrapers_engine.verifier import listing_deadline_date
+                from datetime import datetime
+                from zoneinfo import ZoneInfo
+                from config import APP_TIMEZONE
+                closing = listing_deadline_date(j)
+                if closing and closing >= datetime.now(ZoneInfo(APP_TIMEZONE)).date():
+                    closing_candidates.append((closing, j))
 
         card_markup = render_job_card(j, is_reported_closed=is_reported_closed, is_applied=is_applied, is_hidden=(j_id in hidden_jobs))
 
@@ -267,6 +254,23 @@ def render_unified_dashboard_html(active_tab="flow"):
     for c_job in closed_jobs_list:
         closed_count += 1
         closed_cards_html += render_job_card(c_job, is_reported_closed=True, is_applied=False, is_hidden=False)
+
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from config import APP_TIMEZONE
+    today = datetime.now(ZoneInfo(APP_TIMEZONE)).date()
+    closing_candidates.sort(key=lambda item: (item[0], item[1].get('company', ''), item[1].get('title', '')))
+    urgent = [(day, job) for day, job in closing_candidates if (day - today).days <= 7]
+    next_deadlines = urgent[:6] if urgent else closing_candidates[:3]
+    closing_caption = ('Verified, unapplied listings closing in the next 7 days.' if urgent else
+                       'None close in the next 7 days. These are your next known deadlines.' if next_deadlines else
+                       'No known upcoming deadlines for your visible, unapplied listings. Rolling or unpublished deadlines still appear in Jobs.')
+    for closing, job in next_deadlines:
+        days = (closing - today).days
+        label = 'Today' if days == 0 else 'Tomorrow' if days == 1 else f'In {days} days'
+        job_id = escape(str(job.get('id') or ''), quote=True)
+        action_items_html += f'<article class="action-item-card" data-closing-id="{job_id}"><div class="closing-head"><strong>{escape(clean_company_display_name(job.get("company")))}</strong><span class="badge badge-papaya">{label}</span></div><p>{escape(str(job.get("title") or "Role"))}</p><div class="closing-date">Closes {closing.strftime("%d %b %Y")}</div><a href="{escape(str(job.get("link") or "#"), quote=True)}" target="_blank" rel="noopener noreferrer" class="btn btn-tinted">Open listing ↗</a></article>'
+    closing_section_html = f'<section class="section-card closing-section" id="closing-soon-section"><div class="section-title"><span>Closing soon</span><a href="/jobs" class="btn btn-ghost" onclick="switchTab(\'jobs\');document.getElementById(\'sort-select\').value=\'deadline_asc\';sortJobs();return false;">Browse deadlines ↗</a></div><p class="closing-caption">{closing_caption}</p><div class="action-items-grid">{action_items_html}</div></section>'
 
     tab_flow = 'active' if active_tab == 'flow' else ''
     tab_jobs = 'active' if active_tab == 'jobs' else ''
@@ -427,6 +431,7 @@ def render_unified_dashboard_html(active_tab="flow"):
                 </div>
             </div>
 
+            {closing_section_html}
             <div class="section-card flow-apps">
                 <div class="section-title">
                     <span id="application-count">Logged Applications ({total})</span>
@@ -452,14 +457,15 @@ def render_unified_dashboard_html(active_tab="flow"):
                     <select id="application-status" class="sort-select" aria-label="Filter applications" onchange="filterApplications()"><option value="active">Active applications</option><option value="all">All applications</option><option value="offer">Offers</option><option value="rejected">Rejected</option><option value="withdrawn">Withdrawn</option><option value="ghosted">Ghosted</option></select>
                 </div>
                 <p id="application-results" class="results-summary" aria-live="polite"></p>
-                <div id="applications-grid" class="applications-grid">
-                    {apps_cards_html}
+                <div class="applications-scroll" tabindex="0" role="region" aria-label="Applications — scroll to see more">
+                    <div id="applications-grid" class="applications-grid">{apps_cards_html}</div>
                 </div>
+                <p class="application-scroll-hint">Scroll inside this panel to see more applications.</p>
                 {applications_toggle_html}
             </div>
         </div>
 
-        {"<div class='section-card' style='margin-top:10px;'><div class='section-title'>⏰ Schemes Closing Soon (Urgent Action Items)</div><div class='action-items-grid'>" + action_items_html + "</div></div>" if action_items_html else ""}
+
     </div>
 
     <!-- Panel: Discovered Schemes -->
@@ -482,7 +488,7 @@ def render_unified_dashboard_html(active_tab="flow"):
                 <option value="title_asc">Role A-Z</option>
             </select>
             <select id="job-status" class="sort-select" aria-label="Application status" onchange="filterJobs()">
-                <option value="not_applied">Not applied</option><option value="applied">Applied</option><option value="all">All statuses</option>
+                <option value="not_applied">Not applied</option><option value="applied">Applied</option><option value="all">All visible statuses</option><option value="hidden">Hidden listings</option>
             </select>
             <button class="btn btn-ghost filter-toggle" aria-expanded="false" aria-controls="mobile-filters" onclick="toggleMobileFilters(this)">Categories</button>
         </div>
@@ -509,6 +515,7 @@ def render_unified_dashboard_html(active_tab="flow"):
         <div class="results-summary" id="results-summary" role="status" aria-live="polite"></div>
         <div id="jobs-container" class="grid">
             {cards_html}
+            {hidden_listing_cards_html}
         </div>
         <div id="jobs-empty" class="empty-jobs" hidden>No jobs match these filters. <button class="btn btn-tinted" onclick="resetJobFilters()">Reset filters</button></div>
         <nav class="job-pagination" aria-label="Job list pages">
@@ -987,7 +994,7 @@ def render_unified_dashboard_html(active_tab="flow"):
             else if (currentDomainPill === 'applied') matchesDomain = (statusData === 'applied');
             else if (currentDomainPill !== 'all') matchesDomain = (catData === currentDomainPill);
 
-            var matchesStatus = status === 'all' || statusData === status;
+            var matchesStatus = (status === 'all' && statusData !== 'hidden') || statusData === status;
             var isVisible = matchesSearch && matchesProgram && matchesDomain && matchesStatus;
             c.dataset.matches = isVisible ? 'true' : 'false';
             c.style.display = isVisible ? 'flex' : 'none';

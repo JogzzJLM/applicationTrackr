@@ -25,13 +25,13 @@ def clear_review(link):
 
 def is_actionable_listing(job, settings=None, today=None):
     from core.relevance import evaluate_job
-    from scrapers_engine.verifier import deadline_date
+    from scrapers_engine.verifier import listing_deadline_date
     from datetime import date
     if job.get('source') == 'Manual':
         return True
     if job.get('verification', {}).get('state') != 'verified':
         return False
-    closing = deadline_date(job.get('deadline'))
+    closing = listing_deadline_date(job)
     if closing and closing < (today or date.today()):
         return False
     return evaluate_job(job.get('title', ''), job.get('company', ''), job.get('location', ''),

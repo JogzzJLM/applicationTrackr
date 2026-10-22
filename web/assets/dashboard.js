@@ -138,12 +138,14 @@ let dashboardRefreshRunning = false;
 async function refreshDashboard() {
     if (dashboardRefreshRunning || document.hidden || document.querySelector('dialog[open]') || [...document.querySelectorAll('.modal-backdrop')].some(m => m.style.display !== 'none') || ['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName) || document.querySelector('#jobs-container details[open]')) return;
     dashboardRefreshRunning = true;
+    const visibilityAtStart = visibilityRevision;
     try {
         const response = await fetch(location.pathname, {cache:'no-store'});
         if (!response.ok) return;
         const page = new DOMParser().parseFromString(await response.text(), 'text/html');
+        if (visibilityAtStart !== visibilityRevision) return;
         let applicationsChanged = false;
-        for (const selector of ['#applications-grid', '#pending-email-updates', '#application-count', '#application-distribution', '#jobs-container', '.hero-stats-grid', '.status-pill']) {
+        for (const selector of ['#applications-grid', '#pending-email-updates', '#application-count', '#application-distribution', '#jobs-container', '#closing-soon-section', '.hero-stats-grid', '.status-pill']) {
             const current = document.querySelector(selector), updated = page.querySelector(selector);
             if (current && updated && current.innerHTML !== updated.innerHTML) {
                 if (selector === '#applications-grid') applicationsChanged = true;
@@ -155,6 +157,7 @@ async function refreshDashboard() {
         if (typeof sortJobs === 'function') sortJobs(false);
         if (typeof filterJobs === 'function') filterJobs(false);
         updateFillActions();
+        updateHiddenCount();
         if (applicationsChanged && typeof reloadSankeyIframe === 'function') reloadSankeyIframe();
     } catch (_) { /* Keep the displayed data during a temporary connection failure. */ }
     finally { dashboardRefreshRunning = false; }
@@ -181,3 +184,53 @@ document.addEventListener('toggle', async event => {
         text.dataset.loaded = 'true';
     } catch (_) { text.textContent = 'Could not load details. Close and reopen this section to retry, or open the employer listing.'; }
 }, true);
+
+// A manual visibility choice only affects discovered listings, never Sheet history.
+let visibilityRevision = 0;
+async function changeListingsVisibility(ids, hidden) {
+    const body = new URLSearchParams();
+    ids.forEach(id => body.append('id', id));
+    const response = await fetch(hidden ? '/api/hide-job' : '/api/unhide-job', {method:'POST', body});
+    const result = await response.json();
+    if (!response.ok || result.status !== 'ok') throw new Error(result.message || 'Could not save your choice.');
+    visibilityRevision++;
+    const changed = new Set(result.ids);
+    document.querySelectorAll('#jobs-container .job-card').forEach(card => {
+        if (!changed.has(card.dataset.id)) return;
+        card.dataset.status = hidden ? 'hidden' : card.dataset.originalStatus;
+        if (hidden) card.querySelectorAll('details').forEach(details => details.open = false);
+        const button = card.querySelector('.hide-listing-button');
+        if (button) {
+            button.textContent = hidden ? 'Restore listing' : 'Hide listing';
+            button.onclick = () => setListingHidden(card.dataset.id, !hidden, button);
+        }
+    });
+    document.querySelectorAll('[data-closing-id]').forEach(card => { if (hidden && changed.has(card.dataset.closingId)) card.remove(); });
+    const closing = document.querySelector('#closing-soon-section');
+    if (closing && hidden && !closing.querySelector('[data-closing-id]')) closing.querySelector('.closing-caption').textContent = 'No remaining deadlines in this panel. Hidden listings are excluded; refresh to check the next deadlines.';
+    filterJobs(false);
+    updateHiddenCount();
+    showNotice(`${result.ids.length} listing${result.ids.length === 1 ? '' : 's'} ${hidden ? 'hidden. Restore any time using the Hidden listings filter.' : 'restored.'}`);
+    const undo = document.createElement('button');
+    undo.className = 'btn btn-tinted'; undo.textContent = 'Undo'; undo.type = 'button';
+    undo.onclick = async () => { undo.disabled = true; try { await changeListingsVisibility(result.ids, !hidden); } catch (error) { showNotice(error.message); } };
+    document.getElementById('app-notice').append(' ', undo);
+    void refreshDashboard();
+}
+async function setListingHidden(id, hidden, button) {
+    if (button) button.disabled = true;
+    try { await changeListingsVisibility([id], hidden); }
+    catch (error) { showNotice(error.message); }
+    finally { if (button) button.disabled = false; }
+}
+function hideCompanyListings(company) {
+    const cards = [...document.querySelectorAll('#jobs-container .job-card')].filter(card => card.dataset.company === company && card.dataset.status === 'not_applied');
+    if (!cards.length) { showNotice('No visible, unapplied listings for this company.'); return; }
+    if (!window.confirm(`Hide all ${cards.length} currently unapplied listings for ${cards[0].querySelector('.card-company').textContent}? You can restore them using the Hidden listings filter. Future listings are not automatically hidden.`)) return;
+    changeListingsVisibility(cards.map(card => card.dataset.id), true).catch(error => showNotice(error.message));
+}
+function updateHiddenCount() {
+    const option = document.querySelector('#job-status option[value="hidden"]');
+    if (option) option.textContent = `Hidden listings (${document.querySelectorAll('#jobs-container .job-card[data-status="hidden"]').length})`;
+}
+document.addEventListener('DOMContentLoaded', updateHiddenCount);

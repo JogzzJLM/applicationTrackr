@@ -33,6 +33,15 @@ def deadline_date(value):
     return None
 
 
+def listing_deadline_date(job):
+    metadata = job.get('metadata') or {}
+    for value in (job.get('deadline'), job.get('closeDate'), job.get('closing_date'), metadata.get('closing_date')):
+        closing = deadline_date(value)
+        if closing:
+            return closing
+    return None
+
+
 def job_postings(markup):
     def walk(value):
         if isinstance(value, list):

@@ -98,6 +98,10 @@ class JobCardViewModel:
 
     @property
     def deadline(self) -> str:
+        from scrapers_engine.verifier import listing_deadline_date
+        closing = listing_deadline_date(self.raw)
+        if closing:
+            return closing.isoformat()
         return _text(
             self.raw.get("deadline")
             or self.raw.get("closeDate")
@@ -108,6 +112,8 @@ class JobCardViewModel:
 
     @property
     def status_tag(self) -> str:
+        if self.is_hidden:
+            return "hidden"
         if self.is_applied:
             return "applied"
         if self.is_reported_closed:
@@ -151,6 +157,14 @@ class JobCardViewModel:
         return '<span class="badge badge-yellow">Graduate · Yr 3+</span>'
 
     def render(self) -> str:
+        visibility_action = (
+            f'<button class="btn btn-ghost hide-listing-button" onclick="setListingHidden({_js_literal(self.job_id)}, {"false" if self.is_hidden else "true"}, this)">{"Restore listing" if self.is_hidden else "Hide listing"}</button>'
+        )
+        if self.is_reported_closed:
+            visibility_action = ""
+        company_hide_action = '' if self.is_hidden or self.is_reported_closed else (
+            f'<button class="btn btn-ghost" onclick="hideCompanyListings({_js_literal(self.company.lower())})">Hide this company’s unapplied listings</button>'
+        )
         if self.is_applied:
             status_dot = '<span class="status-dot dot-cyan"></span>'
             status_label = "Applied"
@@ -172,6 +186,10 @@ class JobCardViewModel:
                 f'<button onclick="logJob({_js_literal(self.company)}, {_js_literal(self.title)}, this)" '
                 'class="btn btn-tinted card-secondary-action">Log applied</button>'
             )
+
+        if self.is_hidden:
+            status_dot = '<span class="status-dot"></span>'
+            status_label = "Hidden"
 
         report_action = ""
         if not self.is_reported_closed:
@@ -219,6 +237,8 @@ class JobCardViewModel:
 
         return f'''<article class="card job-card"
 data-search="{html.escape((self.company + " " + self.title + " " + self.location + " " + self.status_tag + " " + self.category + " " + self.program + " " + self.source_text).lower(), quote=True)}"
+data-id="{html.escape(self.job_id, quote=True)}"
+data-original-status="{"applied" if self.is_applied else "closed" if self.is_reported_closed else "not_applied"}"
 data-status="{html.escape(self.status_tag, quote=True)}"
 data-cat="{html.escape(self.category, quote=True)}"
 data-program="{html.escape(self.program, quote=True)}"
@@ -239,12 +259,14 @@ data-title="{html.escape(self.title.lower(), quote=True)}">
         {apply_action}
         {sheet_action}
         {agent_action}
+        {visibility_action}
     </div>
     <details class="card-more">
         <summary>Listing details</summary>
         <div class="card-detail">{reason_html}{source_html}</div>
         <div class="card-extra-actions">
             {report_action}
+            {company_hide_action}
             <button class="btn btn-ghost" onclick="openJobDetails({_js_literal(self.raw.get("object_id") or self.job_id)})">Notes &amp; custom fields</button>
         </div>
     </details>
