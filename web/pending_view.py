@@ -32,4 +32,4 @@ def render_pending_updates(updates):
 <button class="btn btn-tinted" onclick="openLogModalForPending({uid}, {_js_literal(company)}, {_js_literal(stage)})">Assign another role</button>
 <button class="btn btn-ghost" onclick="dismissPendingUpdate({uid})">Dismiss</button>
 </div></div>''')
-    return f'<div class="section-card"><div class="section-title">Email updates to review ({len(updates)})</div>{"".join(items)}</div>'
+    return f'<details class="section-card pending-reviews"><summary class="section-title">Email updates to review ({len(updates)})</summary>{"".join(items)}</details>'

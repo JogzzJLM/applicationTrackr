@@ -425,7 +425,7 @@ def render_unified_dashboard_html(active_tab="flow"):
                     <span>Application Flow Pipeline</span>
                     <button onclick="reloadSankeyIframe()" class="btn btn-tinted" style="font-size:12px;">🔄 Reload Diagram</button>
                 </div>
-                <button class="btn btn-ghost mobile-only" onclick="toggleMobileSection('sankey-mobile-wrap', this, 'Show diagram', 'Hide diagram')">Show diagram</button>
+                <button class="btn btn-ghost mobile-only" aria-expanded="false" aria-controls="sankey-mobile-wrap" onclick="toggleMobileSection('sankey-mobile-wrap', this, 'Show diagram', 'Hide diagram')">Show diagram</button>
                 <div id="sankey-mobile-wrap" class="mobile-collapsible-content open-desktop">
                     <iframe src="/sankey-embed" class="sankey-frame" id="sankey-iframe" title="Application stage flow"></iframe>
                 </div>
@@ -754,7 +754,7 @@ def render_unified_dashboard_html(active_tab="flow"):
         var target = document.getElementById(id);
         if (!target) return;
         var isOpen = target.classList.toggle('open');
-        if (button) button.innerText = isOpen ? openLabel : closedLabel;
+        if (button) {{ button.innerText = isOpen ? openLabel : closedLabel; button.setAttribute('aria-expanded', String(isOpen)); }}
     }}
 
     function toggleApplications(button) {{
@@ -938,7 +938,11 @@ def render_unified_dashboard_html(active_tab="flow"):
         var targetView = document.getElementById('view-' + tabId);
         if (targetView) targetView.style.display = 'block';
 
-        document.querySelectorAll('[data-tab="' + tabId + '"]').forEach(el => el.classList.add('active'));
+        document.querySelectorAll('[data-tab]').forEach(el => {{
+            el.classList.toggle('active', el.dataset.tab === tabId);
+            if (el.dataset.tab === tabId) el.setAttribute('aria-current', 'page');
+            else el.removeAttribute('aria-current');
+        }});
 
         var tabPaths = {{ flow: '/', jobs: '/jobs', settings: '/settings', diagnostics: '/diagnostics', closed: '/closed' }};
         if (tabPaths[tabId] && window.location.pathname !== tabPaths[tabId]) {{

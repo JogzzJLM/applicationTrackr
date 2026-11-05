@@ -904,3 +904,78 @@ body { font-family: var(--font); font-size: 14px; background-image: radial-gradi
     .applications-scroll { max-height: 280px; }
     .applications-scroll .application-actions .btn, .hide-listing-button { min-height: 44px !important; }
 }
+
+/* Phone workspace: less decoration, clear actions, and room for fingers.
+   Desktop keeps the full noticeboard; these rules also cover landscape phones. */
+@media (max-width:700px) {
+    html { scroll-padding-top: calc(76px + env(safe-area-inset-top)); scroll-padding-bottom: 90px; }
+    .shell { padding-inline: 12px; }
+    .topbar { gap: 6px; padding-inline: 10px; }
+    .topbar-brand { font-size: clamp(12px,3.5vw,16px); gap: 0; white-space: nowrap; }
+    .topbar-brand svg { display: none; }
+    .topbar-right { gap: 5px; }
+    .topbar-right > button { display: inline-flex; }
+    .topbar .btn { width: 44px; height: 44px; flex-shrink: 0; }
+    .header-menu-items { max-height: calc(100dvh - 160px); overflow-y: auto; }
+    .header-menu-items .btn { width: 100%; height: auto; min-height: 44px; }
+    .hunt-masthead { margin: 14px 0; gap: 8px; align-items: center; }
+    .hunt-kicker, .hunt-caption, .hunt-sticker { display: none; }
+    .hunt-masthead h1 { font-size: 30px; line-height: 1.1; }
+    .hunt-masthead h1 br { display: none; }
+    .masthead-star { font-size: 23px; }
+    body:not([data-active-tab="flow"]) .hunt-masthead { display: none; }
+    .hero-stats-grid { gap: 8px; margin-bottom: 16px; }
+    .hero-stat-card { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 4px 8px; padding: 10px; box-shadow: 2px 2px 0 var(--ink); }
+    .stat-header { gap: 0; }
+    .stat-title { font-size: 10px; }
+    .stat-badge, .stat-meter, .stat-number span { display: none; }
+    .stat-number { font-size: 26px; margin: 0; }
+    .stat-footer { grid-column: 1 / -1; margin: 0; }
+    .stat-sub { font: 11px/1.35 var(--font); }
+    .section-card { padding: 12px; box-shadow: 2px 2px 0 #d7ccb7; }
+    .section-title { font-size: 18px; margin-bottom: 12px; padding-bottom: 10px; gap: 8px; align-items: center; }
+    .flow-apps { order: 1; }
+    .closing-section { order: 2; }
+    .flow-sankey { order: 3; }
+    .applications-scroll { max-height: min(420px,55dvh); overscroll-behavior-y: auto; padding-right: 3px; }
+    .applications-scroll .application-company { font-size: 18px; }
+    .application-role { font-size: 14px; line-height: 1.45; }
+    .application-actions { display: flex; gap: 6px; }
+    .application-actions .btn { flex: 1 1 auto; justify-content: center; }
+    .application-filters { gap: 7px; }
+    .application-filters .sort-select { flex: 1 1 100%; }
+    .application-scroll-hint { font: 12px/1.4 var(--font); }
+    .closing-section .action-items-grid { display: grid; grid-auto-flow: column; grid-auto-columns: min(85%,280px); grid-template-columns: none; gap: 10px; overflow-x: auto; scroll-snap-type: x proximity; padding: 2px 3px 10px; }
+    .closing-section .action-item-card { scroll-snap-align: start; min-width: 0; }
+    .browse-heading { margin-top: 16px; font-size: 26px; }
+    .toolbar { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); }
+    .toolbar .search-wrap, .toolbar .filter-toggle { grid-column: 1 / -1; }
+    #jobs-container .card { padding: 12px; gap: 5px; }
+    #jobs-container .card-company { font-size: 21px; }
+    #jobs-container .card-role { font-size: 15px; line-height: 1.4; }
+    .card-meta { font-size: 13px; }
+    .card-top { gap: 5px; padding-bottom: 5px; }
+    .card-actions { gap: 6px; margin-top: 6px; }
+    .card-actions .btn { font-size: 13px; min-height: 44px; }
+    .card-more > summary, .card-reasons > summary { min-height: 44px; padding-block: 12px; }
+    .card-extra-actions .btn { min-height: 44px; }
+    .hide-listing-button { grid-column: auto; }
+    .card-freshness { font: 11px/1.4 var(--font); }
+    .modal-backdrop { padding: 0; align-items: flex-end; }
+    .modal-card { width: 100%; max-height: 92dvh; border-radius: 14px 14px 0 0; padding: 18px 14px calc(20px + env(safe-area-inset-bottom)); box-shadow: none; scroll-padding-block: 20px; }
+    .form-input, .search-input, .sort-select { font-size: 16px; min-height: 44px; }
+    .sort-select { padding-inline: 8px; }
+    .form-input { scroll-margin-block: 24px; }
+    .modal-card .btn { min-height: 44px; }
+    .data-table td { font-size: 14px; }
+    .mobile-tab { font-family: var(--font); font-size: 11px; gap: 4px; }
+    .web-footer { padding-block: 8px 16px; }
+}
+@media (max-height:500px) and (max-width:700px) {
+    .modal-card { max-height: 100dvh; }
+    .applications-scroll { max-height: 65dvh; }
+}
+
+/* Review items stay one tap away without pushing the application log off screen. */
+.pending-reviews > summary { cursor: pointer; display: list-item; min-height: 44px; margin-bottom: 0; border-bottom: 0; padding: 8px 0; }
+.pending-reviews[open] > summary { border-bottom: 1px dashed var(--border-card); margin-bottom: 12px; }

@@ -26,3 +26,13 @@ Browser checks using isolated sample data:
 Chrome's mobile extension action installs on desktop, rather than running a Safari/desktop helper on Android: [Google Chrome documentation](https://support.google.com/chrome/answer/2664769?hl=en). A normal tracker page cannot write into another website's tab. Android Chrome therefore uses the explicit copy/download workflow. Full automatic filling there would require a separate supported browser or Android integration. This change does not claim that it provides automatic Android Chrome filling.
 
 Physical Android hardware was not available for testing; viewport and workflow checks used the in-app browser, plus live deployment checks.
+
+## November 2026 mobile refinement
+
+- Phone Home uses a one-line title and compact 2×2 statistics; the quick log button stays visible beside Sheets and More.
+- Applications come before deadlines and the diagram on phones. The application panel grows with the viewport, and scrolling at its edge can continue down the page.
+- Pending email reviews collapse to a labelled disclosure. Background refresh waits while a review is open, preserving the selection being reviewed.
+- Deadlines form a horizontally scrolling strip on phones. Job cards retain 44px actions, readable titles and full-width search; select padding leaves more room for option text.
+- Edit forms open as bottom sheets with dynamic viewport limits and safe-area padding. Diagram disclosure and active navigation expose their current state to assistive technology.
+- Checked 320px and 390px phone layouts, the logging form, expanded categories, Home/Jobs/Closed/Settings navigation, and 768px tablet layout against a read-only local snapshot of live listings. No application was submitted or modified during layout checks. Physical phone keyboards were not available.
+- Validation: 161 Python tests and 10 browser-helper tests pass.

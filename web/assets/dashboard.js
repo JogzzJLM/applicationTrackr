@@ -83,6 +83,7 @@ window.addEventListener('message', event => {
 });
 document.addEventListener('DOMContentLoaded', () => {
     updateFillActions();
+    document.querySelectorAll('[data-tab].active').forEach(tab => tab.setAttribute('aria-current', 'page'));
     new MutationObserver(updateFillActions).observe(document.documentElement, {attributes: true, attributeFilter: ['data-applicationtrackr-browser-helper']});
     document.querySelector('.header-menu').addEventListener('click', event => { if (event.target.closest('button, a')) event.currentTarget.open = false; });
     document.addEventListener('click', event => { const menu = document.querySelector('.header-menu'); if (!menu.contains(event.target)) menu.open = false; });
@@ -136,7 +137,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // Refresh cards and totals after background email/Sheet updates without losing filters.
 let dashboardRefreshRunning = false;
 async function refreshDashboard() {
-    if (dashboardRefreshRunning || document.hidden || document.querySelector('dialog[open]') || [...document.querySelectorAll('.modal-backdrop')].some(m => m.style.display !== 'none') || ['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName) || document.querySelector('#jobs-container details[open]')) return;
+    if (dashboardRefreshRunning || document.hidden || document.querySelector('dialog[open]') || [...document.querySelectorAll('.modal-backdrop')].some(m => m.style.display !== 'none') || ['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName) || document.querySelector('#jobs-container details[open], #pending-email-updates details[open]')) return;
     dashboardRefreshRunning = true;
     const visibilityAtStart = visibilityRevision;
     try {
