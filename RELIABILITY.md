@@ -39,3 +39,12 @@ and `.venv/bin/python -m pytest -q`.
 Guided applications can save chat-supplied profile details with `POST /api/autoapply/profile` (`values` is a JSON object of dotted profile fields). Updates merge with existing details. Upload a CV or cover letter from `/autoapply` using the document upload control; documents are retained in the persistent volume with private filesystem permissions. PDF/DOC/DOCX uploads are bounded to 10 MB and use server-controlled filenames. Answers learned with an application URL as their domain stay scoped to that application, including fuzzy lookup, so another employer cannot inherit its answers. Form inspection now includes required flags, context and native select choices. Low-confidence field guesses are left unanswered.
 
 The Application Agent includes a manual answer panel with the rendered listing context, detected questions, dropdown choices and saved profile answers. Each nonblank manual answer is stored against the exact application URL. Saved answers override profile guesses on that form. The previous-employer rule uses only user-supplied employer history and only direct questions about employment at the named company. Optional unanswered fields are left blank. Searchable dropdowns must select an actual matching option; typed search text alone does not count as a completed field.
+
+
+## Keep deployment settings when recreating containers
+
+ApplicationTrackr's R430 backend binds only to `127.0.0.1:15000`, behind the existing HTTPS gateway. Keep that binding when updating the stack. `APP_BASE_URL` should be the browser-facing HTTPS URL.
+
+Deploy through Portainer's saved stack settings. A manual Compose command must load the same private environment with `--env-file`; running directly from the checked-out stack directory does not automatically inherit Portainer's stored variables. The Compose file now refuses to recreate the service if its base URL or integration variables are missing. Integration variables may be explicitly empty when deliberately disabled, so optional email/Sheet/notification configurations remain supported. Never put app passwords or Sheet webhook secrets in Git.
+
+After deployment, check `/api/health` for configured Sheet read/write settings, a recent successful email check, and notification delivery. A running process or an old cached Sheet does not establish that these integrations work.
