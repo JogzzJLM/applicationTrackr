@@ -28,7 +28,7 @@ from core.storage import (
 GENERIC_DOMAINS = {
     "gmail", "yahoo", "hotmail", "outlook", "icloud", "proton", "mail",
     "googlemail", "live", "msn", "me", "comcast", "aol",
-    "greenhouse", "lever", "ashbyhq", "myworkdayjobs", "icims", "smartrecruiters"
+    "greenhouse", "lever", "ashbyhq", "myworkday", "myworkdayjobs", "workday", "amazonses", "icims", "smartrecruiters"
 }
 GENERIC_SUBJECT_COMPANY_WORDS = {
     "complete an online assessment", "online assessment", "assessment", "application",
@@ -67,7 +67,7 @@ def extract_company_name(subject, from_sender, body_text=""):
     body_patterns = (
         r"\b([A-Z][A-Za-z0-9&.'\- ]{2,50}?)\s+Talent Acquisition Team\b",
         r"\b([A-Z][A-Za-z0-9&.'\- ]{2,50}?)\s+Recruitment Team\b",
-        r"\b([A-Z][A-Za-z0-9&.'\- ]{2,50}?)\s+Early Careers Team\b",
+        r"\b([A-Z][A-Za-z0-9&.'\- ]{2,50}?)\s+(?:Early Careers|Early Talent) Team\b",
         r"\b([A-Z][A-Za-z0-9&.'\- ]{2,50}?)\s+Email Classification\s*:",
     )
     for pattern in body_patterns:
@@ -395,6 +395,13 @@ def check_email_inbox():
         print(f"  ├── ⚠️ Could not repair pending role choices: {exc}")
 
     if not inboxes:
+        from config import update_scraper_status
+        update_scraper_status('mail_health', {
+            'ok': False, 'configured': False,
+            'checked_at': datetime.now().astimezone().isoformat(),
+            'error': 'No inbox credentials or folders configured',
+            'folders_checked': 0, 'evaluated': 0,
+        })
         update_source_status("Email Inbox Listener", "⚪ Offline (No inbox credentials configured)")
         return 0
 

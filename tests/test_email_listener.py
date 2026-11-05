@@ -83,3 +83,30 @@ class NonRecruitmentEmailTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+FTI_CONFIRMATION = '''Your application for 2027 Summer Internship, Data & Analytics is under review.
+FTI Consulting Early Talent Team'''
+
+
+def test_workday_confirmation_matches_the_specific_fti_role():
+    from core.jobs import Job, match_email_to_job
+    subject='Thank You for Applying!'
+    employer=extract_company_name(subject,'fticonsulting@myworkday.com',FTI_CONFIRMATION)
+    assert employer=='FTI Consulting'
+    assert classify_email_stage(subject+' '+FTI_CONFIRMATION)=='Applied'
+    data=Job('fti-data','Fti Consulting','2027 Summer Internship, Data & Analytics')
+    cyber=Job('fti-cyber','Fti Consulting','2027 Summer Internship, Cybersecurity')
+    matched, _, _=match_email_to_job([data,cyber],employer,subject,'fticonsulting@myworkday.com',FTI_CONFIRMATION)
+    assert matched.id=='fti-data'
+
+
+def test_unconfigured_mailbox_clears_an_old_successful_health_check():
+    from unittest.mock import patch
+    from email_listener import check_email_inbox
+    from core.health import engine_health
+    with patch('email_listener._configured_imap_inboxes',return_value=[]), patch('email_listener.refresh_pending_role_choices'), patch('email_listener.update_source_status'), patch('config.update_scraper_status') as update:
+        assert check_email_inbox()==0
+    key, health=update.call_args.args
+    assert key=='mail_health' and health['ok'] is False and health['configured'] is False
+    assert 'Email needs attention' in engine_health({'mail_health':health})['issues']
