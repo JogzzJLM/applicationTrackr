@@ -167,3 +167,20 @@ def test_explicit_manual_reopening_starts_a_new_progression_without_erasing_old_
 
 def test_unknown_custom_event_requires_review_instead_of_guessing_progression():
     assert email_stage_conflicts('Online Assessment',['Applied','Case Study Presentation'])
+
+
+def test_employer_repair_merges_an_already_created_sheet_object_with_legacy_evidence(tmp_path,monkeypatch):
+    from core import jobs
+    monkeypatch.setattr(jobs,'JOBS_FILE',str(tmp_path/'jobs.json'))
+    repo=JobRepository(); title='Technology Placement 2027'
+    old=repo.sync([{'id':'legacy-source','company':title,'title':title}],[])[0]
+    repo.record_email(old,'old-mail','Rejected','Original outcome',synced=True)
+    saved=jobs.load_json_safe(jobs.JOBS_FILE,{})
+    saved['corrected-sheet']=dict(id='corrected-sheet',company='Example Bank',title=title,link='',location='',notes='Keep my contact',custom_fields={'contact':'Recruiter'},stages=['Applied','Rejected'],email_events=[{'id':'new-mail','stage':'Rejected','subject':'Follow-up','sheet_synced':True}],sheet_managed=True,sheet_present=True)
+    jobs.atomic_write_json(jobs.JOBS_FILE,saved)
+    merged=repo.sync([], [{'company':'Example Bank','role':title,'stages':['Applied','Rejected']}],reconcile=True)
+    assert len(merged)==1 and merged[0].id=='legacy-source' and merged[0].sheet_present
+    assert {e['id'] for e in merged[0].email_events}=={'old-mail','new-mail'}
+    assert merged[0].notes=='Keep my contact' and merged[0].custom_fields['contact']=='Recruiter'
+    updated=repo.sync([{'id':'legacy-source','company':title,'title':title}], [{'company':'Example Bank','role':title,'stages':['Applied','Rejected']}],reconcile=True)
+    assert len(updated)==1 and updated[0].company=='Example Bank' and len(updated[0].email_events)==2

@@ -52,11 +52,28 @@ class JobRepository:
                 existing = saved.get(job.id) or next((j for j in saved.values() if
                     normalize_company(j['company']) == normalize_company(job.company) and
                     role_identity(j['title']) == role_identity(job.title)), None)
-                if existing is None and is_application:
+                if is_application:
                     invalid = [j for j in saved.values() if
                         role_identity(j['company']) == role_identity(j['title']) == role_identity(job.title)]
                     if len(invalid) == 1:
-                        existing = invalid[0]
+                        legacy = invalid[0]
+                        if existing and existing is not legacy:
+                            # An older process may already have created the corrected
+                            # Sheet object. Preserve both sets of evidence, keeping the
+                            # source ID so later discovery refreshes cannot recreate it.
+                            for name in ('link', 'location'):
+                                if not legacy.get(name): legacy[name] = existing.get(name, '')
+                            legacy['custom_fields'] = {**legacy.get('custom_fields', {}), **existing.get('custom_fields', {})}
+                            if existing.get('notes') and existing['notes'] not in legacy.get('notes', ''):
+                                legacy['notes'] = '\n\n'.join(filter(None, [legacy.get('notes'), existing['notes']]))
+                            events = {e['id']: dict(e) for e in legacy.get('email_events', [])}
+                            for event in existing.get('email_events', []):
+                                previous = events.get(event['id'], {})
+                                events[event['id']] = {**event, **previous, 'sheet_synced': bool(previous.get('sheet_synced') or event.get('sheet_synced'))}
+                            legacy['email_events'] = list(events.values())
+                            saved.pop(existing['id'], None)
+                            sheet_ids.discard(existing['id'])
+                        existing = legacy
                         existing.update(company=job.company, title=job.title)
                 if existing:
                     if existing['id'] == job.id:
