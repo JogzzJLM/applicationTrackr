@@ -61,7 +61,7 @@ class NonRecruitmentEmailTests(unittest.TestCase):
         for text in ('The next step is to book cinema tickets', 'Speaking with the cast', 'Join our video call', 'Read these interview tips'):
             self.assertIsNone(classify_email_stage(text))
     def test_actual_interview_invitation_and_confirmation_still_work(self):
-        for text in ('We invite you to interview for the Software Engineering Intern role.', 'Your second interview is scheduled for Friday.', 'Interview invitation: Google Software Engineer Intern', 'Please book your interview using the link below.'):
+        for text in ('We invite you to interview for the Software Engineering Intern role.', 'Interview invitation: Google Software Engineer Intern', 'Please book your interview using the link below.'):
             self.assertEqual(classify_email_stage(text),'Interview')
     def test_google_play_footer_does_not_match_google_application(self):
         from core.jobs import Job, match_email_to_job

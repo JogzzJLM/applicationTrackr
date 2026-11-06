@@ -1,4 +1,5 @@
 import re
+from html import unescape
 import csv
 import time
 import io
@@ -8,6 +9,8 @@ from config import GOOGLE_SHEET_WEBHOOK_URL, GOOGLE_SHEET_CSV_URL, normalize_com
 from core.storage import DATA_DIR, load_json_safe, atomic_write_json
 from datetime import datetime, timezone
 import threading
+from core.stages import canonical_stage, compact_stage_history, stage_recorded
+from core.jobs import role_identity
 
 _SHEET_LOCK = threading.RLock()
 _SHEET_SNAPSHOT = str(DATA_DIR / "sheet_snapshot.json")
@@ -57,96 +60,72 @@ def sheet_stages(row):
     """Only explicit Stage columns, in numeric order, are application history."""
     stages = sorted(((int(m.group(1)), str(value).strip()) for key, value in row.items()
         if (m := re.fullmatch(r'stage\s*(\d+)', str(key or '').strip(), re.I)) and value and str(value).strip()))
-    return [value for _, value in stages]
+    return compact_stage_history([value for _, value in stages])
 
 def resolve_smart_stage(company, stage, role=None):
-    """
-    Inspects existing stages logged for `company` in Google Sheets and returns an intelligent
-    sequentially numbered stage name (e.g., 'Interview 1' -> 'Interview 2', 'Assessment 1' -> 'Assessment 2').
-    """
-    apps = get_detailed_applications()
-    norm_c = normalize_company(company)
-    norm_r = normalize_role(role) if role else ""
-
-    existing_stages = []
-    for app in apps:
-        company_matches = normalize_company(app["company"]) == norm_c
-        role_matches = not norm_r or normalize_role(app.get("role", "")) == norm_r
-        if company_matches and role_matches:
-            existing_stages = app.get("stages", [])
-            break
-
-    if not existing_stages:
-        if stage == "Interview":
-            return "Interview 1"
-        elif stage == "Online Assessment":
-            return "Assessment 1"
+    """Compatibility entry point: deduplicate an explicit event; never invent rounds."""
+    stage = canonical_stage(stage)
+    if not role:
         return stage
-
-    stage_lower = stage.lower()
-    if re.search(r"\d", stage):
-        return None if stage in existing_stages else stage
-
-    if "interview" in stage_lower:
-        count = sum(1 for s in existing_stages if "interview" in s.lower())
-        new_num = count + 1
-        return f"Interview {new_num}"
-
-    elif "assessment" in stage_lower or "oa" in stage_lower or "test" in stage_lower:
-        count = sum(1 for s in existing_stages if any(k in s.lower() for k in ["assessment", "oa", "test", "hackerrank", "codility"]))
-        new_num = count + 1
-        return f"Assessment {new_num}"
-
-    elif "applied" in stage_lower:
-        if any("applied" in s.lower() for s in existing_stages):
-            return None
-
-    elif "reject" in stage_lower or "fail" in stage_lower:
-        if any("reject" in s.lower() for s in existing_stages):
-            return None
-
-    elif "offer" in stage_lower:
-        if any("offer" in s.lower() for s in existing_stages):
-            return None
-
+    apps = get_detailed_applications(force_refresh=True)
+    matches = [app for app in apps if normalize_company(app['company']) == normalize_company(company)
+               and role_identity(app.get('role', '')) == role_identity(role)]
+    if any(stage_recorded(stage, app.get('stages', [])) for app in matches):
+        return None
     return stage
 
-def update_google_sheet_via_webhook(company, stage, role="Software/Quant Role", link="", resolve_sequential=True):
-    if not GOOGLE_SHEET_WEBHOOK_URL or "YOUR_WEBHOOK_ID" in GOOGLE_SHEET_WEBHOOK_URL:
+
+def update_google_sheet_via_webhook(company, stage, role='', link='', resolve_sequential=True,
+                                    event_id=None, automatic=False):
+    """One serialized write boundary for email, pending review, and manual updates.
+
+    The legacy resolve_sequential argument remains accepted, but no caller can
+    bypass duplicate protection or manufacture numbered rounds through it.
+    The Sheet-side lock performs the authoritative check against live cells.
+    """
+    if not GOOGLE_SHEET_WEBHOOK_URL or 'YOUR_WEBHOOK_ID' in GOOGLE_SHEET_WEBHOOK_URL:
         return False
-
-    if resolve_sequential:
-        final_stage = resolve_smart_stage(company, stage, role=role)
-        if final_stage is None:
-            print(f"📊 Sheet Notice: Stage '{stage}' for {company} already recorded. Skipping duplicate.")
-            return True
-    else:
+    company, role, stage = str(company).strip(), str(role).strip(), canonical_stage(stage)
+    if (not company or not role or not stage or company == 'Application Company'
+            or normalize_company(company) == normalize_company(role)
+            or any(value.startswith(('=', '+', '-', '@')) for value in (company, role, stage))):
+        print('Sheet write refused: a specific company, role and plain-text stage are required.')
+        return False
+    with _SHEET_LOCK:
+        # Published CSV may lag behind direct Sheet edits. Always let the locked
+        # Sheet writer check live cells, including when this looks like a duplicate.
         final_stage = stage
-
-    payload = {"company": company, "stage": final_stage, "role": role, "link": link}
-    try:
-        resp = requests.post(GOOGLE_SHEET_WEBHOOK_URL, json=payload, timeout=6)
-        if resp.status_code in [200, 201]:
+        payload = {'company': company, 'stage': final_stage, 'role': role, 'link': link,
+                   'automatic': automatic}
+        if event_id:
+            from hashlib import sha256
+            # Stable opaque identity; don't transmit raw mailbox IDs or addresses.
+            payload['event_id'] = sha256(event_id.encode()).hexdigest()
+        try:
+            resp = requests.post(GOOGLE_SHEET_WEBHOOK_URL, json=payload, timeout=35)
+            if resp.status_code not in (200, 201):
+                print(f'⚠️ Google Sheet Webhook returned HTTP {resp.status_code}')
+                return False
             if 'text/html' in resp.headers.get('Content-Type', '').lower():
-                print("Sheet webhook returned HTML instead of an acknowledgement.")
+                print('Sheet webhook returned HTML instead of an acknowledgement.')
                 return False
             try:
                 result = resp.json()
             except ValueError:
                 result = None
-            if result is None and resp.text.strip().lower() not in ("ok", "success"):
-                print("Sheet webhook returned no success acknowledgement.")
+            acknowledged = (isinstance(result, dict) and not result.get('error')
+                and result.get('success') is not False
+                and (result.get('success') is True or result.get('status') in ('ok', 'success', 'duplicate')))
+            if not acknowledged:
+                print('Sheet webhook returned no explicit success acknowledgement.')
                 return False
-            if isinstance(result, dict) and (result.get('success') is False or result.get('error') or str(result.get('status', '')).lower() in ('error', 'failed')):
-                return False
-            print(f"✅ Logged to Google Sheet: {company} -> {final_stage}")
+            print(f'✅ Logged to Google Sheet: {company} -> {final_stage}')
+            _SHEET_CSV_CACHE['timestamp'] = 0
             fetch_google_sheet_csv(force_refresh=True)
             return True
-        else:
-            print(f"⚠️ Google Sheet Webhook returned HTTP {resp.status_code}")
-    except Exception as e:
-        print(f"⚠️ Webhook dispatch failed ({type(e).__name__})")
-    return False
+        except Exception as exc:
+            print(f'⚠️ Webhook dispatch failed ({type(exc).__name__}); update remains pending.')
+            return False
 
 def get_applied_jobs_set(csv_text=None):
     """Fetches Google Sheet and returns a set of (norm_comp, norm_role) tuples and set of normalized company names."""
@@ -216,8 +195,8 @@ def get_detailed_applications(csv_text=None, force_refresh=False):
         try:
             reader = csv.DictReader(io.StringIO(csv_text))
             for row in reader:
-                company = row.get("Company", "").strip()
-                role = row.get("Role", "Software/Quant Role").strip()
+                company = unescape(row.get("Company", "")).strip()
+                role = unescape(row.get("Role", "Software/Quant Role")).strip()
                 if not company:
                     continue
                 stages = sheet_stages(row)

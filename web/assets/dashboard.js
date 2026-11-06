@@ -96,10 +96,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (label && field && !label.htmlFor) { field.id ||= `form-field-${index}`; label.htmlFor = field.id; }
     });
     document.querySelectorAll('.modal-backdrop').forEach(modal => {
-        modal.setAttribute('role', 'dialog'); modal.setAttribute('aria-modal', 'true'); modal.setAttribute('aria-label', 'Edit application details');
+        modal.setAttribute('role', 'dialog'); modal.setAttribute('aria-modal', 'true'); if (modal.id === 'log-modal') modal.setAttribute('aria-labelledby', 'stage-modal-title'); else modal.setAttribute('aria-label', 'Edit application details');
         let returnFocus;
         new MutationObserver(() => {
-            if (modal.style.display !== 'none') { returnFocus = document.activeElement; document.body.style.overflow = 'hidden'; modal.querySelector('input, button, textarea')?.focus(); }
+            if (modal.style.display !== 'none') { returnFocus = document.activeElement; document.body.style.overflow = 'hidden'; if (!modal.contains(document.activeElement)) modal.querySelector('input:not([readonly]), select, textarea, button')?.focus(); }
             else { document.body.style.overflow = ''; (returnFocus?.getClientRects().length ? returnFocus : document.querySelector('.header-menu summary'))?.focus(); }
         }).observe(modal, {attributes: true, attributeFilter: ['style']});
         modal.addEventListener('click', event => { if (event.target === modal) modal.style.display = 'none'; });

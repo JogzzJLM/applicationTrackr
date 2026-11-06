@@ -3,6 +3,8 @@ from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from hashlib import sha256
 import re
+from html import unescape
+from core.stages import stage_recorded
 from urllib.parse import urlparse
 from email.utils import parseaddr
 from core.normalization import normalize_company, normalize_role, extract_ats_post_id, normalize_url
@@ -11,7 +13,7 @@ from core.storage import DATA_DIR, load_json_safe, atomic_write_json, _FILE_LOCK
 JOBS_FILE = str(DATA_DIR / 'job_objects.json')
 def role_identity(title):
     # Keep years: the same employer's 2026 and 2027 vacancies are different jobs.
-    return ' '.join(re.findall(r'[a-z0-9]+', (title or '').lower()))
+    return ' '.join(re.findall(r'[a-z0-9]+', unescape(title or '').lower()))
 
 MANUAL_JOBS_FILE = str(DATA_DIR / 'manual_jobs.json')
 
@@ -31,8 +33,8 @@ class Job:
 
     @classmethod
     def from_listing(cls, row):
-        company = row.get('company', '').strip()
-        title = (row.get('title') or row.get('role') or '').strip()
+        company = unescape(row.get('company', '')).strip()
+        title = unescape(row.get('title') or row.get('role') or '').strip()
         identity = f'{normalize_company(company)}:{role_identity(title)}'
         job_id = row.get('id') or 'job_' + sha256(identity.encode()).hexdigest()[:20]
         return cls(job_id, company, title, row.get('link', ''), row.get('location', ''),
@@ -46,12 +48,22 @@ class JobRepository:
             sheet_ids = set()
             for row in list(listings) + application_rows:
                 job = Job.from_listing(row)
+                is_application = any(row is app for app in application_rows)
                 existing = saved.get(job.id) or next((j for j in saved.values() if
                     normalize_company(j['company']) == normalize_company(job.company) and
                     role_identity(j['title']) == role_identity(job.title)), None)
+                if existing is None and is_application:
+                    invalid = [j for j in saved.values() if
+                        role_identity(j['company']) == role_identity(j['title']) == role_identity(job.title)]
+                    if len(invalid) == 1:
+                        existing = invalid[0]
+                        existing.update(company=job.company, title=job.title)
                 if existing:
                     if existing['id'] == job.id:
-                        existing.update(company=job.company, title=job.title)
+                        # A broken source must not overwrite a real employer repaired in the Sheet.
+                        invalid_employer = role_identity(job.company) == role_identity(job.title)
+                        if not invalid_employer or role_identity(existing['company']) == role_identity(existing['title']):
+                            existing.update(company=job.company, title=job.title)
                         if job.location:
                             existing['location'] = job.location
                     if row.get('stages'):
@@ -61,7 +73,7 @@ class JobRepository:
                 else:
                     saved[job.id] = asdict(job)
                     existing = saved[job.id]
-                if any(row is app for app in application_rows):
+                if is_application:
                     sheet_ids.add(existing['id'])
                     existing.update(sheet_managed=True, sheet_present=True)
                     if reconcile:
@@ -113,7 +125,7 @@ class JobRepository:
             else:
                 row['email_events'].append({'id': event_id, 'stage': stage, 'subject': subject,
                     'sheet_synced': synced, 'received_at': datetime.now(timezone.utc).isoformat()})
-            if synced and stage != 'Application Update' and stage not in row['stages']:
+            if synced and stage != 'Application Update' and not stage_recorded(stage, row['stages']):
                 row['stages'].append(stage)
             atomic_write_json(JOBS_FILE, saved)
 

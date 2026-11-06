@@ -7,6 +7,7 @@ from email.header import decode_header
 from hashlib import sha256
 from bs4 import BeautifulSoup
 from core.jobs import JobRepository, match_email_to_job
+from core.stages import stage_recorded, email_stage_conflicts
 from core.storage import atomic_write_json, DATA_DIR, load_json_safe
 from config import APP_BASE_URL
 import time
@@ -199,22 +200,13 @@ def handle_incoming_email_update(company_name, detected_stage, subject="", from_
         return True
     if job:
         repo.record_email(job, event_id, detected_stage, subject)
-        # Ordinary follow-up emails must not manufacture additional interview rounds.
-        same_stage = detected_stage == 'Application Update' or detected_stage in job.stages or (detected_stage == 'Interview' and any(s.lower().startswith('interview') for s in job.stages)) or (detected_stage == 'Online Assessment' and any(s.lower().startswith(('assessment', 'online assessment')) for s in job.stages))
-        # Catch-up mail must not silently undo a later round or reopen a finished application.
-        def phase(stage):
-            value = stage.lower()
-            if any(word in value for word in ('reject', 'offer', 'withdraw', 'ghost')): return 3
-            if 'interview' in value: return 2
-            if any(word in value for word in ('assessment', 'online test', 'oa')): return 1
-            return 0
-        current_stage = job.stages[-1] if job.stages else 'Applied'
-        needs_review = not same_stage and (phase(current_stage) == 3 or phase(detected_stage) < phase(current_stage))
+        same_stage = detected_stage == 'Application Update' or stage_recorded(detected_stage, job.stages)
+        needs_review = email_stage_conflicts(detected_stage, job.stages)
         if needs_review:
             reason = 'Email conflicts with the current Sheet stage; review before changing the application'
         else:
             success = update_google_sheet_via_webhook(job.company, detected_stage, role=job.title,
-                link=job.link, resolve_sequential=False) if not same_stage else True
+                link=job.link, resolve_sequential=False, event_id=event_id, automatic=True) if not same_stage else True
             if success:
                 repo.record_email(job, event_id, detected_stage, subject, synced=True)
                 if not same_stage or detected_stage == 'Application Update':

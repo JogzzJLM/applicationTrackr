@@ -11,7 +11,8 @@ from config import APP_BASE_URL, PORT, add_scraper_log
 from core.storage import hide_job, load_reported_closed_jobs, load_settings, save_reported_closed_jobs, save_settings
 from core.kb import load_closed_keywords_kb, save_closed_keywords_kb, extract_generic_closure_phrases
 from sheets import fetch_google_sheet_csv, generate_sankey_from_google_sheets, update_google_sheet_via_webhook, get_detailed_applications
-from core.jobs import JobRepository, add_manual_job, save_job_details
+from core.jobs import JobRepository, add_manual_job, save_job_details, role_identity
+from core.stages import valid_stage, canonical_stage
 from scrapers_engine.audit import load_discovered_jobs
 from core.storage import load_pending_email_updates, remove_pending_email_update
 from scrapers_engine.audit import run_all_scrapers, recheck_existing_open_jobs_for_closure, purge_irrelevant_jobs
@@ -33,11 +34,6 @@ from autoapply.service import (
 class ThreadedHTTPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     allow_reuse_address = True
     daemon_threads = True
-
-
-def valid_stage(stage):
-    import re
-    return bool(re.fullmatch(r'Applied|(?:Online Assessment|Assessment|Interview|Digital Interview)(?: [1-9][0-9]?)?|Offer|Rejected|Withdrawn|Ghosted', stage or ''))
 
 
 MUTATION_PATHS = {'/api/relevance-audit', '/api/mark-applied', '/api/resolve-pending-update',
@@ -265,11 +261,11 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
         if path == "/api/mark-applied":
             comp = qs.get("company", [""])[0]
             title = qs.get("title", ["Software/Quant Role"])[0]
-            stage = qs.get("stage", ["Applied"])[0]
-            if not comp.strip() or not title.strip() or not valid_stage(stage):
+            stage = canonical_stage(qs.get("stage", ["Applied"])[0])
+            if not comp.strip() or not title.strip() or not valid_stage(stage, custom=qs.get("custom_stage", ["false"])[0] == "true"):
                 return self._json({'status': 'error', 'message': 'Company, role and a recognised application stage are required.'}, 400)
             if comp:
-                if not update_google_sheet_via_webhook(comp, stage, role=title, resolve_sequential=True):
+                if not update_google_sheet_via_webhook(comp, stage, role=title, resolve_sequential=False):
                     return self._json({"status": "error", "message": "Sheet update failed. Check webhook configuration and logs."}, 502)
                 add_scraper_log(f"📊 Web UI logged application: {comp} -> {stage}")
                 try: generate_sankey_from_google_sheets(force_refresh=True)
@@ -280,21 +276,21 @@ class CleanHandler(http.server.BaseHTTPRequestHandler):
             u_id = qs.get("id", [""])[0]
             comp = qs.get("company", [""])[0]
             title = qs.get("role", ["Software/Quant Role"])[0]
-            stage = qs.get("stage", ["Rejected"])[0]
+            stage = canonical_stage(qs.get("stage", [""])[0])
             pending = next((p for p in load_pending_email_updates() if p.get('id') == u_id), None)
             if pending is None:
                 return self._json({'status':'error', 'message':'This email is no longer pending.'}, 404)
-            if not comp or not title or not (valid_stage(stage) or stage == 'Application Update'):
+            if not comp or not title or not (valid_stage(stage, custom=qs.get('custom_stage', ['false'])[0] == 'true') or stage == 'Application Update'):
                 return self._json({'status':'error', 'message':'Company, role and a recognised stage are required.'}, 400)
-            if stage != 'Application Update' and not update_google_sheet_via_webhook(comp, stage, role=title, resolve_sequential=True):
+            if stage != 'Application Update' and not update_google_sheet_via_webhook(comp, stage, role=title, resolve_sequential=False, event_id=pending.get('event_id', u_id)):
                 return self._json({'status':'error', 'message':'Sheet update failed. Check webhook configuration and logs.'}, 502)
             repo = JobRepository()
             jobs = repo.sync(load_discovered_jobs(), get_detailed_applications(), reconcile=bool(fetch_google_sheet_csv()))
             from core.normalization import normalize_company, normalize_role
-            job = next((j for j in jobs if normalize_company(j.company) == normalize_company(comp) and normalize_role(j.title) == normalize_role(title)), None)
+            job = next((j for j in jobs if normalize_company(j.company) == normalize_company(comp) and role_identity(j.title) == role_identity(title)), None)
             if job is None and stage != 'Application Update':
                 created = repo.sync([], [{'company':comp, 'role':title, 'stages':[stage]}])
-                job = next((j for j in created if normalize_company(j.company) == normalize_company(comp) and normalize_role(j.title) == normalize_role(title)), None)
+                job = next((j for j in created if normalize_company(j.company) == normalize_company(comp) and role_identity(j.title) == role_identity(title)), None)
             if job is None:
                 return self._json({'status':'error', 'message':'Select a logged application to attach this email.'}, 400)
             repo.record_email(job, pending.get('event_id', u_id), stage, pending.get('subject', ''), synced=True)

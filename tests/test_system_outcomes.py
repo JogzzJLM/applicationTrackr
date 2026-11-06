@@ -12,7 +12,7 @@ from core import jobs
  ('Your interview is scheduled. Previous email: your application was unsuccessful.','Interview'),
  ('If your application is unsuccessful, contact recruitment.',None),
  ('Thank you for your application.','Applied'),
- ('We invite you to your assessment centre.','Interview'),
+ ('We invite you to your assessment centre.','Assessment Centre'),
  ('If you receive an offer letter, contact recruitment.',None),
 ])
 def test_outcome_contract(text,stage):assert classify_email_stage(text)==stage

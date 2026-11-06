@@ -1,3 +1,4 @@
+from core.stages import STAGE_NAMES
 from html import escape
 import json
 import urllib.parse
@@ -299,6 +300,7 @@ def render_unified_dashboard_html(active_tab="flow"):
     for s_name, s_msg in SCRAPER_STATUS.get("source_status", {}).items():
         src_status_html += f'<div class="diag-row"><span class="diag-label">{escape(str(s_name))}</span><span class="diag-value">{escape(str(s_msg))}</span></div>'
 
+    stage_options = ''.join(f'<option value="{escape(stage, quote=True)}">{escape(stage)}</option>' for stage in STAGE_NAMES)
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -647,9 +649,10 @@ def render_unified_dashboard_html(active_tab="flow"):
 <div id="log-modal" class="modal-backdrop" style="display:none;">
     <div class="modal-card">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px;">
-            <div style="font-size:18px; font-weight:800; color:var(--text-primary);">Log App to Google Sheets</div>
-            <button onclick="closeLogModal()" class="btn btn-ghost">✕</button>
+            <h2 id="stage-modal-title" style="font-size:18px;">Log application</h2>
+            <button onclick="closeLogModal()" class="btn btn-ghost" aria-label="Close stage editor">✕</button>
         </div>
+        <form id="stage-editor-form" onsubmit="event.preventDefault();submitModalLog()">
         <div class="form-group">
             <label class="form-label">Company Name</label>
             <input type="text" id="modal-company" class="form-input" placeholder="e.g. Marshall Wace, Palantir">
@@ -660,21 +663,29 @@ def render_unified_dashboard_html(active_tab="flow"):
         </div>
         <div class="form-group">
             <label class="form-label">Application Stage</label>
-            <select id="modal-stage" class="form-input">
+            <select id="modal-stage" class="form-input" onchange="updateStageFields()">
+                <option value="">Choose what happened…</option>
                 <option value="Application Update" hidden disabled>Record email only</option>
-                <option value="Interview">Interview</option>
-                <option value="Applied" selected>Applied</option>
-                <option value="Online Assessment">Online Assessment (OA)</option>
-                <option value="Interview 1">Interview 1</option>
-                <option value="Interview 2">Interview 2 / Final</option>
-                <option value="Offer">Offer 🎉</option>
-                <option value="Rejected">Rejected</option>
+                {stage_options}
+                <option value="__other__">Other event…</option>
             </select>
         </div>
-        <div style="display:flex; gap:10px; margin-top:24px;">
-            <button onclick="submitModalLog()" class="btn btn-filled" style="flex:1; justify-content:center;">Save to Google Sheets</button>
-            <button onclick="closeLogModal()" class="btn btn-ghost">Cancel</button>
+        <p id="stage-current" class="stage-editor-help" hidden></p>
+        <div class="form-group" id="stage-round-wrap" hidden>
+            <label class="form-label" for="modal-round">Round number (optional)</label>
+            <input type="number" inputmode="numeric" min="1" max="99" id="modal-round" class="form-input" placeholder="e.g. 2">
+            <p class="stage-editor-help">Use 2 for a second assessment or interview. Reminders do not count as another round.</p>
         </div>
+        <div class="form-group" id="stage-custom-wrap" hidden>
+            <label class="form-label" for="modal-custom-stage">What happened?</label>
+            <input type="text" id="modal-custom-stage" class="form-input" maxlength="80" placeholder="e.g. Case Study Presentation">
+        </div>
+        <p id="stage-save-error" role="alert" class="stage-editor-error" hidden></p>
+        <div style="display:flex; gap:10px; margin-top:24px;">
+            <button id="stage-save-button" type="submit" class="btn btn-filled" style="flex:1; justify-content:center;">Save to Google Sheets</button>
+            <button type="button" onclick="closeLogModal()" class="btn btn-ghost">Cancel</button>
+        </div>
+        </form>
     </div>
 </div>
 
@@ -772,22 +783,48 @@ def render_unified_dashboard_html(active_tab="flow"):
     }}
 
     var pendingLogId = null;
-    function openLogModal() {{
-        pendingLogId = null;
-        document.querySelector('#modal-stage option[value=\"Application Update\"]').disabled = true;
-        document.querySelector('#modal-stage option[value=\"Application Update\"]').hidden = true;
-        document.getElementById('modal-stage').value = 'Applied';
-        document.getElementById('log-modal').style.display = 'flex';
-        document.getElementById('modal-company').focus();
+    var stageSavePending = false;
+    function updateStageFields() {{
+        var stage = document.getElementById('modal-stage').value;
+        document.getElementById('stage-round-wrap').hidden = !['Online Assessment','Group Assessment','Assessment Centre','Phone Screen','Digital Interview','Technical Interview','Interview','Final Interview'].includes(stage);
+        document.getElementById('stage-custom-wrap').hidden = stage !== '__other__';
     }}
-
-    function openLogModalForPending(pendingId, comp, stage) {{
-        pendingLogId = pendingId;
-        document.querySelector('#modal-stage option[value="Application Update"]').disabled = false;
-        document.querySelector('#modal-stage option[value="Application Update"]').hidden = false;
+    function prepareStageModal(title, company, role, stage, locked) {{
+        pendingLogId = null;
+        document.getElementById('stage-modal-title').textContent = title;
+        document.getElementById('modal-company').value = company;
+        document.getElementById('modal-role').value = role;
+        document.getElementById('modal-company').readOnly = locked;
+        document.getElementById('modal-role').readOnly = locked;
+        document.getElementById('modal-stage').value = stage;
+        document.getElementById('modal-round').value = '';
+        document.getElementById('modal-custom-stage').value = '';
+        document.getElementById('stage-current').hidden = true;
+        document.getElementById('stage-save-error').hidden = true;
+        var emailOnly = document.querySelector('#modal-stage option[value="Application Update"]');
+        emailOnly.disabled = true; emailOnly.hidden = true;
+        updateStageFields();
         document.getElementById('log-modal').style.display = 'flex';
-        document.getElementById('modal-company').value = comp;
-        document.getElementById('modal-stage').value = stage || 'Applied';
+        document.getElementById(locked ? 'modal-stage' : 'modal-company').focus();
+    }}
+    function openLogModal() {{
+        prepareStageModal('Log application', '', '', 'Applied', false);
+    }}
+    function openStageModal(company, role, currentStage) {{
+        prepareStageModal('Update application stage', company, role, '', true);
+        document.getElementById('stage-current').textContent = 'Current stage: ' + currentStage;
+        document.getElementById('stage-current').hidden = false;
+    }}
+    function openLogModalForPending(pendingId, comp, stage) {{
+        prepareStageModal('Assign email update', comp, '', stage || 'Application Update', false);
+        pendingLogId = pendingId;
+        var emailOnly = document.querySelector('#modal-stage option[value="Application Update"]');
+        emailOnly.disabled = false; emailOnly.hidden = false;
+        document.getElementById('modal-stage').value = stage || 'Application Update';
+        // Keep explicit rounds detected in emails rather than silently defaulting to Applied.
+        var numbered = (stage || '').match(/^(.+) ([1-9][0-9]?)$/);
+        if (numbered) {{ document.getElementById('modal-stage').value = numbered[1]; document.getElementById('modal-round').value = numbered[2]; }}
+        updateStageFields();
         document.getElementById('modal-role').focus();
     }}
 
@@ -814,21 +851,32 @@ def render_unified_dashboard_html(active_tab="flow"):
             }});
     }}
 
-    function submitModalLog() {{
+    async function submitModalLog() {{
+        if (stageSavePending) return;
         var comp = document.getElementById('modal-company').value.trim();
         var title = document.getElementById('modal-role').value.trim();
         var stage = document.getElementById('modal-stage').value;
-        if (!comp) {{
-            alert('Please enter a company name.');
-            return;
+        var custom = stage === '__other__';
+        var errorBox = document.getElementById('stage-save-error');
+        var round = document.getElementById('modal-round');
+        errorBox.hidden = true;
+        if (custom) stage = document.getElementById('modal-custom-stage').value.trim();
+        if (!comp || !title || !stage) {{ errorBox.textContent = 'Choose a company, role and the event to record.'; errorBox.hidden = false; return; }}
+        if (!document.getElementById('stage-round-wrap').hidden && round.value) {{
+            if (!round.checkValidity()) {{ round.reportValidity(); return; }}
+            stage += ' ' + round.value;
         }}
-        if (!title) {{ alert("Please enter a role title."); return; }}
-        if (pendingLogId) {{ resolvePendingUpdate(pendingLogId, comp, title, stage); }}
-        else {{ logJobWithStage(comp, title, stage); }}
-    }}
-
-    function quickUpdateStage(comp, stage, role) {{
-        logJobWithStage(comp, role || 'Software/Quant Role', stage);
+        stageSavePending = true;
+        var button = document.getElementById('stage-save-button');
+        button.disabled = true; button.textContent = 'Saving…';
+        try {{
+            var path = pendingLogId ? '/api/resolve-pending-update?id=' + encodeURIComponent(pendingLogId) + '&role=' : '/api/mark-applied?title=';
+            var response = await mutate(path + encodeURIComponent(title) + '&company=' + encodeURIComponent(comp) + '&stage=' + encodeURIComponent(stage) + '&custom_stage=' + custom);
+            var data = await response.json();
+            if (!response.ok || data.status !== 'ok') throw new Error(data.message || 'Save failed. Your choices have been kept.');
+            location.reload();
+        }} catch(error) {{ errorBox.textContent = error.message; errorBox.hidden = false; }}
+        finally {{ stageSavePending = false; button.disabled = false; button.textContent = 'Save to Google Sheets'; }}
     }}
 
     function resolvePendingUpdate(id, comp, role, stage) {{

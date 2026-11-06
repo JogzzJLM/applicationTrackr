@@ -67,5 +67,6 @@ def test_application_view_model_renders_stacked_card_actions():
     assert 'class="application-card"' in markup
     assert "Barclays" in markup
     assert "Online Assessment" in markup
-    assert "+ Interview" in markup
-    assert "Reject" in markup
+    assert "Update stage" in markup
+    assert "openStageModal" in markup
+    assert "+ Interview" not in markup

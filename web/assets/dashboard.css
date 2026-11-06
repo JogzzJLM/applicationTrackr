@@ -979,3 +979,7 @@ body { font-family: var(--font); font-size: 14px; background-image: radial-gradi
 /* Review items stay one tap away without pushing the application log off screen. */
 .pending-reviews > summary { cursor: pointer; display: list-item; min-height: 44px; margin-bottom: 0; border-bottom: 0; padding: 8px 0; }
 .pending-reviews[open] > summary { border-bottom: 1px dashed var(--border-card); margin-bottom: 12px; }
+
+.stage-editor-help { font: 13px/1.5 var(--font); color: var(--text-secondary); margin: 6px 0 12px; }
+.stage-editor-error { color: #a1283d; border: 1px solid #dba9ae; padding: 10px; margin-top: 12px; background: #ffe8e6; }
+.form-input[readonly] { background: #f2eddf; color: var(--text-secondary); }

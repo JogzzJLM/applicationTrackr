@@ -48,3 +48,41 @@ ApplicationTrackr's R430 backend binds only to `127.0.0.1:15000`, behind the exi
 Deploy through Portainer's saved stack settings. A manual Compose command must load the same private environment with `--env-file`; running directly from the checked-out stack directory does not automatically inherit Portainer's stored variables. The Compose file now refuses to recreate the service if its base URL or integration variables are missing. Integration variables may be explicitly empty when deliberately disabled, so optional email/Sheet/notification configurations remain supported. Never put app passwords or Sheet webhook secrets in Git.
 
 After deployment, check `/api/health` for configured Sheet read/write settings, a recent successful email check, and notification delivery. A running process or an old cached Sheet does not establish that these integrations work.
+
+## Sheet stages and manual updates
+
+`integrations/google-sheets.gs` is the versioned source for the existing Sheet-bound
+web app. Updating the Docker image alone does not update this separate script:
+paste the checked source into the bound Apps Script project, save, and update the
+**existing** deployment to a new version, retaining its URL and access settings.
+It targets the named `Raw` tab rather than whichever tab happened to be active.
+
+The script checks company **and full role**, including intake year and location,
+under a script lock before writing. A repeated event returns `duplicate`, a
+successful new event returns `success`, and ambiguous duplicate rows, conflicting
+automatic updates or failed writes return an error. Only explicit positive
+acknowledgements count as success. Every caller uses this common write boundary,
+including email, manual logging and pending-email assignment. Published CSV can
+lag behind direct edits, so it is not used as the final write/deduplication guard.
+The script extends named Stage columns after the last stage rather than writing
+into an earlier blank or an unrelated Link/Notes column.
+
+A reminder never creates a new round. `Assessment`, `OA` and `Online Assessment`
+are the same first event; `Online Assessment 2` remains a distinct explicit event.
+Group assessments and assessment centres retain their own labels. The **Update
+stage** picker fixes the company/role, starts without a selected next event, and
+supports explicit round numbers and a validated custom event. Failed saves keep
+the chosen values; the Save button is disabled while a request is running.
+A user can explicitly record **Reopened** for a new progression on the same role;
+background mail cannot silently reopen a terminal application.
+
+HTML-encoded role names share the same job identity as plain-text names. When a
+Sheet repair replaces a legacy title-as-company record with a real employer,
+that object's event history is retained and a broken source cannot overwrite
+the repaired name. No deduplication rule merges different roles or intake years.
+
+Regression checks: Python `tests/test_sheet_stages.py` and the existing suite;
+`node --test tests/google-sheets-writer.test.cjs tests/browser-helper.test.cjs`.
+The Sheet script tests execute its real source against an isolated in-memory
+Sheet, including retries, separate roles, explicit rounds, full Stage columns,
+missing roles, bad acknowledgements and automatic-stage conflicts.

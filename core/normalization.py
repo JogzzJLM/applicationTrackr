@@ -69,7 +69,7 @@ COMPANY_DISPLAY_NAMES = {
 def clean_company_display_name(name):
     if not name:
         return "Unknown"
-    cleaned = str(name).strip()
+    cleaned = unescape(str(name)).strip()
 
     norm = re.sub(r'[^a-z0-9]', '', cleaned.lower())
 
@@ -92,7 +92,7 @@ def clean_company_display_name(name):
 def normalize_company(name):
     if not name:
         return ""
-    cleaned = str(name).lower().strip()
+    cleaned = unescape(str(name)).lower().strip()
     cleaned = re.sub(r'[^a-z0-9]', '', cleaned)
     for suffix in ["ltd", "inc", "plc", "llc", "capital", "technologies", "technology", "group", "uk", "europe", "limited", "careers", "jobs", "program", "internshipprogram"]:
         if cleaned.endswith(suffix) and len(cleaned) > len(suffix) + 2:
